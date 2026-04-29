@@ -26,7 +26,8 @@ let ``en strings are all non-empty`` () =
       s.StatusBarApp; s.StatusBarOn
       s.PromptHelpEnter; s.PromptHelpShiftEnter; s.PromptHelpCtrlD
       s.ConfigHelpHeader; s.ConfigHelpEnvHint; s.ConfigHelpFileHint
-      s.DiscoveryNoCandidates; s.DiscoveryPickProvider ]
+      s.DiscoveryNoCandidates; s.DiscoveryPickProvider
+      s.CmdHelpDesc; s.CmdClearDesc; s.CmdExitDesc; s.HelpHeader ]
     |> List.iter (fun v -> v |> should not' (equal ""))
 
 [<Fact>]
@@ -36,5 +37,6 @@ let ``ru strings are all non-empty`` () =
       s.StatusBarApp; s.StatusBarOn
       s.PromptHelpEnter; s.PromptHelpShiftEnter; s.PromptHelpCtrlD
       s.ConfigHelpHeader; s.ConfigHelpEnvHint; s.ConfigHelpFileHint
-      s.DiscoveryNoCandidates; s.DiscoveryPickProvider ]
+      s.DiscoveryNoCandidates; s.DiscoveryPickProvider
+      s.CmdHelpDesc; s.CmdClearDesc; s.CmdExitDesc; s.HelpHeader ]
     |> List.iter (fun v -> v |> should not' (equal ""))

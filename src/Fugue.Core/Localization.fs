@@ -22,7 +22,13 @@ type Strings =
       ConfigHelpEnvHint:      string
       ConfigHelpFileHint:     string
       DiscoveryNoCandidates:  string
-      DiscoveryPickProvider:  string }
+      DiscoveryPickProvider:  string
+
+      // Slash commands
+      CmdHelpDesc:  string
+      CmdClearDesc: string
+      CmdExitDesc:  string
+      HelpHeader:   string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -38,7 +44,11 @@ let en : Strings =
       ConfigHelpEnvHint    = "Set FUGUE_PROVIDER=anthropic|openai|ollama and the matching API key."
       ConfigHelpFileHint   = "Or create ~/.fugue/config.json (see docs)."
       DiscoveryNoCandidates = "No providers detected."
-      DiscoveryPickProvider = "Pick a provider:" }
+      DiscoveryPickProvider = "Pick a provider:"
+      CmdHelpDesc           = "show this help"
+      CmdClearDesc          = "clear the screen"
+      CmdExitDesc           = "exit Fugue"
+      HelpHeader            = "Available slash commands:" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -54,7 +64,11 @@ let ru : Strings =
       ConfigHelpEnvHint    = "Задайте FUGUE_PROVIDER=anthropic|openai|ollama и соответствующий ключ API."
       ConfigHelpFileHint   = "Или создайте ~/.fugue/config.json (см. документацию)."
       DiscoveryNoCandidates = "Провайдеры не обнаружены."
-      DiscoveryPickProvider = "Выберите провайдер:" }
+      DiscoveryPickProvider = "Выберите провайдер:"
+      CmdHelpDesc           = "показать эту справку"
+      CmdClearDesc          = "очистить экран"
+      CmdExitDesc           = "выйти из Fugue"
+      HelpHeader            = "Доступные команды:" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =

@@ -6,6 +6,9 @@ open System.Threading
 open System.Threading.Tasks
 open Fugue.Core.Localization
 
+// Hardcoded — small list, easier than passing through state.
+let slashCommands : string list = [ "/help"; "/clear"; "/exit" ]
+
 /// Internal mutable line state. Public only because tests construct it directly.
 type S = {
     mutable Buffer:        ResizeArray<char>
@@ -16,6 +19,7 @@ type S = {
     PromptVisLen:          int
     HintWhenArmed:         string
     Width:                 int
+    SlashHelp:             (string * string) list  // (name, dim description) pairs
 }
 
 /// Action returned by the pure key-handler. The caller (read-loop) decides what to do.
@@ -132,10 +136,18 @@ let private redraw (st: S) =
     // 3. count rendered terminal lines (= 1 + number of '\n' in buffer)
     let newlines = bufStr |> Seq.filter (fun c -> c = '\n') |> Seq.length
     st.LinesRendered <- 1 + newlines
-    // 3b. if exit is armed, emit dim hint on the line below the buffer
+    // 3b. if exit is armed, emit dim hint on the line below the buffer;
+    //     elif buffer starts with '/', emit matching slash command suggestions.
+    //     The two branches are mutually exclusive.
     if st.ExitArmed && st.HintWhenArmed <> "" then
         writeRaw ("\n\x1b[2m" + st.HintWhenArmed + "\x1b[0m")
         st.LinesRendered <- st.LinesRendered + 1
+    elif st.Buffer.Count > 0 && st.Buffer.[0] = '/' then
+        let prefix = String(st.Buffer.ToArray())
+        let matches = st.SlashHelp |> List.filter (fun (name, _) -> name.StartsWith(prefix))
+        for (name, desc) in matches do
+            writeRaw ("\n\x1b[2m  " + name + "  " + desc + "\x1b[0m")
+            st.LinesRendered <- st.LinesRendered + 1
     // 4. position cursor at st.Cursor inside buffer.
     //    Compute (row, col) from start of prompt.
     let mutable row = 0
@@ -168,6 +180,10 @@ let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task
                 n <- n + 1
                 i <- i + 1
         n
+    let slashHelp =
+        [ "/help",  strings.CmdHelpDesc
+          "/clear", strings.CmdClearDesc
+          "/exit",  strings.CmdExitDesc ]
     let st : S =
         { Buffer        = ResizeArray<char>()
           Cursor        = 0
@@ -176,7 +192,8 @@ let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task
           PromptText    = prompt
           PromptVisLen  = visLen
           HintWhenArmed = strings.ExitHint
-          Width         = max 40 Console.WindowWidth }
+          Width         = max 40 Console.WindowWidth
+          SlashHelp     = slashHelp }
 
     Console.TreatControlCAsInput <- true
     try

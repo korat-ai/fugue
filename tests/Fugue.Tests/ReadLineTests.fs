@@ -14,7 +14,8 @@ let private mkState (text: string) (cursor: int) : S =
       PromptText    = "> "
       PromptVisLen  = 2
       HintWhenArmed = "Press Ctrl+C again to exit"
-      Width         = 80 }
+      Width         = 80
+      SlashHelp     = [] }
 
 let private key (c: char) (mods: ConsoleModifiers) : ConsoleKeyInfo =
     let cKey =
@@ -142,3 +143,10 @@ let ``any non-Ctrl+C input disarms ExitArmed`` () =
     let act = applyKey (special ConsoleKey.C ConsoleModifiers.Control) s
     act |> should equal Wipe
     s.Buffer.Count |> should equal 0
+
+[<Fact>]
+let ``slash buffer prefix is recognized for hint rendering`` () =
+    let s = mkState "/" 1
+    // No applyKey side effect on the slash-suggestion field — just verify mkState constructs
+    s.Buffer.Count |> should equal 1
+    s.Buffer.[0] |> should equal '/'

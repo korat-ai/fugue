@@ -112,6 +112,16 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             | Some s when System.String.IsNullOrWhiteSpace s -> ()
             | Some s when s = "/exit" || s = "/quit" ->
                 cancelSrc.RequestQuit()
+            | Some s when s = "/help" ->
+                AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.HelpHeader + "[/]"))
+                AnsiConsole.WriteLine()
+                let helpItems = [ "/help",  strings.CmdHelpDesc
+                                  "/clear", strings.CmdClearDesc
+                                  "/exit",  strings.CmdExitDesc ]
+                for (name, desc) in helpItems do
+                    AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
+                    AnsiConsole.WriteLine()
+                StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
                 StatusBar.refresh ()
