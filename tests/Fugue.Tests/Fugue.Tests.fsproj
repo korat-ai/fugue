@@ -13,6 +13,7 @@
     <Compile Include="BashFnTests.fs" />
     <Compile Include="GlobFnTests.fs" />
     <Compile Include="GrepFnTests.fs" />
+    <Compile Include="ToolRegistryTests.fs" />
     <Compile Include="ConfigTests.fs" />
     <Compile Include="ReadToolTests.fs" />
     <Compile Include="WriteToolTests.fs" />
