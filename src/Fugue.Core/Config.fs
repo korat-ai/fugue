@@ -107,18 +107,17 @@ let private fromFile (path: string) : Result<ProviderConfig * int * UiConfig, st
             provider |> Result.map (fun p ->
                 // dto.ui can be null when "ui" block is missing — STJ doesn't init nested CLIMutable records.
                 let uiDto = dto.ui |> Option.ofObj
+                let alignmentStr = uiDto |> Option.bind (fun u -> Option.ofObj u.userAlignment)
+                let localeStr    = uiDto |> Option.bind (fun u -> Option.ofObj u.locale)
                 let alignment =
-                    match uiDto with
-                    | Some u when u.userAlignment = "right" -> Right
-                    | _ -> Left
+                    match alignmentStr with
+                    | Some "right" -> Right
+                    | _            -> Left
                 let locale =
-                    match uiDto with
-                    | Some u ->
-                        match u.locale with
-                        | "ru" -> "ru"
-                        | "en" -> "en"
-                        | _ -> defaultLocale ()
-                    | None -> defaultLocale ()
+                    match localeStr with
+                    | Some "ru" -> "ru"
+                    | Some "en" -> "en"
+                    | _         -> defaultLocale ()
                 let ui = { UserAlignment = alignment; Locale = locale }
                 p, dto.maxIterations, ui)
     with ex -> Error ex.Message

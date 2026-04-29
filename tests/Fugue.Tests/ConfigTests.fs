@@ -71,3 +71,25 @@ let ``load defaults Ui to Left when ui block missing`` () =
     match load [||] with
     | Ok cfg -> cfg.Ui.UserAlignment |> should equal Left
     | Error e -> failwithf "expected Ok, got %A" e
+
+[<Fact>]
+let ``load defaults locale via defaultLocale when ui has only userAlignment`` () =
+    let tmpHome = IO.Path.Combine(IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    let dir = IO.Path.Combine(tmpHome, ".fugue")
+    IO.Directory.CreateDirectory dir |> ignore
+    let path = IO.Path.Combine(dir, "config.json")
+    IO.File.WriteAllText(path, """{
+        "provider":"ollama","model":"llama","apiKey":"","ollamaEndpoint":"http://localhost:11434",
+        "maxIterations":30,"ui":{"userAlignment":"right"}
+    }""")
+    Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null)
+    Environment.SetEnvironmentVariable("OPENAI_API_KEY", null)
+    Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
+    Environment.SetEnvironmentVariable("FUGUE_LOCALE", null)
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    match load [||] with
+    | Ok cfg ->
+        cfg.Ui.UserAlignment |> should equal Right
+        // locale comes from CultureInfo fallback in defaultLocale (); just assert it's non-empty.
+        cfg.Ui.Locale |> should not' (equal "")
+    | Error e -> failwithf "expected Ok, got %A" e
