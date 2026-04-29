@@ -104,9 +104,13 @@ let ``insert at mid-buffer splits correctly`` () =
     s.Cursor |> should equal 2
 
 [<Fact>]
-let ``Wipe resets LinesRendered`` () =
+let ``Wipe preserves LinesRendered for redraw to clear screen`` () =
     let s = mkState "hello" 5
     s.LinesRendered <- 3
     let act = applyKey (special ConsoleKey.C ConsoleModifiers.Control) s
     act |> should equal Wipe
-    s.LinesRendered |> should equal 0
+    // applyKey must NOT reset LinesRendered — redraw needs the prior count
+    // to emit cursor-up + clear-to-end sequences. Render state is redraw's job.
+    s.LinesRendered |> should equal 3
+    s.Buffer.Count |> should equal 0
+    s.Cursor       |> should equal 0

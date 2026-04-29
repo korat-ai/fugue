@@ -33,7 +33,6 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
     if isCtrl k ConsoleKey.C then
         s.Buffer.Clear()
         s.Cursor <- 0
-        s.LinesRendered <- 0
         Wipe
     elif isCtrl k ConsoleKey.D then
         if s.Buffer.Count = 0 then Quit
@@ -116,7 +115,8 @@ let private redraw (st: S) =
     let lastRow = st.LinesRendered - 1
     let upBy = lastRow - row
     if upBy > 0 then writeRaw (sprintf "\x1b[%dA" upBy)
-    writeRaw (sprintf "\r\x1b[%dC" col)
+    if col > 0 then writeRaw (sprintf "\r\x1b[%dC" col)
+    else writeRaw "\r"
 
 let readAsync (prompt: string) (ct: CancellationToken) : Task<string option> = task {
     // Strip ANSI escapes for visible-length calc (rough — assumes only \x1b[...m sequences).
