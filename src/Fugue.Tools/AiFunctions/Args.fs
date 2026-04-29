@@ -21,7 +21,9 @@ let getStr (args: AIFunctionArguments) (key: string) : string =
 let tryGetInt (args: AIFunctionArguments) (key: string) : int option =
     match args.TryGetValue key with
     | true, (:? JsonElement as el) when el.ValueKind = JsonValueKind.Number ->
-        Some (el.GetInt32())
+        match el.TryGetInt32() with
+        | true, i -> Some i
+        | _ -> None
     | true, (:? int as i) -> Some i
     | true, (:? int64 as i) -> Some (int i)
     | _ -> None

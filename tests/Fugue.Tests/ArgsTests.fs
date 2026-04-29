@@ -1,6 +1,5 @@
 module Fugue.Tests.ArgsTests
 
-open System.Collections.Generic
 open System.Text.Json
 open Microsoft.Extensions.AI
 open Xunit
