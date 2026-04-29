@@ -11,15 +11,16 @@ let slashCommands : string list = [ "/help"; "/clear"; "/exit" ]
 
 /// Internal mutable line state. Public only because tests construct it directly.
 type S = {
-    mutable Buffer:        ResizeArray<char>
-    mutable Cursor:        int
-    mutable LinesRendered: int
-    mutable ExitArmed:     bool
-    PromptText:            string
-    PromptVisLen:          int
-    HintWhenArmed:         string
-    Width:                 int
-    SlashHelp:             (string * string) list  // (name, dim description) pairs
+    mutable Buffer:          ResizeArray<char>
+    mutable Cursor:          int
+    mutable LinesRendered:   int
+    mutable ExitArmed:       bool
+    mutable RowsBelowCursor: int   // # of rows from cursor's final position down to last rendered row
+    PromptText:              string
+    PromptVisLen:            int
+    HintWhenArmed:           string
+    Width:                   int
+    SlashHelp:               (string * string) list  // (name, dim description) pairs
 }
 
 /// Action returned by the pure key-handler. The caller (read-loop) decides what to do.
@@ -127,6 +128,10 @@ let private eraseLines (count: int) : unit =
 
 let private redraw (st: S) =
     // 1. cursor up to start of our previous render, clear per-line (not full screen end)
+    // Before erasing, move cursor to the bottom of the previously-rendered area so
+    // eraseLines (which walks UP count-1 rows) starts from the correct position.
+    if st.RowsBelowCursor > 0 then
+        writeRaw ("\x1b[" + string st.RowsBelowCursor + "B")
     eraseLines st.LinesRendered
     // 2. emit prompt + buffer
     if st.LinesRendered = 0 then writeRaw "\r"
@@ -166,6 +171,7 @@ let private redraw (st: S) =
     if upBy > 0 then writeRaw ("\x1b[" + string upBy + "A")
     if col > 0 then writeRaw ("\r\x1b[" + string col + "C")
     else writeRaw "\r"
+    st.RowsBelowCursor <- upBy   // save for next redraw's erase pass
 
 let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task<string option> = task {
     // Strip ANSI escapes for visible-length calc (rough — assumes only \x1b[...m sequences).
@@ -185,15 +191,16 @@ let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task
           "/clear", strings.CmdClearDesc
           "/exit",  strings.CmdExitDesc ]
     let st : S =
-        { Buffer        = ResizeArray<char>()
-          Cursor        = 0
-          LinesRendered = 0
-          ExitArmed     = false
-          PromptText    = prompt
-          PromptVisLen  = visLen
-          HintWhenArmed = strings.ExitHint
-          Width         = max 40 Console.WindowWidth
-          SlashHelp     = slashHelp }
+        { Buffer          = ResizeArray<char>()
+          Cursor          = 0
+          LinesRendered   = 0
+          ExitArmed       = false
+          RowsBelowCursor = 0
+          PromptText      = prompt
+          PromptVisLen    = visLen
+          HintWhenArmed   = strings.ExitHint
+          Width           = max 40 Console.WindowWidth
+          SlashHelp       = slashHelp }
 
     Console.TreatControlCAsInput <- true
     try
@@ -203,7 +210,11 @@ let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task
             // Console.ReadKey is blocking; we accept that — cancellation in this
             // path is not expected in normal flow (Ctrl+C while reading is a wipe).
             let k = Console.ReadKey(intercept = true)
-            let eraseRendered () = eraseLines st.LinesRendered
+            let eraseRendered () =
+                if st.RowsBelowCursor > 0 then
+                    writeRaw ("\x1b[" + string st.RowsBelowCursor + "B")
+                eraseLines st.LinesRendered
+                st.RowsBelowCursor <- 0
             match applyKey k st with
             | Continue -> redraw st
             | Wipe     -> redraw st

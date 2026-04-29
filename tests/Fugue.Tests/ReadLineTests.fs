@@ -7,15 +7,16 @@ open FsUnit.Xunit
 open Fugue.Cli.ReadLine
 
 let private mkState (text: string) (cursor: int) : S =
-    { Buffer        = ResizeArray<char>(text.ToCharArray())
-      Cursor        = cursor
-      LinesRendered = 0
-      ExitArmed     = false
-      PromptText    = "> "
-      PromptVisLen  = 2
-      HintWhenArmed = "Press Ctrl+C again to exit"
-      Width         = 80
-      SlashHelp     = [] }
+    { Buffer          = ResizeArray<char>(text.ToCharArray())
+      Cursor          = cursor
+      LinesRendered   = 0
+      ExitArmed       = false
+      RowsBelowCursor = 0
+      PromptText      = "> "
+      PromptVisLen    = 2
+      HintWhenArmed   = "Press Ctrl+C again to exit"
+      Width           = 80
+      SlashHelp       = [] }
 
 let private key (c: char) (mods: ConsoleModifiers) : ConsoleKeyInfo =
     let cKey =

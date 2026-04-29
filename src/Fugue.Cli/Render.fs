@@ -47,7 +47,7 @@ let private renderToolBody (output: string) : IRenderable =
         let trimmed =
             if lines.Length > 12 then
                 Array.append (Array.truncate 12 lines)
-                    [| "[dim]+ " + string (lines.Length - 12) + " more lines[/]" |]
+                    [| "+ " + string (lines.Length - 12) + " more lines" |]
             else lines
         let rows =
             trimmed
