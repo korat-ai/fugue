@@ -3,6 +3,7 @@ module Fugue.Cli.Repl
 open System
 open System.Collections.Generic
 open System.Diagnostics.CodeAnalysis
+open System.Text
 open System.Threading
 open System.Threading.Tasks
 open Microsoft.Agents.AI
@@ -11,6 +12,16 @@ open Fugue.Core.Config
 open Fugue.Core.Localization
 open Fugue.Agent
 open Fugue.Cli
+
+/// Cheap heuristic — does the text contain markdown markers worth re-rendering?
+/// Avoids re-printing pure plain text twice. False positives (e.g. raw `**` in code)
+/// are acceptable; the markdown render still produces readable output.
+let private hasMarkdown (s: string) : bool =
+    s.Contains "```" || s.Contains "**"
+    || s.Split('\n') |> Array.exists (fun l ->
+        let t = l.TrimStart()
+        t.StartsWith "# " || t.StartsWith "## " || t.StartsWith "### "
+        || t.StartsWith "- " || t.StartsWith "* " || t.StartsWith "1. ")
 
 /// Holder for the currently active stream's CancellationTokenSource.
 /// Console.CancelKeyPress handler uses this to cancel mid-stream Ctrl+C.
@@ -47,6 +58,8 @@ let private streamAndRender
     // id -> (name, args) bookkeeping so ToolCompleted can recover the tool's identity.
     let toolMeta = Dictionary<string, string * string>()
     let mutable assistantStreaming = false  // true while we're emitting raw assistant text without a trailing newline
+    // Buffer the latest text segment (between the start / a tool / end). Used for the post-stream markdown re-render.
+    let textBuf = StringBuilder()
 
     try
         let stream = Conversation.run agent session input streamCts.Token
@@ -60,14 +73,15 @@ let private streamAndRender
                     // Stream raw text directly — scroll region handles wrapping.
                     Console.Out.Write t
                     Console.Out.Flush()
+                    textBuf.Append t |> ignore
                     assistantStreaming <- true
                 | Conversation.ToolStarted(id, name, args) ->
+                    // Don't render anything on Started — wait for Completed and render once.
+                    // Saves vertical space and avoids the duplicate-bullet visual.
                     toolMeta.[id] <- (name, args)
                     if assistantStreaming then
                         Console.Out.WriteLine ()
                         assistantStreaming <- false
-                    AnsiConsole.Write(Render.toolBullet strings (Render.Running(name, args)))
-                    AnsiConsole.WriteLine ()
                 | Conversation.ToolCompleted(id, output, isErr) ->
                     let name, args =
                         match toolMeta.TryGetValue id with
@@ -82,6 +96,11 @@ let private streamAndRender
                 | Conversation.Failed ex -> raise ex
             else hasNext <- false
         if assistantStreaming then Console.Out.WriteLine ()
+        // Post-stream: if the buffered text has markdown markers, re-render it formatted below.
+        let text = textBuf.ToString()
+        if text.Length > 0 && hasMarkdown text then
+            AnsiConsole.Write(Render.assistantFinal text)
+            AnsiConsole.WriteLine ()
     with
     | :? OperationCanceledException ->
         if assistantStreaming then Console.Out.WriteLine ()
