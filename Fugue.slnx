@@ -1,2 +1,5 @@
 <Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Fugue.Cli/Fugue.Cli.fsproj" />
+  </Folder>
 </Solution>
