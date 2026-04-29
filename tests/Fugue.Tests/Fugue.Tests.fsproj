@@ -8,6 +8,7 @@
     <Compile Include="ConfigTests.fs" />
     <Compile Include="ReadToolTests.fs" />
     <Compile Include="WriteToolTests.fs" />
+    <Compile Include="EditToolTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
