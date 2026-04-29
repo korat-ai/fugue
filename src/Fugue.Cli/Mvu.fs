@@ -227,8 +227,14 @@ let run<'model, 'msg>
             | other ->
                 tv.Add other |> ignore
             // Restore focus onto the new TextField (single input field in MVP).
+            // TG v2's OnHasFocusChanged auto-selects all text when focus is set
+            // programmatically and !_focusSetByMouse — undo that with ClearAllSelection
+            // immediately after SetFocus, otherwise the next keystroke replaces the line.
             findFirstTextField tv
-            |> Option.iter (fun f -> f.SetFocus() |> ignore)
+            |> Option.iter (fun f ->
+                f.SetFocus() |> ignore
+                f.ClearAllSelection()
+                f.MoveEnd() |> ignore)
             tv.SetNeedsDraw()
 
     let dispatch (msg: 'msg) =
@@ -253,7 +259,10 @@ let run<'model, 'msg>
             // View.Initialized fires once after the view is attached and laid out.
             w.Initialized.Add(fun _ ->
                 findFirstTextField w
-                |> Option.iter (fun f -> f.SetFocus() |> ignore))
+                |> Option.iter (fun f ->
+                    f.SetFocus() |> ignore
+                    f.ClearAllSelection()
+                    f.MoveEnd() |> ignore))
             w :> IRunnable
         | other ->
             let w = new Window()
