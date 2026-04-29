@@ -85,15 +85,27 @@ let private writeRaw (s: string) =
     Console.Out.Write s
     Console.Out.Flush()
 
-let private redraw (st: S) =
-    // 1. cursor up to start of our previous render, clear from there to screen end
-    if st.LinesRendered > 0 then
-        if st.LinesRendered > 1 then
-            writeRaw ("\x1b[" + string (st.LinesRendered - 1) + "A")
-        writeRaw "\r\x1b[J"
-    else
+/// Clear `count` rows starting at the cursor's current row and moving downward.
+/// Cursor is left at column 0 of the top row of the cleared area.
+/// Uses per-line \x1b[K so it does NOT cross the scroll region (status bar stays).
+let private eraseLines (count: int) : unit =
+    if count > 0 then
+        // Move up to top of the rendered area.
+        if count > 1 then writeRaw ("\x1b[" + string (count - 1) + "A")
         writeRaw "\r"
+        // Clear each rendered line, walking down.
+        for i in 0 .. count - 1 do
+            writeRaw "\x1b[K"
+            if i < count - 1 then writeRaw "\x1b[B"
+        // Walk back up to the top so caller can re-render from there.
+        if count > 1 then writeRaw ("\x1b[" + string (count - 1) + "A")
+        writeRaw "\r"
+
+let private redraw (st: S) =
+    // 1. cursor up to start of our previous render, clear per-line (not full screen end)
+    eraseLines st.LinesRendered
     // 2. emit prompt + buffer
+    if st.LinesRendered = 0 then writeRaw "\r"
     writeRaw st.PromptText
     let bufStr = String(st.Buffer.ToArray())
     writeRaw bufStr
@@ -147,10 +159,7 @@ let readAsync (prompt: string) (ct: CancellationToken) : Task<string option> = t
             // Console.ReadKey is blocking; we accept that — cancellation in this
             // path is not expected in normal flow (Ctrl+C while reading is a wipe).
             let k = Console.ReadKey(intercept = true)
-            let eraseRendered () =
-                if st.LinesRendered > 1 then
-                    writeRaw ("\x1b[" + string (st.LinesRendered - 1) + "A")
-                writeRaw "\r\x1b[J"
+            let eraseRendered () = eraseLines st.LinesRendered
             match applyKey k st with
             | Continue -> redraw st
             | Wipe     -> redraw st
