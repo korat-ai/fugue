@@ -10,10 +10,34 @@ type ProviderConfig =
     | OpenAI of apiKey: string * model: string
     | Ollama of endpoint: Uri * model: string
 
+type UserAlignment = Left | Right
+
+type UiConfig =
+    { UserAlignment: UserAlignment
+      Locale:        string }
+
+let private defaultLocale () =
+    let envLoc =
+        match Environment.GetEnvironmentVariable "FUGUE_LOCALE" with
+        | null | "" -> None
+        | s -> Some s
+    match envLoc with
+    | Some "ru" -> "ru"
+    | Some "en" -> "en"
+    | _ ->
+        match System.Globalization.CultureInfo.CurrentCulture.TwoLetterISOLanguageName with
+        | "ru" -> "ru"
+        | _ -> "en"
+
+let defaultUi () : UiConfig =
+    { UserAlignment = Left
+      Locale = defaultLocale () }
+
 type AppConfig =
     { Provider: ProviderConfig
       SystemPrompt: string option
-      MaxIterations: int }
+      MaxIterations: int
+      Ui: UiConfig }
 
 type ConfigError =
     | NoConfigFound of help: string
@@ -101,19 +125,19 @@ Set environment variables:
 let load (_argv: string[]) : Result<AppConfig, ConfigError> =
     match fromExplicitEnv () with
     | Some provider ->
-        Ok { Provider = provider; SystemPrompt = None; MaxIterations = 30 }
+        Ok { Provider = provider; SystemPrompt = None; MaxIterations = 30; Ui = defaultUi () }
     | None ->
         let path = configPath ()
         if File.Exists path then
             match fromFile path with
             | Ok (p, mi) ->
                 let mi = if mi <= 0 then 30 else mi
-                Ok { Provider = p; SystemPrompt = None; MaxIterations = mi }
+                Ok { Provider = p; SystemPrompt = None; MaxIterations = mi; Ui = defaultUi () }
             | Error e -> Error(InvalidConfig e)
         else
             match fromImplicitEnv () with
             | Some provider ->
-                Ok { Provider = provider; SystemPrompt = None; MaxIterations = 30 }
+                Ok { Provider = provider; SystemPrompt = None; MaxIterations = 30; Ui = defaultUi () }
             | None ->
                 Error(NoConfigFound (helpText ()))
 

@@ -116,7 +116,7 @@ let main argv =
                     let m = if List.isEmpty models then "llama3.1" else List.head models
                     Ollama(ep, m)
                 | _ -> failwith "unsupported candidate"
-            let cfg = { Provider = provider; SystemPrompt = None; MaxIterations = 30 }
+            let cfg = { Provider = provider; SystemPrompt = None; MaxIterations = 30; Ui = Fugue.Core.Config.defaultUi () }
             Fugue.Core.Config.saveToFile cfg
             runWithCfg cfg
         | None ->

@@ -10,7 +10,7 @@ open Fugue.Cli.Update
 open Fugue.Core.Config
 
 let private freshModel () =
-    { Config = { Provider = Anthropic("k", "m"); SystemPrompt = None; MaxIterations = 30 }
+    { Config = { Provider = Anthropic("k", "m"); SystemPrompt = None; MaxIterations = 30; Ui = Fugue.Core.Config.defaultUi () }
       Session = None
       History = []
       Input = ""
