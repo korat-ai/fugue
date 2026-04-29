@@ -3,7 +3,6 @@ module Fugue.Cli.StatusBar
 open System
 open System.Diagnostics
 open System.IO
-open System.Threading
 open Fugue.Core.Localization
 open Fugue.Core.Config
 
@@ -62,23 +61,24 @@ let refresh () =
         | Some c -> Fugue.Core.Localization.pick c.Ui.Locale
         | None   -> Fugue.Core.Localization.en
     let line1 =
-        sprintf "[grey]%s %s [bold]%s[/][/]"
+        sprintf "\x1b[90m%s %s \x1b[1m%s\x1b[0m"
             (homeRel cwd) strings.StatusBarOn (branchOf cwd)
     let line2 =
         match cfg with
-        | Some c -> sprintf "[grey]%s · %s[/]" strings.StatusBarApp (providerLabel c)
-        | None   -> sprintf "[grey]%s[/]" strings.StatusBarApp
+        | Some c -> sprintf "\x1b[90m%s · %s\x1b[0m" strings.StatusBarApp (providerLabel c)
+        | None   -> sprintf "\x1b[90m%s\x1b[0m" strings.StatusBarApp
     // save cursor, jump to bottom-1, clear two lines, write, restore
     writeRaw "\x1b[s"
     writeRaw (sprintf "\x1b[%d;1H" (height - 1))
     writeRaw "\x1b[2K"
-    Spectre.Console.AnsiConsole.Markup line1
+    writeRaw line1
     writeRaw (sprintf "\x1b[%d;1H" height)
     writeRaw "\x1b[2K"
-    Spectre.Console.AnsiConsole.Markup line2
+    writeRaw line2
     writeRaw "\x1b[u"
 
 let start (initialCwd: string) (initialCfg: AppConfig) : unit =
+    if active then () else
     cwd <- initialCwd
     cfg <- Some initialCfg
     active <- true
@@ -98,4 +98,5 @@ let stop () : unit =
     writeRaw "\x1b[2K"
     writeRaw (sprintf "\x1b[%d;1H" height)
     writeRaw "\x1b[2K"
+    writeRaw "\x1b[u"
     active <- false
