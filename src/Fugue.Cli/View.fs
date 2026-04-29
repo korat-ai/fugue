@@ -24,11 +24,12 @@ let view (model: Model) (dispatch: Msg -> unit) : ViewNode =
         | Fugue.Core.Config.OpenAI(_, m) -> sprintf "Fugue — %s" m
         | Fugue.Core.Config.Ollama(_, m) -> sprintf "Fugue — ollama:%s" m
 
-    // Render history as a stack of Labels inside a Frame.
-    let chatChildren =
+    // Render history as a single read-only TextView with word-wrap.
+    // Gives us multi-line wrapping, mouse selection, and built-in scroll for free.
+    let chatText =
         model.History
-        |> List.mapi (fun i block ->
-            Label(PAbs 1, PAbs i, renderBlockText block))
+        |> List.map renderBlockText
+        |> String.concat "\n\n"
 
     let inputTitle =
         if model.Streaming then "input — generating, Esc to cancel" else "input"
@@ -39,7 +40,10 @@ let view (model: Model) (dispatch: Msg -> unit) : ViewNode =
         Frame("chat",
             x = PAbs 0, y = PAbs 0,
             w = DFill, h = DPercent 80,
-            children = chatChildren)
+            children = [
+                TextView(PAbs 0, PAbs 0, DFill, DFill, chatText,
+                         readOnly = true, wordWrap = true)
+            ])
 
         Frame(inputTitle,
             x = PAbs 0, y = PPercent 80,

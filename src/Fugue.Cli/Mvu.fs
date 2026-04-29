@@ -63,6 +63,9 @@ type ViewNode =
     | Label  of x: Pos * y: Pos * text: string
     /// An editable text field.  onChange receives the new string value after each keystroke.
     | TextField of x: Pos * y: Pos * w: Dim * value: string * onChange: (string -> unit)
+    /// Read-only multi-line text view with word-wrap and built-in scroll/selection.
+    /// Used for chat history; auto-scrolls to bottom on rebuild.
+    | TextView of x: Pos * y: Pos * w: Dim * h: Dim * text: string * readOnly: bool * wordWrap: bool
     /// A status bar at the bottom of the screen.
     | StatusBar of items: (Key * string * (unit -> unit)) list
 
@@ -134,9 +137,25 @@ let rec private buildView (node: ViewNode) : View =
         tf.Y     <- toTGPos y
         tf.Width <- toTGDim w
         tf.Text  <- value
+        // After a rerender we recreate the field with the latest model.Input; place the
+        // caret at end-of-text so the next keystroke continues where the user left off.
+        tf.SelectedStart <- value.Length
         // TextField.TextChanged fires after every change; read .Text (string) for current value.
         tf.TextChanged.Add(fun _ -> onChange (tf.Text))
         tf :> View
+
+    | TextView (x, y, w, h, text, ro, ww) ->
+        let tv = new Terminal.Gui.Views.TextView()
+        tv.X        <- toTGPos x
+        tv.Y        <- toTGPos y
+        tv.Width    <- toTGDim w
+        tv.Height   <- toTGDim h
+        tv.ReadOnly <- ro
+        tv.WordWrap <- ww
+        tv.Text     <- text
+        // Auto-scroll to the last line so newest chat content stays in view.
+        tv.MoveEnd() |> ignore
+        tv :> View
 
     | StatusBar items ->
         let shortcuts =
@@ -147,6 +166,19 @@ let rec private buildView (node: ViewNode) : View =
             |> List.toSeq
         let sb = new Terminal.Gui.Views.StatusBar(shortcuts)
         sb :> View
+
+/// Recursively find the first TextField in a view tree.
+/// We use this to (a) move focus to the input on first paint, and
+/// (b) restore focus + cursor position after a rerender clears all sub-views.
+let rec private findFirstTextField (v: View) : Terminal.Gui.Views.TextField option =
+    match v with
+    | :? Terminal.Gui.Views.TextField as f -> Some f
+    | _ ->
+        let mutable found : Terminal.Gui.Views.TextField option = None
+        for child in v.SubViews do
+            if found.IsNone then
+                found <- findFirstTextField child
+        found
 
 // ---------------------------------------------------------------------------
 // run — main MVU loop
@@ -171,6 +203,8 @@ let run<'model, 'msg>
     let dispatchRef : ref<'msg -> unit> = ref (fun _ -> ())
 
     /// Re-render: rebuild view tree and splice updated children into the live top-level view.
+    /// After rebuild we re-focus the input field so the user can keep typing — buildView
+    /// also positions the caret at end-of-text via SelectedStart.
     let render () =
         let node = view model dispatchRef.Value
         let freshView = buildView node
@@ -190,6 +224,9 @@ let run<'model, 'msg>
                     tv.Add k |> ignore
             | other ->
                 tv.Add other |> ignore
+            // Restore focus onto the new TextField (single input field in MVP).
+            findFirstTextField tv
+            |> Option.iter (fun f -> f.SetFocus() |> ignore)
             tv.SetNeedsDraw()
 
     let dispatch (msg: 'msg) =
@@ -209,7 +246,13 @@ let run<'model, 'msg>
     let initialNode = view model dispatch
     let initialView =
         match buildView initialNode with
-        | :? Window as w -> w :> IRunnable
+        | :? Window as w ->
+            // Move focus to the input on first paint so the user can type immediately.
+            // View.Initialized fires once after the view is attached and laid out.
+            w.Initialized.Add(fun _ ->
+                findFirstTextField w
+                |> Option.iter (fun f -> f.SetFocus() |> ignore))
+            w :> IRunnable
         | other ->
             let w = new Window()
             w.Add other |> ignore

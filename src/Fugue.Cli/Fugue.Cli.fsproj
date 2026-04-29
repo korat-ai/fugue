@@ -5,6 +5,9 @@
     <RootNamespace>Fugue.Cli</RootNamespace>
     <AssemblyName>fugue</AssemblyName>
     <NoWarn>$(NoWarn);IL2026;IL3050;IL3053;IL2104</NoWarn>
+    <!-- Trim disables reflection-based STJ. AIFunctionFactory + Anthropic.SDK
+         serialize tool args/results via reflection — re-enable globally. -->
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
 
   <!-- ReadyToRun + partial Trim instead of full AOT.
