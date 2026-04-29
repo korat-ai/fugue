@@ -10,6 +10,7 @@
     <Compile Include="BashTool.fs" />
     <Compile Include="GlobTool.fs" />
     <Compile Include="GrepTool.fs" />
+    <Compile Include="AiFunctions/Args.fs" />
     <Compile Include="ToolRegistry.fs" />
   </ItemGroup>
   <ItemGroup>
