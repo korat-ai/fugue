@@ -33,6 +33,7 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
     if isCtrl k ConsoleKey.C then
         s.Buffer.Clear()
         s.Cursor <- 0
+        s.LinesRendered <- 0
         Wipe
     elif isCtrl k ConsoleKey.D then
         if s.Buffer.Count = 0 then Quit
@@ -74,7 +75,7 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
         while i < s.Buffer.Count && s.Buffer.[i] <> '\n' do i <- i + 1
         s.Cursor <- i
         Continue
-    elif k.KeyChar <> ' ' && not (Char.IsControl k.KeyChar) then
+    elif not (Char.IsControl k.KeyChar) then
         s.Buffer.Insert(s.Cursor, k.KeyChar)
         s.Cursor <- s.Cursor + 1
         Continue

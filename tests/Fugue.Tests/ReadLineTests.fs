@@ -78,3 +78,35 @@ let ``LeftArrow at cursor 0 stays at 0`` () =
     let act = applyKey (special ConsoleKey.LeftArrow ConsoleModifiers.None) s
     act |> should equal Continue
     s.Cursor |> should equal 0
+
+[<Fact>]
+let ``space is insertable`` () =
+    let s = mkState "" 0
+    let act = applyKey (key ' ' ConsoleModifiers.None) s
+    act |> should equal Continue
+    String(s.Buffer.ToArray()) |> should equal " "
+    s.Cursor |> should equal 1
+
+[<Fact>]
+let ``Backspace at cursor 0 is no-op`` () =
+    let s = mkState "abc" 0
+    let act = applyKey (special ConsoleKey.Backspace ConsoleModifiers.None) s
+    act |> should equal Continue
+    String(s.Buffer.ToArray()) |> should equal "abc"
+    s.Cursor |> should equal 0
+
+[<Fact>]
+let ``insert at mid-buffer splits correctly`` () =
+    let s = mkState "ab" 1
+    let act = applyKey (key 'x' ConsoleModifiers.None) s
+    act |> should equal Continue
+    String(s.Buffer.ToArray()) |> should equal "axb"
+    s.Cursor |> should equal 2
+
+[<Fact>]
+let ``Wipe resets LinesRendered`` () =
+    let s = mkState "hello" 5
+    s.LinesRendered <- 3
+    let act = applyKey (special ConsoleKey.C ConsoleModifiers.Control) s
+    act |> should equal Wipe
+    s.LinesRendered |> should equal 0
