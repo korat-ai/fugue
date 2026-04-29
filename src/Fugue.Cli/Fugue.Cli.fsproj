@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Fugue.Cli</RootNamespace>
     <AssemblyName>fugue</AssemblyName>
-    <NoWarn>$(NoWarn);IL2026;IL3050;IL3053</NoWarn>
+    <NoWarn>$(NoWarn);IL2026;IL3050;IL3053;IL2104</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Mvu.fs" />
@@ -15,6 +15,13 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Terminal.Gui" Version="2.*" />
+  </ItemGroup>
+
+  <!-- Required for AOT: keep all Terminal.Gui types so ConfigurationManager's
+       reflection-based DeepCloner can construct Scheme/Theme objects at startup.
+       See gui-cs/Terminal.Gui#5069. Adds ~1.5 MB to the binary. -->
+  <ItemGroup>
+    <TrimmerRootAssembly Include="Terminal.Gui" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Fugue.Core\Fugue.Core.fsproj" />
