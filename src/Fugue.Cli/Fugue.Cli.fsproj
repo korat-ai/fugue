@@ -4,43 +4,24 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Fugue.Cli</RootNamespace>
     <AssemblyName>fugue</AssemblyName>
-    <NoWarn>$(NoWarn);IL2026;IL3050;IL3053;IL2104</NoWarn>
-    <!-- Trim disables reflection-based STJ. AIFunctionFactory + Anthropic.SDK
-         serialize tool args/results via reflection — re-enable globally. -->
     <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
 
-  <!-- ReadyToRun + partial Trim instead of full AOT.
-       Reason: AIFunctionFactory.Create reflects over F# `option` parameter types,
-       which require runtime JsonTypeInfo metadata not available under AOT.
-       R2R + partial trim keeps reflection working while still giving fast startup
-       and a smaller binary than a plain framework-dependent publish. -->
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <PublishReadyToRun>true</PublishReadyToRun>
-    <PublishTrimmed>true</PublishTrimmed>
-    <TrimMode>partial</TrimMode>
-    <PublishSelfContained>true</PublishSelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-  </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Mvu.fs" />
-    <Compile Include="Model.fs" />
-    <Compile Include="Update.fs" />
-    <Compile Include="View.fs" />
+    <Compile Include="ReadLine.fs" />
+    <Compile Include="MarkdownRender.fs" />
+    <Compile Include="DiffRender.fs" />
+    <Compile Include="Render.fs" />
+    <Compile Include="StatusBar.fs" />
+    <Compile Include="Repl.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
+
   <ItemGroup>
-    <PackageReference Include="Terminal.Gui" Version="2.*" />
+    <PackageReference Include="Spectre.Console" Version="0.49.*" />
+    <PackageReference Include="Markdig" Version="0.41.*" />
   </ItemGroup>
 
-  <!-- Required for AOT: keep all Terminal.Gui types so ConfigurationManager's
-       reflection-based DeepCloner can construct Scheme/Theme objects at startup.
-       See gui-cs/Terminal.Gui#5069. Adds ~1.5 MB to the binary. -->
-  <ItemGroup>
-    <TrimmerRootAssembly Include="Terminal.Gui" />
-  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Fugue.Core\Fugue.Core.fsproj" />
     <ProjectReference Include="..\Fugue.Agent\Fugue.Agent.fsproj" />
