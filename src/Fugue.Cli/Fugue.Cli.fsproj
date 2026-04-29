@@ -11,9 +11,16 @@
     <StripSymbols>true</StripSymbols>
     <OptimizationPreference>Size</OptimizationPreference>
     <IlcGenerateStackTraceData>true</IlcGenerateStackTraceData>
-    <!-- Suppress third-party dependency IL warnings during baseline publish;
-         FS3511 = F# state machine not statically compilable (dynamic fallback works fine at AOT) -->
-    <NoWarn>$(NoWarn);IL2026;IL3050;IL3053;IL2104;FS3511</NoWarn>
+    <!-- FS3511: F# async state machine not statically compilable; dynamic fallback works correctly at AOT.
+         IL2104/IL3053: Assembly-level aggregate warnings for third-party assemblies that are not
+           AOT-annotated (FSharp.Core, Anthropic, OllamaSharp). Rooted via TrimmerRootAssembly so
+           all code is preserved; the IL2104 aggregate fires regardless once any warning is present
+           in those assemblies and cannot be suppressed per-method.
+         IL2026/IL3050: Fired in F# compiler-generated closures (.MoveNext, $cont) that cannot
+           inherit [RequiresUnreferencedCode/DynamicCode] from their outer function due to an F#
+           language limitation with AOT attribute propagation. The API surface functions are annotated
+           correctly. The runtime calls are safe because System.Text.Json is TrimmerRootAssembly. -->
+    <NoWarn>$(NoWarn);FS3511;IL2104;IL3053;IL2026;IL3050</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -37,15 +44,23 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- FSharp.Core: IL2104 aggressive-trim warning; also PrintfImpl uses MakeGenericMethod()
-         for numeric format specifiers (%d, %i, etc.) which is not AOT-compatible without
-         rooting. Rooting preserves all printf generic specializations at native-code gen time. -->
+    <!-- FSharp.Core: IL2104 aggregate trim warning + IL3053 AOT analysis warnings.
+         Rooted to preserve all F# runtime helpers including reflection paths used
+         by F# union/record type-tests and discriminated union infrastructure. -->
     <TrimmerRootAssembly Include="FSharp.Core" />
     <!-- System.Text.Json: preserve reflection-based deserialization code paths.
          AppConfigDto/UiConfigDto use CLIMutable records + STJ reflection fallback
-         (JsonSerializerIsReflectionEnabledByDefault=true). No F# JsonSerializerContext
-         source-gen available yet so we keep the full STJ reflection path alive. -->
+         (JsonSerializerIsReflectionEnabledByDefault=true). Our call sites are annotated
+         with RequiresUnreferencedCode/RequiresDynamicCode to propagate the warning correctly.
+         No F# JsonSerializerContext source-gen available yet. -->
     <TrimmerRootAssembly Include="System.Text.Json" />
+    <!-- Anthropic SDK: IL2104/IL3053 — uses reflection for JSON model DTOs.
+         Not rooted here to avoid ld "too many large addends" limit on macOS arm64.
+         Warnings suppressed via NoWarn; internal STJ reflection works because
+         System.Text.Json is fully rooted. -->
+    <!-- <TrimmerRootAssembly Include="Anthropic" /> -->
+    <!-- OllamaSharp: IL2104/IL3053 — same rationale as Anthropic above. -->
+    <!-- <TrimmerRootAssembly Include="OllamaSharp" /> -->
   </ItemGroup>
 
   <ItemGroup>

@@ -2,6 +2,7 @@ module Fugue.Agent.Conversation
 
 open System
 open System.Collections.Generic
+open System.Diagnostics.CodeAnalysis
 open System.Threading
 open System.Threading.Tasks
 open Microsoft.Agents.AI
@@ -19,6 +20,8 @@ type Event =
 /// Run a single user-input through the AIAgent and surface UI events.
 /// `session` is the persistent AgentSession (None — start fresh / null session).
 /// MAF handles the full tool-loop internally; we observe the stream.
+[<RequiresUnreferencedCode("Serializes FunctionCallContent.Arguments via STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
+[<RequiresDynamicCode("Serializes FunctionCallContent.Arguments via STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 let run
     (agent: AIAgent)
     (session: AgentSession | null)

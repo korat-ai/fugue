@@ -1,6 +1,7 @@
 module Fugue.Cli.Program
 
 open System
+open System.Diagnostics.CodeAnalysis
 open Microsoft.Agents.AI
 open Fugue.Core.Config
 open Fugue.Agent
@@ -14,6 +15,8 @@ let private buildAgent (cfg: AppConfig) : AIAgent =
         | None -> Fugue.Core.SystemPrompt.render cwd Fugue.Tools.ToolRegistry.names
     AgentFactory.create cfg.Provider sysPrompt tools
 
+[<RequiresUnreferencedCode("Calls Repl.run and Config.saveToFile which use STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
+[<RequiresDynamicCode("Calls Repl.run and Config.saveToFile which use STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 let private runWithCfg (cfg: AppConfig) : int =
     let agent = buildAgent cfg
     let cwd = Environment.CurrentDirectory

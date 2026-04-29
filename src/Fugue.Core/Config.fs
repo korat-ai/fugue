@@ -1,6 +1,7 @@
 module Fugue.Core.Config
 
 open System
+open System.Diagnostics.CodeAnalysis
 open System.IO
 open System.Text.Json
 open Fugue.Core.JsonContext
@@ -86,6 +87,8 @@ let private fromImplicitEnv () : ProviderConfig option =
     | _, Some k -> Some(OpenAI(k, "gpt-5"))
     | _ -> None
 
+[<RequiresUnreferencedCode("Uses STJ reflection; AppConfigDto is preserved via TrimmerRootDescriptor")>]
+[<RequiresDynamicCode("Uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 let private fromFile (path: string) : Result<ProviderConfig * int * UiConfig, string> =
     try
         let json = File.ReadAllText path
@@ -137,6 +140,8 @@ Set environment variables:
 ///   1. FUGUE_PROVIDER env (explicit user intent for THIS run)
 ///   2. ~/.fugue/config.json     (persisted user choice)
 ///   3. ANTHROPIC_API_KEY / OPENAI_API_KEY env (implicit fallback)
+[<RequiresUnreferencedCode("Uses STJ reflection via fromFile; preserved via TrimmerRootDescriptor")>]
+[<RequiresDynamicCode("Uses STJ reflection via fromFile; System.Text.Json is TrimmerRootAssembly")>]
 let load (_argv: string[]) : Result<AppConfig, ConfigError> =
     match fromExplicitEnv () with
     | Some provider ->
@@ -156,6 +161,8 @@ let load (_argv: string[]) : Result<AppConfig, ConfigError> =
             | None ->
                 Error(NoConfigFound (helpText ()))
 
+[<RequiresUnreferencedCode("Uses STJ reflection; AppConfigDto is preserved via TrimmerRootDescriptor")>]
+[<RequiresDynamicCode("Uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 let saveToFile (cfg: AppConfig) : unit =
     let path = configPath ()
     let dir = Path.GetDirectoryName(path) |> Option.ofObj |> Option.defaultValue "."

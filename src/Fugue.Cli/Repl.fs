@@ -2,6 +2,7 @@ module Fugue.Cli.Repl
 
 open System
 open System.Collections.Generic
+open System.Diagnostics.CodeAnalysis
 open System.Text
 open System.Threading
 open System.Threading.Tasks
@@ -106,6 +107,8 @@ let private streamAndRender
         AnsiConsole.WriteLine()
 }
 
+[<RequiresUnreferencedCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
+[<RequiresDynamicCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     use cancelSrc = new CancelSource()
     let handler = ConsoleCancelEventHandler(fun _ args -> cancelSrc.OnCtrlC args)
