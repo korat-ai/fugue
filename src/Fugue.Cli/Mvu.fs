@@ -84,6 +84,21 @@ let private toTGDim (d: Dim) : Terminal.Gui.ViewBase.Dim =
     | DPercent p -> Dim.Percent(p, DimPercentMode.ContentSize)
 
 // ---------------------------------------------------------------------------
+// App-level stop hook (for Quit handling from View without passing IApplication around)
+// ---------------------------------------------------------------------------
+
+/// Stores the live IApplication instance while Mvu.run is executing.
+/// View.fs reads this to call RequestStop() when the user triggers Quit.
+let mutable internal currentApp : IApplication option = None
+
+/// Request the running Terminal.Gui event loop to stop.
+/// Safe to call from any thread; no-op if called outside of Mvu.run.
+let requestStop () =
+    match currentApp with
+    | Some app -> app.RequestStop()
+    | None -> ()
+
+// ---------------------------------------------------------------------------
 // build: ViewNode -> View
 // ---------------------------------------------------------------------------
 
@@ -149,6 +164,7 @@ let run<'model, 'msg>
     : unit =
 
     use app = Application.Create().Init()
+    currentApp <- Some app
 
     let mutable model, initCmd = init ()
     // dispatchRef so closures captured before dispatch is defined can still call it.
@@ -207,3 +223,4 @@ let run<'model, 'msg>
     app.Run(initialView, fun ex ->
         // Unhandled exception handler — return false to propagate, true to swallow.
         false) |> ignore
+    currentApp <- None
