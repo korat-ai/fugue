@@ -19,6 +19,7 @@
     <Compile Include="ReadLineTests.fs" />
     <Compile Include="MarkdownRenderTests.fs" />
     <Compile Include="DiffRenderTests.fs" />
+    <Compile Include="RenderTests.fs" />
     <Compile Include="ReadToolTests.fs" />
     <Compile Include="WriteToolTests.fs" />
     <Compile Include="EditToolTests.fs" />
