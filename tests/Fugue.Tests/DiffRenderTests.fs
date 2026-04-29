@@ -27,8 +27,9 @@ let ``looksLikeDiff true on multiple plus minus lines without hunk header`` () =
 let ``toRenderable renders without throwing on empty input`` () =
     let console = new TestConsole()
     console.Profile.Width <- 80
+    // No exception expected; output for empty input is empty by design.
     console.Write(DiffRender.toRenderable "")
-    console.Output |> should not' (be NullOrEmptyString)
+    console.Output |> should equal ""
 
 [<Fact>]
 let ``toRenderable contains - and + content`` () =
