@@ -15,7 +15,12 @@ let create (provider: ProviderConfig) (systemPrompt: string) (tools: AIFunction 
 
     match provider with
     | Anthropic(apiKey, model) ->
-        let client = new AnthropicClient(Core.ClientOptions(ApiKey = apiKey))
+        // ANTHROPIC_BASE_URL allows pointing at local Anthropic-compat servers (LM Studio, proxies).
+        let opts =
+            match Environment.GetEnvironmentVariable "ANTHROPIC_BASE_URL" with
+            | null | "" -> Core.ClientOptions(ApiKey = apiKey)
+            | url       -> Core.ClientOptions(ApiKey = apiKey, BaseUrl = url)
+        let client = new AnthropicClient(opts)
         client.AsAIAgent(
             model = model,
             instructions = systemPrompt,
