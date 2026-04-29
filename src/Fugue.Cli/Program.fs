@@ -1,5 +1,61 @@
 module Fugue.Cli.Program
 
-// Stub entrypoint — real implementation added in Task 3.9.
+open System
+open Microsoft.Agents.AI
+open Fugue.Core.Config
+open Fugue.Agent
+
+let private buildAgent (cfg: AppConfig) : AIAgent =
+    let cwd = Environment.CurrentDirectory
+    let tools = Fugue.Tools.ToolRegistry.buildAll cwd
+    let sysPrompt =
+        match cfg.SystemPrompt with
+        | Some s -> s
+        | None -> Fugue.Core.SystemPrompt.render cwd Fugue.Tools.ToolRegistry.names
+    AgentFactory.create cfg.Provider sysPrompt tools
+
+let private runWithCfg (cfg: AppConfig) : int =
+    let agent = buildAgent cfg
+    let cwd = Environment.CurrentDirectory
+    let t = Repl.run agent cfg cwd
+    try t.Wait()
+    with
+    | :? AggregateException as agg ->
+        match agg.InnerException with
+        | :? OperationCanceledException -> ()
+        | _ -> raise agg
+    0
+
 [<EntryPoint>]
-let main _ = 0
+let main argv =
+    Fugue.Core.Log.session ()
+    Fugue.Core.Log.info "main" (sprintf "fugue starting, argv=[%s]" (String.concat "; " argv))
+    match Fugue.Core.Config.load argv with
+    | Error (NoConfigFound help) ->
+        let candidates = Discovery.discover (Discovery.defaultSources ())
+        match Discovery.prompt candidates with
+        | Some chosen ->
+            let provider =
+                match chosen with
+                | Discovery.EnvKey("anthropic", model, _) ->
+                    let key = Environment.GetEnvironmentVariable "ANTHROPIC_API_KEY" |> Option.ofObj |> Option.defaultValue ""
+                    Anthropic(key, model)
+                | Discovery.EnvKey("openai", model, _) ->
+                    let key = Environment.GetEnvironmentVariable "OPENAI_API_KEY" |> Option.ofObj |> Option.defaultValue ""
+                    OpenAI(key, model)
+                | Discovery.ClaudeSettings(model, key) -> Anthropic(key, model)
+                | Discovery.OllamaLocal(ep, models) ->
+                    let m = if List.isEmpty models then "llama3.1" else List.head models
+                    Ollama(ep, m)
+                | _ -> failwith "unsupported candidate"
+            let cfg = { Provider = provider; SystemPrompt = None; MaxIterations = 30; Ui = Fugue.Core.Config.defaultUi () }
+            Fugue.Core.Config.saveToFile cfg
+            runWithCfg cfg
+        | None ->
+            eprintfn "%s" help
+            1
+    | Error (InvalidConfig reason) ->
+        eprintfn "Invalid config: %s" reason
+        1
+    | Ok cfg ->
+        runWithCfg cfg
