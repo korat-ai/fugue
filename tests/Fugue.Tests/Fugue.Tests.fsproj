@@ -12,6 +12,7 @@
     <Compile Include="EditFnTests.fs" />
     <Compile Include="BashFnTests.fs" />
     <Compile Include="GlobFnTests.fs" />
+    <Compile Include="GrepFnTests.fs" />
     <Compile Include="ConfigTests.fs" />
     <Compile Include="ReadToolTests.fs" />
     <Compile Include="WriteToolTests.fs" />
