@@ -1,5 +1,20 @@
 # Fugue — pivot на Spectre.Console + Native AOT
 
+> **🚫 ABANDONED — 2026-04-29.**
+> Pivot не запущен. Причина: исследование показало, что Spectre.Console **by design** не поддерживает
+> persistent input bar (зафиксированный ввод внизу экрана пока контент стримится сверху) —
+> это подтверждено мейнтейнерами в [discussion #1233](https://github.com/spectreconsole/spectre.console/discussions/1233)
+> и в документации `LiveDisplay` («not thread safe, not supported with prompts»).
+> REPL-модель (`user>` / `assistant>` строками в scrollback) для пользователя оказалась неприемлемой —
+> хотел Claude-Code-style UX. Остаёмся на Terminal.Gui v2 + R2R+Trim.
+>
+> Спека сохранена для истории решения. Если в будущем вернёмся к выбору TUI:
+> кандидаты под full AOT + persistent input — **Termina** (Aaronontheweb/termina, AOT-compatible,
+> reactive, активно развивается, но C#-only API), **Consolonia** (XAML), **Hex1b** (React-like).
+> Terminal.Gui v2 свой AOT-путь так и не довёл до конца (DeepCloner на ConfigurationManager).
+
+---
+
 **Дата:** 2026-04-29
 **Заменяет (частично):** `docs/superpowers/specs/2026-04-29-fugue-design.md` — секции "TUI / MVU layer" и "AOT-риски и митигации".
 **Статус MVP до pivot'а:** работает на Terminal.Gui v2 + R2R+Trim, 42 MB single-file бинарь, два UX-блокера (фокус, selection), один runtime-warning ("Reflection-based serialization disabled"), AOT не достигнут.
