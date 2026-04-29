@@ -15,6 +15,7 @@
     <Compile Include="AiFunctions/ReadFn.fs" />
     <Compile Include="AiFunctions/WriteFn.fs" />
     <Compile Include="AiFunctions/EditFn.fs" />
+    <Compile Include="AiFunctions/BashFn.fs" />
     <Compile Include="ToolRegistry.fs" />
   </ItemGroup>
   <ItemGroup>
