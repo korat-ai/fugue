@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Domain.fs" />
+    <Compile Include="SystemPrompt.fs" />
+    <Compile Include="JsonContext.fs" />
+    <Compile Include="Config.fs" />
+  </ItemGroup>
+</Project>
