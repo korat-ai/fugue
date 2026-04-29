@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <Compile Include="ReadLine.fs" />
+    <Compile Include="MarkdownRender.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
