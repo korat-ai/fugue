@@ -9,6 +9,7 @@
     <Compile Include="DelegatedFnTests.fs" />
     <Compile Include="ReadFnTests.fs" />
     <Compile Include="WriteFnTests.fs" />
+    <Compile Include="EditFnTests.fs" />
     <Compile Include="ConfigTests.fs" />
     <Compile Include="ReadToolTests.fs" />
     <Compile Include="WriteToolTests.fs" />
