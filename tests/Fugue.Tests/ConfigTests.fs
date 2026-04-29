@@ -18,7 +18,11 @@ let ``load returns NoConfigFound when env empty and no file`` () =
     | other -> failwithf "expected NoConfigFound, got %A" other
 
 [<Fact>]
-let ``load picks Anthropic when ANTHROPIC_API_KEY set`` () =
+let ``load picks Anthropic when ANTHROPIC_API_KEY set and no config file`` () =
+    // Isolate HOME so the user's real ~/.fugue/config.json doesn't shadow the
+    // implicit-env fallback (file > implicit-env per Config.load priority).
+    let tmpHome = IO.Path.Combine(IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
     Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", "sk-ant-test")
     Environment.SetEnvironmentVariable("OPENAI_API_KEY", null)
     Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
