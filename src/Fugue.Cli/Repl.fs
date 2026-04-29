@@ -85,7 +85,7 @@ let private streamAndRender
                             else Render.Running("?", "?")
                         tools.[id] <- finishState prev err o
                     | Conversation.Finished -> ()
-                    | Conversation.Failed _ -> ()
+                    | Conversation.Failed ex -> raise ex
                     ctx.UpdateTarget(layout())
                     ctx.Refresh()
                 else hasNext <- false
@@ -108,7 +108,8 @@ let private streamAndRender
 
 let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     use cancelSrc = new CancelSource()
-    Console.CancelKeyPress.Add(fun args -> cancelSrc.OnCtrlC args)
+    let handler = ConsoleCancelEventHandler(fun _ args -> cancelSrc.OnCtrlC args)
+    Console.CancelKeyPress.AddHandler handler
     let! session = agent.CreateSessionAsync(CancellationToken.None)
     StatusBar.start cwd cfg
 
@@ -130,5 +131,6 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 do! streamAndRender agent session userInput cfg cancelSrc
                 StatusBar.refresh ()
     finally
+        Console.CancelKeyPress.RemoveHandler handler
         StatusBar.stop ()
 }
