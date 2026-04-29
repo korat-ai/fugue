@@ -6,6 +6,21 @@
     <AssemblyName>fugue</AssemblyName>
     <NoWarn>$(NoWarn);IL2026;IL3050;IL3053;IL2104</NoWarn>
   </PropertyGroup>
+
+  <!-- ReadyToRun + partial Trim instead of full AOT.
+       Reason: AIFunctionFactory.Create reflects over F# `option` parameter types,
+       which require runtime JsonTypeInfo metadata not available under AOT.
+       R2R + partial trim keeps reflection working while still giving fast startup
+       and a smaller binary than a plain framework-dependent publish. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <PublishSelfContained>true</PublishSelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
   <ItemGroup>
     <Compile Include="Mvu.fs" />
     <Compile Include="Model.fs" />
