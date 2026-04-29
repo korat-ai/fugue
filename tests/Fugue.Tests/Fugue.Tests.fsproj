@@ -10,6 +10,7 @@
     <Compile Include="WriteToolTests.fs" />
     <Compile Include="EditToolTests.fs" />
     <Compile Include="BashToolTests.fs" />
+    <Compile Include="GlobToolTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
