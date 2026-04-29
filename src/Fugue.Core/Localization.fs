@@ -4,6 +4,7 @@ module Fugue.Core.Localization
 type Strings =
     { // Stream lifecycle
       Cancelled:    string
+      ExitHint:     string
       ToolRunning:  string
       ErrorPrefix:  string
 
@@ -25,6 +26,7 @@ type Strings =
 
 let en : Strings =
     { Cancelled            = "cancelled"
+      ExitHint             = "Press Ctrl+C again to exit"
       ToolRunning          = "running…"
       ErrorPrefix          = "error"
       StatusBarApp         = "fugue"
@@ -40,6 +42,7 @@ let en : Strings =
 
 let ru : Strings =
     { Cancelled            = "отменено"
+      ExitHint             = "Нажми Ctrl+C ещё раз для выхода"
       ToolRunning          = "выполняется…"
       ErrorPrefix          = "ошибка"
       StatusBarApp         = "fugue"

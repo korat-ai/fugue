@@ -10,8 +10,10 @@ let private mkState (text: string) (cursor: int) : S =
     { Buffer        = ResizeArray<char>(text.ToCharArray())
       Cursor        = cursor
       LinesRendered = 0
+      ExitArmed     = false
       PromptText    = "> "
       PromptVisLen  = 2
+      HintWhenArmed = "Press Ctrl+C again to exit"
       Width         = 80 }
 
 let private key (c: char) (mods: ConsoleModifiers) : ConsoleKeyInfo =
@@ -114,3 +116,29 @@ let ``Wipe preserves LinesRendered for redraw to clear screen`` () =
     s.LinesRendered |> should equal 3
     s.Buffer.Count |> should equal 0
     s.Cursor       |> should equal 0
+
+[<Fact>]
+let ``Ctrl+C on empty buffer arms ExitArmed without quitting`` () =
+    let s = mkState "" 0
+    let act = applyKey (special ConsoleKey.C ConsoleModifiers.Control) s
+    act |> should equal Wipe
+    s.ExitArmed |> should equal true
+
+[<Fact>]
+let ``Ctrl+C twice on empty buffer returns Quit`` () =
+    let s = mkState "" 0
+    let _ = applyKey (special ConsoleKey.C ConsoleModifiers.Control) s
+    let act2 = applyKey (special ConsoleKey.C ConsoleModifiers.Control) s
+    act2 |> should equal Quit
+
+[<Fact>]
+let ``any non-Ctrl+C input disarms ExitArmed`` () =
+    let s = mkState "" 0
+    let _ = applyKey (special ConsoleKey.C ConsoleModifiers.Control) s
+    s.ExitArmed |> should equal true
+    let _ = applyKey (key 'a' ConsoleModifiers.None) s
+    s.ExitArmed |> should equal false
+    // After typing 'a', buffer is "a" (non-empty), so Ctrl+C clears it (Wipe) not Quit
+    let act = applyKey (special ConsoleKey.C ConsoleModifiers.Control) s
+    act |> should equal Wipe
+    s.Buffer.Count |> should equal 0

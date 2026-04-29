@@ -102,9 +102,10 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     let! session = agent.CreateSessionAsync(CancellationToken.None)
     StatusBar.start cwd cfg
 
+    let strings = pick cfg.Ui.Locale
     try
         while not cancelSrc.QuitRequested do
-            let! lineOpt = ReadLine.readAsync (Render.prompt cwd) cancelSrc.Token
+            let! lineOpt = ReadLine.readAsync (Render.prompt cwd) strings cancelSrc.Token
             match lineOpt with
             | None ->
                 cancelSrc.RequestQuit()

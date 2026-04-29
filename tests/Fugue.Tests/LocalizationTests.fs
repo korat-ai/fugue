@@ -22,7 +22,7 @@ let ``pick falls back to english for unknown locale`` () =
 [<Fact>]
 let ``en strings are all non-empty`` () =
     let s = en
-    [ s.Cancelled; s.ToolRunning; s.ErrorPrefix
+    [ s.Cancelled; s.ExitHint; s.ToolRunning; s.ErrorPrefix
       s.StatusBarApp; s.StatusBarOn
       s.PromptHelpEnter; s.PromptHelpShiftEnter; s.PromptHelpCtrlD
       s.ConfigHelpHeader; s.ConfigHelpEnvHint; s.ConfigHelpFileHint
@@ -32,7 +32,7 @@ let ``en strings are all non-empty`` () =
 [<Fact>]
 let ``ru strings are all non-empty`` () =
     let s = ru
-    [ s.Cancelled; s.ToolRunning; s.ErrorPrefix
+    [ s.Cancelled; s.ExitHint; s.ToolRunning; s.ErrorPrefix
       s.StatusBarApp; s.StatusBarOn
       s.PromptHelpEnter; s.PromptHelpShiftEnter; s.PromptHelpCtrlD
       s.ConfigHelpHeader; s.ConfigHelpEnvHint; s.ConfigHelpFileHint

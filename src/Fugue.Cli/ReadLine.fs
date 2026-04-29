@@ -4,14 +4,17 @@ open System
 open System.Collections.Generic
 open System.Threading
 open System.Threading.Tasks
+open Fugue.Core.Localization
 
 /// Internal mutable line state. Public only because tests construct it directly.
 type S = {
     mutable Buffer:        ResizeArray<char>
     mutable Cursor:        int
     mutable LinesRendered: int
+    mutable ExitArmed:     bool
     PromptText:            string
     PromptVisLen:          int
+    HintWhenArmed:         string
     Width:                 int
 }
 
@@ -31,50 +34,67 @@ let private isShift (k: ConsoleKeyInfo) (key: ConsoleKey) : bool =
 /// Pure key dispatch. Mutates `s`; returns Action telling the loop what's next.
 let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
     if isCtrl k ConsoleKey.C then
-        s.Buffer.Clear()
-        s.Cursor <- 0
-        Wipe
+        if s.Buffer.Count = 0 && s.ExitArmed then
+            Quit
+        elif s.Buffer.Count = 0 then
+            s.ExitArmed <- true
+            Wipe
+        else
+            s.Buffer.Clear()
+            s.Cursor <- 0
+            s.ExitArmed <- false
+            Wipe
     elif isCtrl k ConsoleKey.D then
         if s.Buffer.Count = 0 then Quit
         else
+            s.ExitArmed <- false
             // delete char at cursor (bash behaviour)
             if s.Cursor < s.Buffer.Count then
                 s.Buffer.RemoveAt s.Cursor
             Continue
     elif isShift k ConsoleKey.Enter then
+        s.ExitArmed <- false
         s.Buffer.Insert(s.Cursor, '\n')
         s.Cursor <- s.Cursor + 1
         Continue
     elif k.Key = ConsoleKey.Enter then
+        s.ExitArmed <- false
         Submit (String(s.Buffer.ToArray()))
     elif k.Key = ConsoleKey.Backspace then
+        s.ExitArmed <- false
         if s.Cursor > 0 then
             s.Buffer.RemoveAt(s.Cursor - 1)
             s.Cursor <- s.Cursor - 1
         Continue
     elif k.Key = ConsoleKey.Delete then
+        s.ExitArmed <- false
         if s.Cursor < s.Buffer.Count then
             s.Buffer.RemoveAt s.Cursor
         Continue
     elif k.Key = ConsoleKey.LeftArrow then
+        s.ExitArmed <- false
         if s.Cursor > 0 then s.Cursor <- s.Cursor - 1
         Continue
     elif k.Key = ConsoleKey.RightArrow then
+        s.ExitArmed <- false
         if s.Cursor < s.Buffer.Count then s.Cursor <- s.Cursor + 1
         Continue
     elif k.Key = ConsoleKey.Home then
+        s.ExitArmed <- false
         // beginning of current visual line (= last \n before cursor + 1, or 0)
         let mutable i = s.Cursor - 1
         while i >= 0 && s.Buffer.[i] <> '\n' do i <- i - 1
         s.Cursor <- i + 1
         Continue
     elif k.Key = ConsoleKey.End then
+        s.ExitArmed <- false
         // end of current visual line
         let mutable i = s.Cursor
         while i < s.Buffer.Count && s.Buffer.[i] <> '\n' do i <- i + 1
         s.Cursor <- i
         Continue
     elif not (Char.IsControl k.KeyChar) then
+        s.ExitArmed <- false
         s.Buffer.Insert(s.Cursor, k.KeyChar)
         s.Cursor <- s.Cursor + 1
         Continue
@@ -112,6 +132,10 @@ let private redraw (st: S) =
     // 3. count rendered terminal lines (= 1 + number of '\n' in buffer)
     let newlines = bufStr |> Seq.filter (fun c -> c = '\n') |> Seq.length
     st.LinesRendered <- 1 + newlines
+    // 3b. if exit is armed, emit dim hint on the line below the buffer
+    if st.ExitArmed && st.HintWhenArmed <> "" then
+        writeRaw ("\n\x1b[2m" + st.HintWhenArmed + "\x1b[0m")
+        st.LinesRendered <- st.LinesRendered + 1
     // 4. position cursor at st.Cursor inside buffer.
     //    Compute (row, col) from start of prompt.
     let mutable row = 0
@@ -122,15 +146,16 @@ let private redraw (st: S) =
             col <- 0
         else
             col <- col + 1
-    // We're currently positioned at end of buffer (last row, last col).
+    // We're currently positioned at end of buffer (last row of buffer, or hint line if armed).
     // Move from there to (row, col): up by (lastRow - row), then to absolute column.
+    // lastRow is the last buffer row (LinesRendered - 1, or LinesRendered - 2 if hint shown).
     let lastRow = st.LinesRendered - 1
     let upBy = lastRow - row
     if upBy > 0 then writeRaw ("\x1b[" + string upBy + "A")
     if col > 0 then writeRaw ("\r\x1b[" + string col + "C")
     else writeRaw "\r"
 
-let readAsync (prompt: string) (ct: CancellationToken) : Task<string option> = task {
+let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task<string option> = task {
     // Strip ANSI escapes for visible-length calc (rough — assumes only \x1b[...m sequences).
     let visLen =
         let mutable n = 0
@@ -147,8 +172,10 @@ let readAsync (prompt: string) (ct: CancellationToken) : Task<string option> = t
         { Buffer        = ResizeArray<char>()
           Cursor        = 0
           LinesRendered = 0
+          ExitArmed     = false
           PromptText    = prompt
           PromptVisLen  = visLen
+          HintWhenArmed = strings.ExitHint
           Width         = max 40 Console.WindowWidth }
 
     Console.TreatControlCAsInput <- true
