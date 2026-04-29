@@ -3,4 +3,7 @@
     <Project Path="src/Fugue.Cli/Fugue.Cli.fsproj" />
     <Project Path="src/Fugue.Core/Fugue.Core.fsproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Fugue.Tests/Fugue.Tests.fsproj" />
+  </Folder>
 </Solution>
