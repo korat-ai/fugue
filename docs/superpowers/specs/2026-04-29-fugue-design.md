@@ -35,7 +35,7 @@
 ### Solution layout
 
 ```
-Fugue.sln
+Fugue.slnx
 src/
   Fugue.Core/           # доменные типы, конфиг, system-prompt; без UI и без сетевых deps
   Fugue.Agent/           # IChatClient factory, ручной conversation-loop, discovery
