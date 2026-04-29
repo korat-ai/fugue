@@ -29,7 +29,12 @@ let create (provider: ProviderConfig) (systemPrompt: string) (tools: AIFunction 
             tools = toolList)
 
     | OpenAI(apiKey, model) ->
-        let openAi = new OpenAI.OpenAIClient(apiKey)
+        // OPENAI_BASE_URL allows pointing at OpenAI-compat servers (LM Studio, vLLM, llama.cpp).
+        let cred = new System.ClientModel.ApiKeyCredential(apiKey)
+        let openAi =
+            match Environment.GetEnvironmentVariable "OPENAI_BASE_URL" with
+            | null | "" -> new OpenAI.OpenAIClient(cred)
+            | url       -> new OpenAI.OpenAIClient(cred, OpenAI.OpenAIClientOptions(Endpoint = Uri url))
         let chatClient = openAi.GetChatClient(model).AsIChatClient()
         chatClient.AsAIAgent(
             instructions = systemPrompt,
