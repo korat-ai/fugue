@@ -38,7 +38,8 @@ type AppConfig =
     { Provider: ProviderConfig
       SystemPrompt: string option
       MaxIterations: int
-      Ui: UiConfig }
+      Ui: UiConfig
+      BaseUrl: string option }
 
 type ConfigError =
     | NoConfigFound of help: string
@@ -89,7 +90,7 @@ let private fromImplicitEnv () : ProviderConfig option =
 
 [<RequiresUnreferencedCode("Uses STJ reflection; AppConfigDto is preserved via TrimmerRootDescriptor")>]
 [<RequiresDynamicCode("Uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
-let private fromFile (path: string) : Result<ProviderConfig * int * UiConfig, string> =
+let private fromFile (path: string) : Result<ProviderConfig * int * UiConfig * string option, string> =
     try
         let json = File.ReadAllText path
         let dtoOrNull =
@@ -122,7 +123,8 @@ let private fromFile (path: string) : Result<ProviderConfig * int * UiConfig, st
                     | Some "en" -> "en"
                     | _         -> defaultLocale ()
                 let ui = { UserAlignment = alignment; Locale = locale }
-                p, dto.maxIterations, ui)
+                let baseUrl = dto.baseUrl |> Option.ofObj |> Option.filter (fun s -> not (String.IsNullOrEmpty s))
+                p, dto.maxIterations, ui, baseUrl)
     with ex -> Error ex.Message
 
 let private helpText () =
@@ -145,19 +147,19 @@ Set environment variables:
 let load (_argv: string[]) : Result<AppConfig, ConfigError> =
     match fromExplicitEnv () with
     | Some provider ->
-        Ok { Provider = provider; SystemPrompt = None; MaxIterations = 30; Ui = defaultUi () }
+        Ok { Provider = provider; SystemPrompt = None; MaxIterations = 30; Ui = defaultUi (); BaseUrl = None }
     | None ->
         let path = configPath ()
         if File.Exists path then
             match fromFile path with
-            | Ok (p, mi, ui) ->
+            | Ok (p, mi, ui, baseUrl) ->
                 let mi = if mi <= 0 then 30 else mi
-                Ok { Provider = p; SystemPrompt = None; MaxIterations = mi; Ui = ui }
+                Ok { Provider = p; SystemPrompt = None; MaxIterations = mi; Ui = ui; BaseUrl = baseUrl }
             | Error e -> Error(InvalidConfig e)
         else
             match fromImplicitEnv () with
             | Some provider ->
-                Ok { Provider = provider; SystemPrompt = None; MaxIterations = 30; Ui = defaultUi () }
+                Ok { Provider = provider; SystemPrompt = None; MaxIterations = 30; Ui = defaultUi (); BaseUrl = None }
             | None ->
                 Error(NoConfigFound (helpText ()))
 
@@ -170,10 +172,11 @@ let saveToFile (cfg: AppConfig) : unit =
     let uiDto =
         { userAlignment = (match cfg.Ui.UserAlignment with Left -> "left" | Right -> "right")
           locale        = cfg.Ui.Locale }
+    let baseUrlVal = cfg.BaseUrl |> Option.toObj
     let dto =
         match cfg.Provider with
-        | Anthropic(k, m) -> { provider = "anthropic"; model = m; apiKey = k; ollamaEndpoint = ""; maxIterations = cfg.MaxIterations; ui = uiDto }
-        | OpenAI(k, m)    -> { provider = "openai";    model = m; apiKey = k; ollamaEndpoint = ""; maxIterations = cfg.MaxIterations; ui = uiDto }
-        | Ollama(e, m)    -> { provider = "ollama";    model = m; apiKey = ""; ollamaEndpoint = string e; maxIterations = cfg.MaxIterations; ui = uiDto }
+        | Anthropic(k, m) -> { provider = "anthropic"; model = m; apiKey = k; ollamaEndpoint = ""; baseUrl = baseUrlVal; maxIterations = cfg.MaxIterations; ui = uiDto }
+        | OpenAI(k, m)    -> { provider = "openai";    model = m; apiKey = k; ollamaEndpoint = ""; baseUrl = baseUrlVal; maxIterations = cfg.MaxIterations; ui = uiDto }
+        | Ollama(e, m)    -> { provider = "ollama";    model = m; apiKey = ""; ollamaEndpoint = string e; baseUrl = baseUrlVal; maxIterations = cfg.MaxIterations; ui = uiDto }
     let json = JsonSerializer.Serialize<AppConfigDto>(dto, appConfigOptions)
     File.WriteAllText(path, json)

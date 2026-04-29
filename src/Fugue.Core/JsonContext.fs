@@ -18,6 +18,7 @@ type AppConfigDto =
       model: string
       apiKey: string
       ollamaEndpoint: string
+      baseUrl: string | null
       maxIterations: int
       ui: UiConfigDto | null }
 

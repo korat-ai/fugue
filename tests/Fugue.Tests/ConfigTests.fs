@@ -93,3 +93,38 @@ let ``load defaults locale via defaultLocale when ui has only userAlignment`` ()
         // locale comes from CultureInfo fallback in defaultLocale (); just assert it's non-empty.
         cfg.Ui.Locale |> should not' (equal "")
     | Error e -> failwithf "expected Ok, got %A" e
+
+[<Fact>]
+let ``load reads baseUrl from config when present`` () =
+    let tmpHome = IO.Path.Combine(IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    let dir = IO.Path.Combine(tmpHome, ".fugue")
+    IO.Directory.CreateDirectory dir |> ignore
+    let path = IO.Path.Combine(dir, "config.json")
+    IO.File.WriteAllText(path, """{
+        "provider":"openai","model":"local","apiKey":"x","ollamaEndpoint":"",
+        "baseUrl":"http://localhost:1234/v1","maxIterations":30,"ui":{"userAlignment":"left","locale":"en"}
+    }""")
+    Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null)
+    Environment.SetEnvironmentVariable("OPENAI_API_KEY", null)
+    Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    match load [||] with
+    | Ok cfg -> cfg.BaseUrl |> should equal (Some "http://localhost:1234/v1")
+    | Error e -> failwithf "expected Ok, got %A" e
+
+[<Fact>]
+let ``load defaults BaseUrl=None when baseUrl absent`` () =
+    let tmpHome = IO.Path.Combine(IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    let dir = IO.Path.Combine(tmpHome, ".fugue")
+    IO.Directory.CreateDirectory dir |> ignore
+    let path = IO.Path.Combine(dir, "config.json")
+    IO.File.WriteAllText(path, """{
+        "provider":"openai","model":"local","apiKey":"x","ollamaEndpoint":"","maxIterations":30
+    }""")
+    Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null)
+    Environment.SetEnvironmentVariable("OPENAI_API_KEY", null)
+    Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    match load [||] with
+    | Ok cfg -> cfg.BaseUrl |> should equal None
+    | Error e -> failwithf "expected Ok, got %A" e

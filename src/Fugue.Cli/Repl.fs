@@ -122,7 +122,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             match lineOpt with
             | None ->
                 cancelSrc.RequestQuit()
-            | Some "" -> ()
+            | Some s when System.String.IsNullOrWhiteSpace s -> ()
             | Some s when s = "/exit" || s = "/quit" ->
                 cancelSrc.RequestQuit()
             | Some s when s = "/clear" ->

@@ -147,13 +147,18 @@ let readAsync (prompt: string) (ct: CancellationToken) : Task<string option> = t
             // Console.ReadKey is blocking; we accept that — cancellation in this
             // path is not expected in normal flow (Ctrl+C while reading is a wipe).
             let k = Console.ReadKey(intercept = true)
+            let eraseRendered () =
+                if st.LinesRendered > 1 then
+                    writeRaw ("\x1b[" + string (st.LinesRendered - 1) + "A")
+                writeRaw "\r\x1b[J"
             match applyKey k st with
             | Continue -> redraw st
             | Wipe     -> redraw st
             | Submit s ->
-                writeRaw "\n"   // end the input line cleanly
+                eraseRendered ()
                 result <- ValueSome (Some s)
             | Quit ->
+                eraseRendered ()
                 writeRaw "\n"
                 result <- ValueSome None
         return
