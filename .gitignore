@@ -1,0 +1,21 @@
+# .NET / F#
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.vscode/
+
+# AOT publish output
+publish/
+*.dwarf
+*.pdb
+
+# Local config / secrets
+~/.fugue/
+.env
+*.local.json
+
+# OS
+.DS_Store
+Thumbs.db
