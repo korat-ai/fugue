@@ -15,17 +15,12 @@ type DelegatedAIFunction(
         invoke: AIFunctionArguments -> CancellationToken -> Task<string>) =
     inherit AIFunction()
 
-    member val private _name = name
-    member val private _description = description
-    member val private _schema = schema
-    member val private _invoke = invoke
-
-    override this.Name        = this._name
-    override this.Description = this._description
-    override this.JsonSchema  = this._schema
-    override this.InvokeCoreAsync(args: AIFunctionArguments, ct: CancellationToken) =
+    override _.Name        = name
+    override _.Description = description
+    override _.JsonSchema  = schema
+    override _.InvokeCoreAsync(args: AIFunctionArguments, ct: CancellationToken) =
         let task = task {
-            let! result = this._invoke args ct
+            let! result = invoke args ct
             return box result
         }
         ValueTask<obj | null>(task)
