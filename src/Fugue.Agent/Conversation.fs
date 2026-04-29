@@ -28,18 +28,23 @@ let run
 
     taskSeq {
         let mutable failed = false
+        Fugue.Core.Log.info "conv" (sprintf "run start, input=%d chars, ct.IsCancelled=%b" userInput.Length cancel.IsCancellationRequested)
         try
             let stream = agent.RunStreamingAsync(userInput, session, options = null, cancellationToken = cancel)
             let enumerator = stream.GetAsyncEnumerator(cancel)
             let mutable hasNext = true
+            let mutable updIdx = 0
             while hasNext do
                 let! step = enumerator.MoveNextAsync().AsTask()
                 if step then
                     let upd : AgentResponseUpdate = enumerator.Current
+                    updIdx <- updIdx + 1
+                    Fugue.Core.Log.info "conv" (sprintf "upd #%d, contents=%d, ct.IsCancelled=%b" updIdx (Seq.length upd.Contents) cancel.IsCancellationRequested)
                     // Contents is non-nullable (NotNull) — iterate directly
                     for c in upd.Contents do
                         match c with
                         | :? TextContent as tc when not (String.IsNullOrEmpty tc.Text) ->
+                            Fugue.Core.Log.info "conv" (sprintf "  text chunk len=%d" tc.Text.Length)
                             yield TextChunk tc.Text
                         | :? FunctionCallContent as fc ->
                             let argsJson =
@@ -47,16 +52,31 @@ let run
                                 else
                                     try System.Text.Json.JsonSerializer.Serialize fc.Arguments
                                     with _ -> "{}"
+                            Fugue.Core.Log.info "conv" (sprintf "  tool start id=%s name=%s args=%s" fc.CallId fc.Name argsJson)
                             yield ToolStarted(fc.CallId, fc.Name, argsJson)
                         | :? FunctionResultContent as fr ->
                             let output = if isNull (box fr.Result) then "" else string fr.Result
                             let isError = not (isNull (box fr.Exception))
+                            Fugue.Core.Log.info "conv" (sprintf "  tool done id=%s isError=%b outLen=%d" fr.CallId isError output.Length)
                             yield ToolCompleted(fr.CallId, output, isError)
-                        | _ -> ()
+                        | other ->
+                            Fugue.Core.Log.info "conv" (sprintf "  ignored content type=%s" (other.GetType().Name))
                 else
                     hasNext <- false
-        with ex ->
+        with
+        | :? OperationCanceledException as oce ->
+            // Don't yield Failed — let cancellation propagate so Program.fs's outer catch
+            // owns the single "cancelled" error path. Otherwise both layers fire.
+            // (taskSeq blocks reraise(), so we rethrow the original exception explicitly.)
+            Fugue.Core.Log.info "conv" "cancellation propagating"
+            raise oce
+        | ex ->
             failed <- true
+            Fugue.Core.Log.ex "conv" "stream caught" ex
             yield Failed ex
-        if not failed then yield Finished
+        if not failed then
+            Fugue.Core.Log.info "conv" "run finished cleanly"
+            yield Finished
+        else
+            Fugue.Core.Log.info "conv" "run finished with failure"
     }

@@ -22,6 +22,13 @@ let update (msg: Msg) (m: Model) : Model =
     | StreamStarted cts ->
         { m with Cancel = Some cts }
 
+    // Drop late-arriving stream events once the user has cancelled or the stream
+    // has finished/failed. Without this the agent keeps appending text after a
+    // cancel because Anthropic/Ollama keep flushing buffered chunks for a while.
+    | TextChunk _      when not m.Streaming -> m
+    | ToolStarted _    when not m.Streaming -> m
+    | ToolCompleted _  when not m.Streaming -> m
+
     | TextChunk t ->
         let history' =
             match List.tryLast m.History with

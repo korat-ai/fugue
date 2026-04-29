@@ -21,6 +21,7 @@ let private buildAgent (cfg: AppConfig) : AIAgent =
 let private streamCmd (agent: AIAgent) (session: AgentSession option) (userInput: string) : Cmd<Msg> =
     [ fun dispatch ->
         let cts = new CancellationTokenSource()
+        Fugue.Core.Log.info "stream" (sprintf "streamCmd START, input='%s' (len=%d)" userInput userInput.Length)
         dispatch (StreamStarted cts)
         // Convert F# option to .NET nullable (null = create/continue internal session in MAF).
         let sessionOrNull : AgentSession | null = Option.toObj session
@@ -29,21 +30,38 @@ let private streamCmd (agent: AIAgent) (session: AgentSession option) (userInput
                 let stream = Conversation.run agent sessionOrNull userInput cts.Token
                 let enumerator = stream.GetAsyncEnumerator(cts.Token)
                 let mutable hasNext = true
+                let mutable evIdx = 0
                 while hasNext do
                     let! step =
                         enumerator.MoveNextAsync().AsTask() |> Async.AwaitTask
                     if step then
-                        match enumerator.Current with
+                        evIdx <- evIdx + 1
+                        let ev = enumerator.Current
+                        let evDesc =
+                            match ev with
+                            | Conversation.TextChunk s -> sprintf "TextChunk(len=%d)" s.Length
+                            | Conversation.ToolStarted(id, n, _) -> sprintf "ToolStarted(%s, %s)" id n
+                            | Conversation.ToolCompleted(id, _, e) -> sprintf "ToolCompleted(%s, isErr=%b)" id e
+                            | Conversation.Finished -> "Finished"
+                            | Conversation.Failed ex -> sprintf "Failed(%s: %s)" (ex.GetType().Name) ex.Message
+                        Fugue.Core.Log.info "stream" (sprintf "ev #%d %s, ct.IsCancelled=%b" evIdx evDesc cts.IsCancellationRequested)
+                        match ev with
                         | Conversation.TextChunk s          -> dispatch (Msg.TextChunk s)
                         | Conversation.ToolStarted(id, n, a) -> dispatch (Msg.ToolStarted(id, n, a))
                         | Conversation.ToolCompleted(id, o, e) -> dispatch (Msg.ToolCompleted(id, o, e))
                         | Conversation.Finished             -> dispatch Msg.StreamFinished
                         | Conversation.Failed ex            -> dispatch (Msg.StreamFailed ex.Message)
                     else
+                        Fugue.Core.Log.info "stream" "MoveNextAsync returned false → loop end"
                         hasNext <- false
+                Fugue.Core.Log.info "stream" "streamCmd END (clean exit)"
             with
-            | :? OperationCanceledException -> dispatch (Msg.StreamFailed "cancelled")
-            | ex -> dispatch (Msg.StreamFailed ex.Message)
+            | :? OperationCanceledException as oce ->
+                Fugue.Core.Log.warn "stream" (sprintf "outer catch: OperationCanceledException: %s" oce.Message)
+                dispatch (Msg.StreamFailed "cancelled")
+            | ex ->
+                Fugue.Core.Log.ex "stream" "outer catch" ex
+                dispatch (Msg.StreamFailed ex.Message)
         })
     ]
 
@@ -76,6 +94,8 @@ let private runWithCfg (cfg: AppConfig) : int =
 
 [<EntryPoint>]
 let main argv =
+    Fugue.Core.Log.session ()
+    Fugue.Core.Log.info "main" (sprintf "fugue starting, argv=[%s]" (String.concat "; " argv))
     match Fugue.Core.Config.load argv with
     | Error (NoConfigFound help) ->
         // Discovery fallback: prompt user to pick a provider interactively.

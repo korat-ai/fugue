@@ -43,7 +43,9 @@ let ``Submit with empty input is no-op`` () =
 
 [<Fact>]
 let ``TextChunk appends to last AssistantText block, creating one if absent`` () =
-    let m = freshModel ()
+    // Streaming=true is the precondition: TextChunk arriving while not streaming is dropped
+    // (cancelled / finished — late chunks must not mutate history).
+    let m = { freshModel () with Streaming = true }
     let m1 = update (TextChunk "hel") m
     let m2 = update (TextChunk "lo") m1
     match List.last m2.History with
@@ -51,8 +53,14 @@ let ``TextChunk appends to last AssistantText block, creating one if absent`` ()
     | other -> failwithf "expected AssistantText, got %A" other
 
 [<Fact>]
-let ``ToolStarted adds Running ToolBlock`` () =
+let ``TextChunk is dropped when not Streaming`` () =
     let m = freshModel ()
+    let m' = update (TextChunk "late") m
+    m'.History |> should be Empty
+
+[<Fact>]
+let ``ToolStarted adds Running ToolBlock`` () =
+    let m = { freshModel () with Streaming = true }
     let m' = update (ToolStarted("id1", "Read", "{}")) m
     match List.last m'.History with
     | ToolBlock("id1", "Read", "{}", Running) -> ()
@@ -60,7 +68,7 @@ let ``ToolStarted adds Running ToolBlock`` () =
 
 [<Fact>]
 let ``ToolCompleted updates matching ToolBlock`` () =
-    let m = freshModel ()
+    let m = { freshModel () with Streaming = true }
     let m1 = update (ToolStarted("id1", "Read", "{}")) m
     let m2 = update (ToolCompleted("id1", "ok", false)) m1
     match List.last m2.History with

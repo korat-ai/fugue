@@ -239,6 +239,7 @@ let run<'model, 'msg>
 
     let dispatch (msg: 'msg) =
         // Compute next model (may be called from any thread).
+        Fugue.Core.Log.info "mvu" (sprintf "dispatch %A" msg)
         let m', cmd = update msg model
         model <- m'
         // Re-render and side-effects must run on the UI thread.
