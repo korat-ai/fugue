@@ -3,6 +3,9 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
+    <!-- Terminal.Gui v2 emits trim/AOT informational warnings for JSON-config code paths
+         we don't use; their own NativeAot example follows the same pattern. -->
+    <NoWarn>$(NoWarn);IL2026;IL3050;IL3053</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
