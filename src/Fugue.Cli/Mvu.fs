@@ -138,8 +138,10 @@ let rec private buildView (node: ViewNode) : View =
         tf.Width <- toTGDim w
         tf.Text  <- value
         // After a rerender we recreate the field with the latest model.Input; place the
-        // caret at end-of-text so the next keystroke continues where the user left off.
-        tf.SelectedStart <- value.Length
+        // caret at end-of-text. Setting SelectedStart alone selects the whole string,
+        // so the next keystroke would replace it — call MoveEnd + ClearAllSelection.
+        tf.MoveEnd() |> ignore
+        tf.ClearAllSelection()
         // TextField.TextChanged fires after every change; read .Text (string) for current value.
         tf.TextChanged.Add(fun _ -> onChange (tf.Text))
         tf :> View

@@ -34,7 +34,8 @@ let private readEnv (name: string) =
     | null | "" -> None
     | v -> Some v
 
-let private fromEnv () : ProviderConfig option =
+/// Read provider from FUGUE_PROVIDER (explicit user intent — highest priority).
+let private fromExplicitEnv () : ProviderConfig option =
     match readEnv "FUGUE_PROVIDER" with
     | Some "anthropic" ->
         readEnv "ANTHROPIC_API_KEY"
@@ -50,11 +51,16 @@ let private fromEnv () : ProviderConfig option =
         let ep = readEnv "OLLAMA_ENDPOINT" |> Option.defaultValue "http://localhost:11434"
         let model = readEnv "FUGUE_MODEL" |> Option.defaultValue "llama3.1"
         Some(Ollama(Uri ep, model))
-    | _ ->
-        match readEnv "ANTHROPIC_API_KEY", readEnv "OPENAI_API_KEY" with
-        | Some k, _ -> Some(Anthropic(k, "claude-opus-4-7"))
-        | _, Some k -> Some(OpenAI(k, "gpt-5"))
-        | _ -> None
+    | _ -> None
+
+/// Implicit env fallback used only when no config file and no explicit provider.
+/// Reason: a stray ANTHROPIC_API_KEY in the shell shouldn't override an explicit
+/// ollama configuration in ~/.fugue/config.json.
+let private fromImplicitEnv () : ProviderConfig option =
+    match readEnv "ANTHROPIC_API_KEY", readEnv "OPENAI_API_KEY" with
+    | Some k, _ -> Some(Anthropic(k, "claude-opus-4-7"))
+    | _, Some k -> Some(OpenAI(k, "gpt-5"))
+    | _ -> None
 
 let private fromFile (path: string) : Result<ProviderConfig * int, string> =
     try
@@ -88,8 +94,12 @@ Set environment variables:
 …or create ~/.fugue/config.json (see docs).
 """
 
+/// Resolution order:
+///   1. FUGUE_PROVIDER env (explicit user intent for THIS run)
+///   2. ~/.fugue/config.json     (persisted user choice)
+///   3. ANTHROPIC_API_KEY / OPENAI_API_KEY env (implicit fallback)
 let load (_argv: string[]) : Result<AppConfig, ConfigError> =
-    match fromEnv () with
+    match fromExplicitEnv () with
     | Some provider ->
         Ok { Provider = provider; SystemPrompt = None; MaxIterations = 30 }
     | None ->
@@ -101,7 +111,11 @@ let load (_argv: string[]) : Result<AppConfig, ConfigError> =
                 Ok { Provider = p; SystemPrompt = None; MaxIterations = mi }
             | Error e -> Error(InvalidConfig e)
         else
-            Error(NoConfigFound (helpText ()))
+            match fromImplicitEnv () with
+            | Some provider ->
+                Ok { Provider = provider; SystemPrompt = None; MaxIterations = 30 }
+            | None ->
+                Error(NoConfigFound (helpText ()))
 
 let saveToFile (cfg: AppConfig) : unit =
     let path = configPath ()
