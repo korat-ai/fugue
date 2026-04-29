@@ -8,6 +8,7 @@
     <Compile Include="Conversation.fs" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="FSharp.Control.TaskSeq" Version="1.1.1" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.5.0" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="*-*" />
     <PackageReference Include="Microsoft.Agents.AI" Version="*-*" />
