@@ -14,6 +14,7 @@
     <Compile Include="GrepToolTests.fs" />
     <Compile Include="DiscoveryTests.fs" />
     <Compile Include="ConversationTests.fs" />
+    <Compile Include="UpdateTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
@@ -27,5 +28,6 @@
     <ProjectReference Include="..\..\src\Fugue.Core\Fugue.Core.fsproj" />
     <ProjectReference Include="..\..\src\Fugue.Tools\Fugue.Tools.fsproj" />
     <ProjectReference Include="..\..\src\Fugue.Agent\Fugue.Agent.fsproj" />
+    <ProjectReference Include="..\..\src\Fugue.Cli\Fugue.Cli.fsproj" />
   </ItemGroup>
 </Project>
