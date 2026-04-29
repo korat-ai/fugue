@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ConfigTests.fs" />
+    <Compile Include="ReadToolTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
@@ -16,5 +17,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Fugue.Core\Fugue.Core.fsproj" />
+    <ProjectReference Include="..\..\src\Fugue.Tools\Fugue.Tools.fsproj" />
   </ItemGroup>
 </Project>
