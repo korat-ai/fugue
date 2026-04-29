@@ -35,8 +35,8 @@ let en : Strings =
       ConfigHelpHeader     = "No Fugue configuration found."
       ConfigHelpEnvHint    = "Set FUGUE_PROVIDER=anthropic|openai|ollama and the matching API key."
       ConfigHelpFileHint   = "Or create ~/.fugue/config.json (see docs)."
-      DiscoveryNoCandidates= "No providers detected."
-      DiscoveryPickProvider= "Pick a provider:" }
+      DiscoveryNoCandidates = "No providers detected."
+      DiscoveryPickProvider = "Pick a provider:" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -50,11 +50,11 @@ let ru : Strings =
       ConfigHelpHeader     = "Конфигурация Fugue не найдена."
       ConfigHelpEnvHint    = "Задайте FUGUE_PROVIDER=anthropic|openai|ollama и соответствующий ключ API."
       ConfigHelpFileHint   = "Или создайте ~/.fugue/config.json (см. документацию)."
-      DiscoveryNoCandidates= "Провайдеры не обнаружены."
-      DiscoveryPickProvider= "Выберите провайдер:" }
+      DiscoveryNoCandidates = "Провайдеры не обнаружены."
+      DiscoveryPickProvider = "Выберите провайдер:" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =
-    match locale with
+    match locale.ToLowerInvariant() with
     | "ru" -> ru
     | _    -> en
