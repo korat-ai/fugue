@@ -33,3 +33,41 @@ let ``load picks Anthropic when ANTHROPIC_API_KEY set and no config file`` () =
         | Anthropic("sk-ant-test", model) -> model |> should equal "claude-opus-4-7"
         | other -> failwithf "expected Anthropic, got %A" other
     | Error e -> failwithf "expected Ok, got %A" e
+
+[<Fact>]
+let ``load picks alignment=Right when ui.userAlignment=right`` () =
+    let tmpHome = IO.Path.Combine(IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    let dir = IO.Path.Combine(tmpHome, ".fugue")
+    IO.Directory.CreateDirectory dir |> ignore
+    let path = IO.Path.Combine(dir, "config.json")
+    IO.File.WriteAllText(path, """{
+        "provider":"ollama","model":"llama","apiKey":"","ollamaEndpoint":"http://localhost:11434",
+        "maxIterations":30,"ui":{"userAlignment":"right","locale":"ru"}
+    }""")
+    Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null)
+    Environment.SetEnvironmentVariable("OPENAI_API_KEY", null)
+    Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    match load [||] with
+    | Ok cfg ->
+        cfg.Ui.UserAlignment |> should equal Right
+        cfg.Ui.Locale |> should equal "ru"
+    | Error e -> failwithf "expected Ok, got %A" e
+
+[<Fact>]
+let ``load defaults Ui to Left when ui block missing`` () =
+    let tmpHome = IO.Path.Combine(IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    let dir = IO.Path.Combine(tmpHome, ".fugue")
+    IO.Directory.CreateDirectory dir |> ignore
+    let path = IO.Path.Combine(dir, "config.json")
+    IO.File.WriteAllText(path, """{
+        "provider":"ollama","model":"llama","apiKey":"","ollamaEndpoint":"http://localhost:11434",
+        "maxIterations":30
+    }""")
+    Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null)
+    Environment.SetEnvironmentVariable("OPENAI_API_KEY", null)
+    Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    match load [||] with
+    | Ok cfg -> cfg.Ui.UserAlignment |> should equal Left
+    | Error e -> failwithf "expected Ok, got %A" e

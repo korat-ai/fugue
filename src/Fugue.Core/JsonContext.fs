@@ -4,12 +4,19 @@ open System.Text.Json
 open System.Text.Json.Serialization
 
 [<CLIMutable>]
+type UiConfigDto = {
+    userAlignment: string | null
+    locale: string | null
+}
+
+[<CLIMutable>]
 type AppConfigDto =
     { provider: string
       model: string
       apiKey: string
       ollamaEndpoint: string
-      maxIterations: int }
+      maxIterations: int
+      ui: UiConfigDto | null }
 
 /// Shared JsonSerializerOptions for AppConfigDto serialization.
 /// NOTE: F# does not support JsonSerializerContext source generation the same

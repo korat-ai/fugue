@@ -86,7 +86,7 @@ let private fromImplicitEnv () : ProviderConfig option =
     | _, Some k -> Some(OpenAI(k, "gpt-5"))
     | _ -> None
 
-let private fromFile (path: string) : Result<ProviderConfig * int, string> =
+let private fromFile (path: string) : Result<ProviderConfig * int * UiConfig, string> =
     try
         let json = File.ReadAllText path
         let dtoOrNull =
@@ -104,7 +104,23 @@ let private fromFile (path: string) : Result<ProviderConfig * int, string> =
                         else dto.ollamaEndpoint
                     Ok(Ollama(Uri ep, dto.model))
                 | other -> Error $"unknown provider: {other}"
-            provider |> Result.map (fun p -> p, dto.maxIterations)
+            provider |> Result.map (fun p ->
+                // dto.ui can be null when "ui" block is missing — STJ doesn't init nested CLIMutable records.
+                let uiDto = dto.ui |> Option.ofObj
+                let alignment =
+                    match uiDto with
+                    | Some u when u.userAlignment = "right" -> Right
+                    | _ -> Left
+                let locale =
+                    match uiDto with
+                    | Some u ->
+                        match u.locale with
+                        | "ru" -> "ru"
+                        | "en" -> "en"
+                        | _ -> defaultLocale ()
+                    | None -> defaultLocale ()
+                let ui = { UserAlignment = alignment; Locale = locale }
+                p, dto.maxIterations, ui)
     with ex -> Error ex.Message
 
 let private helpText () =
@@ -130,9 +146,9 @@ let load (_argv: string[]) : Result<AppConfig, ConfigError> =
         let path = configPath ()
         if File.Exists path then
             match fromFile path with
-            | Ok (p, mi) ->
+            | Ok (p, mi, ui) ->
                 let mi = if mi <= 0 then 30 else mi
-                Ok { Provider = p; SystemPrompt = None; MaxIterations = mi; Ui = defaultUi () }
+                Ok { Provider = p; SystemPrompt = None; MaxIterations = mi; Ui = ui }
             | Error e -> Error(InvalidConfig e)
         else
             match fromImplicitEnv () with
@@ -145,13 +161,13 @@ let saveToFile (cfg: AppConfig) : unit =
     let path = configPath ()
     let dir = Path.GetDirectoryName(path) |> Option.ofObj |> Option.defaultValue "."
     Directory.CreateDirectory(dir) |> ignore
+    let uiDto =
+        { userAlignment = (match cfg.Ui.UserAlignment with Left -> "left" | Right -> "right")
+          locale        = cfg.Ui.Locale }
     let dto =
         match cfg.Provider with
-        | Anthropic(k, m) ->
-            { provider = "anthropic"; model = m; apiKey = k; ollamaEndpoint = ""; maxIterations = cfg.MaxIterations }
-        | OpenAI(k, m) ->
-            { provider = "openai"; model = m; apiKey = k; ollamaEndpoint = ""; maxIterations = cfg.MaxIterations }
-        | Ollama(e, m) ->
-            { provider = "ollama"; model = m; apiKey = ""; ollamaEndpoint = string e; maxIterations = cfg.MaxIterations }
+        | Anthropic(k, m) -> { provider = "anthropic"; model = m; apiKey = k; ollamaEndpoint = ""; maxIterations = cfg.MaxIterations; ui = uiDto }
+        | OpenAI(k, m)    -> { provider = "openai";    model = m; apiKey = k; ollamaEndpoint = ""; maxIterations = cfg.MaxIterations; ui = uiDto }
+        | Ollama(e, m)    -> { provider = "ollama";    model = m; apiKey = ""; ollamaEndpoint = string e; maxIterations = cfg.MaxIterations; ui = uiDto }
     let json = JsonSerializer.Serialize<AppConfigDto>(dto, appConfigOptions)
     File.WriteAllText(path, json)
