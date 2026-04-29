@@ -49,9 +49,9 @@ let private homeRel (path: string) : string =
 
 let private providerLabel (cfg: AppConfig) : string =
     match cfg.Provider with
-    | Anthropic(_, m) -> sprintf "anthropic:%s" m
-    | OpenAI(_, m)    -> sprintf "openai:%s" m
-    | Ollama(_, m)    -> sprintf "ollama:%s" m
+    | Anthropic(_, m) -> "anthropic:" + m
+    | OpenAI(_, m)    -> "openai:" + m
+    | Ollama(_, m)    -> "ollama:" + m
 
 let refresh () =
     if not active then () else
@@ -61,18 +61,17 @@ let refresh () =
         | Some c -> Fugue.Core.Localization.pick c.Ui.Locale
         | None   -> Fugue.Core.Localization.en
     let line1 =
-        sprintf "\x1b[90m%s %s \x1b[1m%s\x1b[0m"
-            (homeRel cwd) strings.StatusBarOn (branchOf cwd)
+        "\x1b[90m" + (homeRel cwd) + " " + strings.StatusBarOn + " \x1b[1m" + (branchOf cwd) + "\x1b[0m"
     let line2 =
         match cfg with
-        | Some c -> sprintf "\x1b[90m%s · %s\x1b[0m" strings.StatusBarApp (providerLabel c)
-        | None   -> sprintf "\x1b[90m%s\x1b[0m" strings.StatusBarApp
+        | Some c -> "\x1b[90m" + strings.StatusBarApp + " · " + (providerLabel c) + "\x1b[0m"
+        | None   -> "\x1b[90m" + strings.StatusBarApp + "\x1b[0m"
     // save cursor, jump to bottom-1, clear two lines, write, restore
     writeRaw "\x1b[s"
-    writeRaw (sprintf "\x1b[%d;1H" (height - 1))
+    writeRaw ("\x1b[" + string (height - 1) + ";1H")
     writeRaw "\x1b[2K"
     writeRaw line1
-    writeRaw (sprintf "\x1b[%d;1H" height)
+    writeRaw ("\x1b[" + string height + ";1H")
     writeRaw "\x1b[2K"
     writeRaw line2
     writeRaw "\x1b[u"
@@ -86,17 +85,17 @@ let start (initialCwd: string) (initialCfg: AppConfig) : unit =
     let height = Console.WindowHeight
     Console.WriteLine()
     Console.WriteLine()
-    writeRaw (sprintf "\x1b[1;%dr" (height - 2))
-    writeRaw (sprintf "\x1b[%d;1H" (height - 2))
+    writeRaw ("\x1b[1;" + string (height - 2) + "r")
+    writeRaw ("\x1b[" + string (height - 2) + ";1H")
     refresh ()
 
 let stop () : unit =
     if not active then () else
     let height = Console.WindowHeight
     writeRaw "\x1b[r"          // reset scroll region
-    writeRaw (sprintf "\x1b[%d;1H" (height - 1))
+    writeRaw ("\x1b[" + string (height - 1) + ";1H")
     writeRaw "\x1b[2K"
-    writeRaw (sprintf "\x1b[%d;1H" height)
+    writeRaw ("\x1b[" + string height + ";1H")
     writeRaw "\x1b[2K"
     writeRaw "\x1b[u"
     active <- false

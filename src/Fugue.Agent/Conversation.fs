@@ -28,7 +28,7 @@ let run
 
     taskSeq {
         let mutable failed = false
-        Fugue.Core.Log.info "conv" (sprintf "run start, input=%d chars, ct.IsCancelled=%b" userInput.Length cancel.IsCancellationRequested)
+        Fugue.Core.Log.info "conv" ("run start, input=" + string userInput.Length + " chars, ct.IsCancelled=" + string cancel.IsCancellationRequested)
         try
             let stream = agent.RunStreamingAsync(userInput, session, options = null, cancellationToken = cancel)
             let enumerator = stream.GetAsyncEnumerator(cancel)
@@ -39,12 +39,12 @@ let run
                 if step then
                     let upd : AgentResponseUpdate = enumerator.Current
                     updIdx <- updIdx + 1
-                    Fugue.Core.Log.info "conv" (sprintf "upd #%d, contents=%d, ct.IsCancelled=%b" updIdx (Seq.length upd.Contents) cancel.IsCancellationRequested)
+                    Fugue.Core.Log.info "conv" ("upd #" + string updIdx + ", contents=" + string (Seq.length upd.Contents) + ", ct.IsCancelled=" + string cancel.IsCancellationRequested)
                     // Contents is non-nullable (NotNull) — iterate directly
                     for c in upd.Contents do
                         match c with
                         | :? TextContent as tc when not (String.IsNullOrEmpty tc.Text) ->
-                            Fugue.Core.Log.info "conv" (sprintf "  text chunk len=%d" tc.Text.Length)
+                            Fugue.Core.Log.info "conv" ("  text chunk len=" + string tc.Text.Length)
                             yield TextChunk tc.Text
                         | :? FunctionCallContent as fc ->
                             let argsJson =
@@ -57,7 +57,7 @@ let run
                         | :? FunctionResultContent as fr ->
                             let output = if isNull (box fr.Result) then "" else string fr.Result
                             let isError = not (isNull (box fr.Exception))
-                            Fugue.Core.Log.info "conv" (sprintf "  tool done id=%s isError=%b outLen=%d" fr.CallId isError output.Length)
+                            Fugue.Core.Log.info "conv" ("  tool done id=" + fr.CallId + " isError=" + string isError + " outLen=" + string output.Length)
                             yield ToolCompleted(fr.CallId, output, isError)
                         | other ->
                             Fugue.Core.Log.info "conv" (sprintf "  ignored content type=%s" (other.GetType().Name))

@@ -5,6 +5,15 @@
     <RootNamespace>Fugue.Cli</RootNamespace>
     <AssemblyName>fugue</AssemblyName>
     <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <!-- AOT publish settings -->
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <StripSymbols>true</StripSymbols>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <IlcGenerateStackTraceData>true</IlcGenerateStackTraceData>
+    <!-- Suppress third-party dependency IL warnings during baseline publish;
+         FS3511 = F# state machine not statically compilable (dynamic fallback works fine at AOT) -->
+    <NoWarn>$(NoWarn);IL2026;IL3050;IL3053;IL2104;FS3511</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,6 +29,23 @@
   <ItemGroup>
     <PackageReference Include="Spectre.Console" Version="0.49.*" />
     <PackageReference Include="Markdig" Version="0.41.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Trimmer root descriptor: preserve F# CLIMutable record constructors for STJ reflection -->
+    <TrimmerRootDescriptor Include="TrimmerRoots.xml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- FSharp.Core: IL2104 aggressive-trim warning; also PrintfImpl uses MakeGenericMethod()
+         for numeric format specifiers (%d, %i, etc.) which is not AOT-compatible without
+         rooting. Rooting preserves all printf generic specializations at native-code gen time. -->
+    <TrimmerRootAssembly Include="FSharp.Core" />
+    <!-- System.Text.Json: preserve reflection-based deserialization code paths.
+         AppConfigDto/UiConfigDto use CLIMutable records + STJ reflection fallback
+         (JsonSerializerIsReflectionEnabledByDefault=true). No F# JsonSerializerContext
+         source-gen available yet so we keep the full STJ reflection path alive. -->
+    <TrimmerRootAssembly Include="System.Text.Json" />
   </ItemGroup>
 
   <ItemGroup>

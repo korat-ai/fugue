@@ -109,17 +109,17 @@ let defaultSources () : Sources =
 let prompt (candidates: Candidate list) : Candidate option =
     if List.isEmpty candidates then None
     else
-        eprintfn ""
-        eprintfn "No ~/.fugue/config.json found. I detected:"
+        Console.Error.WriteLine("")
+        Console.Error.WriteLine("No ~/.fugue/config.json found. I detected:")
         candidates
         |> List.iteri (fun i c ->
             let label =
                 match c with
-                | EnvKey(p, m, src) -> sprintf "%s — using %s from env (model: %s)" p src m
-                | ClaudeSettings(m, _) -> sprintf "Anthropic — reuse Claude Code config (model: %s)" m
-                | OllamaLocal(ep, models) -> sprintf "Ollama — %A (%d models available)" ep (List.length models)
-            eprintfn "  [%d] %s" (i + 1) label)
-        eprintf "\nPick one [1-%d], or 'q' to quit: " candidates.Length
+                | EnvKey(p, m, src) -> p + " — using " + src + " from env (model: " + m + ")"
+                | ClaudeSettings(m, _) -> "Anthropic — reuse Claude Code config (model: " + m + ")"
+                | OllamaLocal(ep, models) -> "Ollama — " + string ep + " (" + string (List.length models) + " models available)"
+            Console.Error.WriteLine("  [" + string (i + 1) + "] " + label))
+        Console.Error.Write("\nPick one [1-" + string candidates.Length + "], or 'q' to quit: ")
         let line = Console.ReadLine()
         match line with
         | null | "q" | "Q" -> None

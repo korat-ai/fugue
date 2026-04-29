@@ -1,0 +1,10 @@
+<linker>
+  <!-- Preserve AppConfigDto and UiConfigDto parameterless constructors and all members
+       for STJ reflection-based deserialization (JsonSerializerIsReflectionEnabledByDefault=true).
+       F# CLIMutable records generate a parameterless ctor that the ILC trimmer would otherwise remove.
+       In rd.xml format, nested types use '/' as separator (CLR uses '+' in reflection). -->
+  <assembly fullname="Fugue.Core">
+    <type fullname="Fugue.Core.JsonContext/AppConfigDto" preserve="all" />
+    <type fullname="Fugue.Core.JsonContext/UiConfigDto" preserve="all" />
+  </assembly>
+</linker>

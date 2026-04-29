@@ -1,15 +1,18 @@
 module Fugue.Core.JsonContext
 
+open System.Diagnostics.CodeAnalysis
 open System.Text.Json
 open System.Text.Json.Serialization
 
-[<CLIMutable>]
+// DynamicallyAccessedMembers preserves the parameterless constructor (from [<CLIMutable>])
+// and all public properties for STJ reflection-based (de)serialization under AOT.
+[<CLIMutable; DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)>]
 type UiConfigDto = {
     userAlignment: string | null
     locale: string | null
 }
 
-[<CLIMutable>]
+[<CLIMutable; DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)>]
 type AppConfigDto =
     { provider: string
       model: string

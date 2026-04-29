@@ -31,13 +31,16 @@ let private write (level: string) (category: string) (msg: string) =
     | None -> ()
     | Some path ->
         let line =
-            sprintf "%s [%s] [%-4s] %s: %s%s"
-                (DateTime.Now.ToString "HH:mm:ss.fff")
-                (Thread.CurrentThread.ManagedThreadId.ToString().PadLeft(3))
-                level
-                category
-                msg
-                Environment.NewLine
+            (DateTime.Now.ToString "HH:mm:ss.fff")
+            + " ["
+            + Thread.CurrentThread.ManagedThreadId.ToString().PadLeft(3)
+            + "] ["
+            + level.PadRight(4)
+            + "] "
+            + category
+            + ": "
+            + msg
+            + Environment.NewLine
         lock lockObj (fun () ->
             try File.AppendAllText(path, line) with _ -> ())
 
@@ -54,7 +57,7 @@ let ex (cat: string) (prefix: string) (e: exn) =
             s.Split('\n')
             |> Array.truncate 5
             |> String.concat " | "
-    write "ERR " cat (sprintf "%s: %s: %s [%s]" prefix (e.GetType().Name) e.Message frames)
+    write "ERR " cat (prefix + ": " + e.GetType().Name + ": " + e.Message + " [" + frames + "]")
 
 /// Mark the start of a session in the log file (separator + timestamp).
 let session () =
@@ -62,9 +65,10 @@ let session () =
     | None -> ()
     | Some path ->
         let banner =
-            sprintf "%s===== fugue session started at %s =====%s"
-                Environment.NewLine
-                (DateTime.Now.ToString "yyyy-MM-dd HH:mm:ss")
-                Environment.NewLine
+            Environment.NewLine
+            + "===== fugue session started at "
+            + (DateTime.Now.ToString "yyyy-MM-dd HH:mm:ss")
+            + " ====="
+            + Environment.NewLine
         lock lockObj (fun () ->
             try File.AppendAllText(path, banner) with _ -> ())

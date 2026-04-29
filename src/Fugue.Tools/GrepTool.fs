@@ -33,7 +33,7 @@ let grep
                     lineNo <- lineNo + 1
                     if regex.IsMatch line then
                         let rel = Path.GetRelativePath(r, file).Replace('\\', '/')
-                        yield sprintf "%s:%d:%s" rel lineNo line
+                        yield rel + ":" + string lineNo + ":" + line
             with _ -> ()
     }
     |> String.concat "\n"

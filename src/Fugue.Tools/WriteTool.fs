@@ -17,4 +17,4 @@ let write
     if dir <> "." || not (Directory.Exists dir) then Directory.CreateDirectory dir |> ignore
     File.WriteAllText(full, content, UTF8Encoding(false))
     let bytes = Encoding.UTF8.GetByteCount content
-    sprintf "wrote %d bytes to %s" bytes full
+    "wrote " + string bytes + " bytes to " + full

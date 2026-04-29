@@ -89,7 +89,7 @@ let private redraw (st: S) =
     // 1. cursor up to start of our previous render, clear from there to screen end
     if st.LinesRendered > 0 then
         if st.LinesRendered > 1 then
-            writeRaw (sprintf "\x1b[%dA" (st.LinesRendered - 1))
+            writeRaw ("\x1b[" + string (st.LinesRendered - 1) + "A")
         writeRaw "\r\x1b[J"
     else
         writeRaw "\r"
@@ -114,8 +114,8 @@ let private redraw (st: S) =
     // Move from there to (row, col): up by (lastRow - row), then to absolute column.
     let lastRow = st.LinesRendered - 1
     let upBy = lastRow - row
-    if upBy > 0 then writeRaw (sprintf "\x1b[%dA" upBy)
-    if col > 0 then writeRaw (sprintf "\r\x1b[%dC" col)
+    if upBy > 0 then writeRaw ("\x1b[" + string upBy + "A")
+    if col > 0 then writeRaw ("\r\x1b[" + string col + "C")
     else writeRaw "\r"
 
 let readAsync (prompt: string) (ct: CancellationToken) : Task<string option> = task {

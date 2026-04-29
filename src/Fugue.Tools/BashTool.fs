@@ -35,7 +35,7 @@ let bash
     let finished = proc.WaitForExit timeout
     if not finished then
         try proc.Kill(true) with _ -> ()
-        sprintf "<timeout> after %d ms\nstdout:\n%s\nstderr:\n%s" timeout (string stdout) (string stderr)
+        "<timeout> after " + string timeout + " ms\nstdout:\n" + string stdout + "\nstderr:\n" + string stderr
     else
         proc.WaitForExit()
-        sprintf "exit_code=%d\nstdout:\n%s\nstderr:\n%s" proc.ExitCode (string stdout) (string stderr)
+        "exit_code=" + string proc.ExitCode + "\nstdout:\n" + string stdout + "\nstderr:\n" + string stderr

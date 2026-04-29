@@ -76,7 +76,7 @@ let rec private renderBlock (block: Block) : IRenderable =
         let rows =
             lines
             |> Array.mapi (fun i ln ->
-                let nr = sprintf "[dim]%3d[/]" (i + 1)
+                let nr = "[dim]" + (string (i + 1)).PadLeft(3) + "[/]"
                 let body = sprintf "[dim]%s[/]" (escape ln)
                 Columns([ Markup(nr) :> IRenderable; Markup(body) :> IRenderable ]) :> IRenderable)
         Padder(Rows(rows)).PadLeft(2) :> IRenderable
@@ -95,7 +95,7 @@ let rec private renderBlock (block: Block) : IRenderable =
             lb
             |> Seq.cast<Block>
             |> Seq.mapi (fun i item ->
-                let prefix = if lb.IsOrdered then sprintf "%d. " (i + 1) else "• "
+                let prefix = if lb.IsOrdered then string (i + 1) + ". " else "• "
                 let inner : IRenderable =
                     match item with
                     | :? Markdig.Syntax.ListItemBlock as li ->

@@ -29,7 +29,7 @@ let private runWithCfg (cfg: AppConfig) : int =
 [<EntryPoint>]
 let main argv =
     Fugue.Core.Log.session ()
-    Fugue.Core.Log.info "main" (sprintf "fugue starting, argv=[%s]" (String.concat "; " argv))
+    Fugue.Core.Log.info "main" ("fugue starting, argv=[" + String.concat "; " argv + "]")
     match Fugue.Core.Config.load argv with
     | Error (NoConfigFound help) ->
         let candidates = Discovery.discover (Discovery.defaultSources ())
@@ -52,10 +52,10 @@ let main argv =
             Fugue.Core.Config.saveToFile cfg
             runWithCfg cfg
         | None ->
-            eprintfn "%s" help
+            Console.Error.WriteLine(help)
             1
     | Error (InvalidConfig reason) ->
-        eprintfn "Invalid config: %s" reason
+        Console.Error.WriteLine("Invalid config: " + reason)
         1
     | Ok cfg ->
         runWithCfg cfg

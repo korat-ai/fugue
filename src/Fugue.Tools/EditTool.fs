@@ -33,4 +33,4 @@ let edit
 
     let updated = original.Replace(oldString, newString)
     File.WriteAllText(full, updated)
-    sprintf "edited %s (%d replacement%s)" full count (if count = 1 then "" else "s")
+    "edited " + full + " (" + string count + " replacement" + (if count = 1 then "" else "s") + ")"

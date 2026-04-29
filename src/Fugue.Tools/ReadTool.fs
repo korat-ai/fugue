@@ -27,6 +27,6 @@ let read
             let idx = off + i
             if idx < allLines.Length then
                 let lineNo = idx + 1
-                yield sprintf "%6d\t%s" lineNo allLines.[idx]
+                yield (string lineNo).PadLeft(6) + "\t" + allLines.[idx]
     }
     |> String.concat "\n"
