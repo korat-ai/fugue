@@ -20,6 +20,8 @@
 1. **Visual parity с Claude Code** (по reference-скриншотам в Linear): scrollback-flow, прозрачный фон терминала, markdown-рендер ответов, tool-вызовы как `● Bash(...)` буллеты, diff-блоки с цветовыми префиксами, persistent статус-бар на двух нижних строках. Никаких полноэкранных рамок.
 2. **Native AOT всерьёз**: `PublishAot=true`, бинарь ≤ 35 MB, cold start ≤ 50 ms, peak RSS на idle ≤ 90 MB. Никаких runtime-warning'ов.
 3. **Сохранить F#-only-codebase, multi-provider, MAF-агента, AgentSession, streaming, шесть тулзов, файловый логгер** (`~/.fugue/log.txt`).
+4. **Конфигурируемый chat layout**: пользовательские сообщения по умолчанию выровнены влево; правое выравнивание (telegram-style) переключается через config.
+5. **Локализация UI на en + ru** в MVP. Все наши UI-строки (статус-бар, error-сообщения, slash-command help, статус тулзов, "cancelled" и т.п.) — через resolver, не хардкодом.
 
 ## Не-цели
 
@@ -50,8 +52,6 @@ tests/
 | Файл | Роль |
 |---|---|
 | `Fugue.Core/Log.fs` | append-only file logger в `~/.fugue/log.txt` |
-| `Fugue.Core/Domain.fs` | `Role`, `ContentBlock`, `Message`, `Session`, `ProviderConfig`, `AppConfig` |
-| `Fugue.Core/Config.fs` | resolution: explicit env > file > implicit env |
 | `Fugue.Core/SystemPrompt.fs` | базовый system-prompt |
 | `Fugue.Agent/AgentFactory.fs` | `IChatClient` → `AIAgent` фабрика на 3 провайдера |
 | `Fugue.Agent/Conversation.fs` | `taskSeq`-стрим, propagates OCE на cancel |
@@ -62,6 +62,9 @@ tests/
 
 | Файл | Действие | Причина |
 |---|---|---|
+| `Fugue.Core/Domain.fs` | modify | Добавить `UiConfig` (alignment, locale) в `AppConfig`. |
+| `Fugue.Core/Config.fs` | modify | Парсить новый блок `ui` из JSON, дефолты при отсутствии поля. |
+| `Fugue.Core/Localization.fs` | new | `Strings` record (~30 ключей) + значения `en` и `ru` + `current` resolver. |
 | `Fugue.Tools/ToolRegistry.fs` | rewrite | `AIFunctionFactory.Create` использует reflection на F# `option`. Переходим на кастомный `AIFunction`-наследник без reflection. |
 | `Fugue.Tools/AiFunctions/*` | new | Один общий `DelegatedAIFunction`-класс + одна `create cwd`-функция на тулзу. |
 | `Fugue.Cli/Mvu.fs` | delete | REPL не требует MVU. |
@@ -79,7 +82,8 @@ tests/
 | `tests/Fugue.Tests/UpdateTests.fs` | delete | Update'а нет. |
 | `tests/Fugue.Tests/ToolRegistryTests.fs` | new | Schema validity + arg parsing для каждой из 6 тулзов. |
 | `tests/Fugue.Tests/ReadLineTests.fs` | new | Pure key-handler unit-тесты. |
-| `tests/Fugue.Tests/RenderTests.fs` | new | Markdown + diff-detect, snapshot-style сравнение текстового output'а. |
+| `tests/Fugue.Tests/RenderTests.fs` | new | Markdown + diff-detect, alignment-toggle, snapshot-style сравнение output'а. |
+| `tests/Fugue.Tests/LocalizationTests.fs` | new | `pick "en"/"ru"/"fr"`, all fields non-empty в обоих values, auto-detect resolver. |
 
 ### Зависимости (NuGet)
 
@@ -231,8 +235,11 @@ module Fugue.Cli.Render
 open Spectre.Console
 open Spectre.Console.Rendering
 
-/// User input, как один render-вызов: `[grey]›[/] {text}` без рамок.
-val userMessage    : string -> IRenderable
+/// User input. Layout зависит от config.Ui.UserAlignment:
+///   - Left (default): `[grey]›[/] {text}` без рамок, с левого края.
+///   - Right: Align.Right(Padder(Text)) с max-width 70% terminal width;
+///     текст жмётся к правому краю, длинный wrap'ится внутри max-width.
+val userMessage    : UiConfig -> string -> IRenderable
 
 /// Финальный markdown-рендер ответа ассистента (после стрима).
 /// Конвертит markdown через MarkdownRender.toRenderable.
@@ -556,6 +563,137 @@ Render via Spectre: `[grey]›[/] ` префикс. Никаких рамок в
 
 ---
 
+## UI config + localization
+
+### `UiConfig` в `Domain.fs`
+
+```fsharp
+type UserAlignment = Left | Right
+
+type UiConfig =
+    { UserAlignment: UserAlignment       // default: Left
+      Locale:        string }            // "en" | "ru"; default: auto-detect
+
+type AppConfig =
+    { Provider:      ProviderConfig
+      SystemPrompt:  string option
+      MaxIterations: int
+      Ui:            UiConfig }          // ← новое
+```
+
+### JSON-схема `~/.fugue/config.json`
+
+```json
+{
+  "provider": "ollama",
+  "model": "qwen3.6:27b",
+  "ollamaEndpoint": "http://localhost:11434",
+  "apiKey": "",
+  "maxIterations": 30,
+  "ui": {
+    "userAlignment": "left",
+    "locale": "ru"
+  }
+}
+```
+
+Блок `ui` опциональный. При отсутствии — дефолты:
+- `userAlignment = "left"` (классический CLI-look). Любители telegram-style ставят `"right"` руками.
+- `locale` = auto: env `FUGUE_LOCALE` → `CultureInfo.CurrentCulture.TwoLetterISOLanguageName` (если `ru` — берём `ru`, иначе `en`).
+
+`Config.fs` валидирует `userAlignment ∈ {"left","right"}` и `locale ∈ {"en","ru"}`. На неизвестное значение — warning в лог + дефолт.
+
+### `Localization.fs` — структура
+
+```fsharp
+module Fugue.Core.Localization
+
+/// Все UI-строки приложения. Дополняется по мере добавления фич.
+type Strings =
+    { // Slash-команды
+      ExitCommand:     string
+      QuitCommand:     string
+      ClearCommand:    string
+
+      // Stream lifecycle
+      Cancelled:       string         // "cancelled" / "отменено"
+      ToolRunning:     string         // "running…" / "выполняется…"
+      ErrorPrefix:     string         // "error" / "ошибка"
+
+      // Status bar
+      StatusBarApp:    string         // обычно остаётся "fugue" в обоих локалях
+      StatusBarOn:     string         // "on" / "на ветке"
+
+      // Prompt + help
+      PromptHelpEnter:        string  // "Enter to send" / "Enter — отправить"
+      PromptHelpShiftEnter:   string  // "Shift+Enter for newline" / "Shift+Enter — новая строка"
+      PromptHelpCtrlD:        string  // "Ctrl+D to exit" / "Ctrl+D — выход"
+
+      // Help text для отсутствующего конфига (~30 строк)
+      ConfigHelpHeader:       string
+      ConfigHelpEnvHint:      string
+      ConfigHelpFileHint:     string
+
+      // Discovery prompts
+      DiscoveryNoCandidates:  string
+      DiscoveryPickProvider:  string }
+
+val en : Strings
+val ru : Strings
+
+/// Picks Strings based on UiConfig.Locale; falls back to en for unknowns.
+val pick : locale: string -> Strings
+
+/// Convenience: picks based on the active AppConfig.Ui.Locale.
+val current : AppConfig -> Strings
+```
+
+Все `Strings` — статические immutable records. AOT-clean (никакого `ResourceManager`, никакого reflection). Расширение в будущем: добавил поле в record → дописал значения в обоих values → готово, компилятор гарантирует полноту.
+
+Использование в `Render.fs`:
+
+```fsharp
+let cancelled (s: Strings) : IRenderable =
+    Markup($"[yellow]⚠ {Markup.Escape s.Cancelled}[/]") :> _
+```
+
+В `Repl.fs` локаль резолвится один раз в начале `run`, передаётся в renderer'ы. Если в будущем понадобится hot-reload локали через slash-команду `/lang en` — Strings можно обернуть в `mutable ref<Strings>`, но в MVP — однократный resolve.
+
+### Что НЕ локализуется
+
+- **Slash-команды как литералы**: `/exit`, `/quit`, `/clear` остаются английскими (это команды, не текст). Их **help**-описания — да, локализуются.
+- **Имена тулзов**: `Read`, `Write`, `Edit`, `Bash`, `Glob`, `Grep` — фиксированы (LLM знает их по-английски).
+- **Ответы LLM**: язык ответа определяется тем, на каком языке пользователь пишет prompt (или явным указанием в system prompt). Это не наша зона ответственности.
+- **Логи в `~/.fugue/log.txt`**: всегда английский (для отладки, GitHub issues, и т.п.).
+- **JSON-имена полей** в config'е (`provider`, `model`, `ui.userAlignment`): всегда английские, как любые JSON-ключи.
+
+### Тесты — `LocalizationTests.fs`
+
+1. `pick "en"` возвращает `en`; `pick "ru"` — `ru`; `pick "fr"` — `en` (fallback).
+2. `en` и `ru` records — обе **полностью заполнены** (через record construction, компилятор и так не пропустит, но для надёжности — тест проверяет что ни одно поле не пустая строка).
+3. `current cfg` уважает `cfg.Ui.Locale`.
+
+### Auto-detection алгоритм при старте
+
+```fsharp
+let resolveLocale (envLocale: string option) (cfgLocale: string option) : string =
+    match envLocale with
+    | Some "ru" -> "ru"
+    | Some "en" -> "en"
+    | _ ->
+        match cfgLocale with
+        | Some "ru" -> "ru"
+        | Some "en" -> "en"
+        | _ ->
+            match CultureInfo.CurrentCulture.TwoLetterISOLanguageName with
+            | "ru" -> "ru"
+            | _ -> "en"
+```
+
+`CultureInfo` AOT-clean, проверено.
+
+---
+
 ## AOT — config + trim warnings + verification
 
 ### `Fugue.Cli.fsproj` финал
@@ -671,7 +809,9 @@ Render via Spectre: `[grey]›[/] ` префикс. Никаких рамок в
 5. **Status bar.** При запуске видим внизу `~/Korat_Agent on main\nfugue · ollama:qwen3.6:27b`. После `cd ../somewhere && fugue` — путь обновился. После переключения git-ветки руками — branch обновляется в течение 2 секунд (через poll).
 6. **Resize.** `cmd+plus` / `cmd+minus` в iTerm — status bar остаётся на 2 нижних строках, не дублируется и не теряется.
 7. **Selection.** Выделить текст ответа ассистента мышкой → копируется чисто, без ANSI escape'ов в clipboard. Cmd+F поиск работает.
-8. `/exit` → нормальный выход, status bar убран, scroll region восстановлен.
+8. **User alignment.** При `ui.userAlignment = "right"` пользовательские сообщения жмутся к правому краю с max-width 70%. При `"left"` — слева с `›` префиксом. Переключение через правку `~/.fugue/config.json` + рестарт.
+9. **Локализация.** При `ui.locale = "ru"`: статус-бар, `cancelled`, `running…`, error-префиксы — на русском. При `"en"` — на английском. Auto-detect срабатывает при отсутствии поля (на macOS с системным русским — берёт ru).
+10. `/exit` → нормальный выход, status bar убран, scroll region восстановлен.
 
 ### Acceptance criteria
 
@@ -688,14 +828,16 @@ Render via Spectre: `[grey]›[/] ` префикс. Никаких рамок в
 | Tool-bullet style (`●` цветом по статусу) | работает | FrameView с заголовком |
 | Persistent status bar (path + branch + provider) | работает | нет |
 | Ctrl+C: один error-block, не два | работает | работает (после fix'а в hot-fix-ветке) |
+| User-message alignment (config-toggle left/right) | работает | нет |
+| UI-локализация en + ru | работает | нет (всё хардкод-английский) |
 
-Pivot считаем успешным, когда все 11 строк зелёные.
+Pivot считаем успешным, когда все 13 строк зелёные.
 
 ---
 
 ## Future work (вне scope MVP)
 
-- **v0.2:** permission-prompt перед `Bash`/`Write`/`Edit`; история стрелками в ReadLine; soft-wrap длинных строк; slash-команды `/help`, `/cost`, `/model`; **syntax highlighting в code blocks** (regex-токенайзер на 6 языков, ~250 LOC); token counter для status bar (`ctx:32%`); `bypass permissions on (shift+tab to cycle)` — индикатор и переключатель режима permission.
+- **v0.2:** permission-prompt перед `Bash`/`Write`/`Edit`; история стрелками в ReadLine; soft-wrap длинных строк; slash-команды `/help`, `/cost`, `/model`, `/lang en|ru` (hot-swap локали); **syntax highlighting в code blocks** (regex-токенайзер на 6 языков, ~250 LOC); token counter для status bar (`ctx:32%`); `bypass permissions on (shift+tab to cycle)` — индикатор и переключатель режима permission; **re-render всей истории на resize** как config-toggle (`ui.rerenderOnResize: true`) — требует in-memory message store в `Repl.fs` и `AnsiConsole.Clear()` + reprint на SIGWINCH; цена — теряется scrollback при каждом resize, поэтому off-by-default; дополнительные локали (de, es, fr, zh) если будет спрос.
 - **v0.3:** F#-конфиг через `~/.fugue/fugue.fsx`. Решение между двумя паттернами:
   1. **xmonad-style «recompile self».** `fugue` сравнивает хэш `fugue.fsx` с известным; если изменился — `dotnet publish` темплейта с инжектнутым `Compile Include="fugue.fsx"`, exec нового AOT-бинаря. Требует `.NET SDK` у пользователя, первая компиляция ~30-60 сек.
   2. **Sidecar JIT-процесс.** Главный AOT-`fugue` для горячего пути + отдельный `fugue-script` (JIT, ~150 ms) для `fugue.fsx`. Общаются через stdio JSON-RPC.
