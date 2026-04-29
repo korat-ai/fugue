@@ -3,7 +3,6 @@ module Fugue.Cli.Repl
 open System
 open System.Collections.Generic
 open System.Diagnostics.CodeAnalysis
-open System.Text
 open System.Threading
 open System.Threading.Tasks
 open Microsoft.Agents.AI
@@ -40,69 +39,56 @@ type CancelSource() =
         member _.Dispose() =
             streamCts |> Option.iter (fun c -> try c.Dispose() with _ -> ())
 
-let private finishState (prev: Render.ToolState) (isErr: bool) (output: string) : Render.ToolState =
-    match prev with
-    | Render.Running(n, a) ->
-        if isErr then Render.Failed(n, a, output)
-        else Render.Completed(n, a, output)
-    | other -> other
-
 let private streamAndRender
         (agent: AIAgent) (session: AgentSession | null) (input: string)
         (cfg: AppConfig) (cancelSrc: CancelSource) : Task<unit> = task {
     use streamCts = cancelSrc.NewStreamCts()
     let strings = pick cfg.Ui.Locale
-    let assistantBuf = StringBuilder()
-    let tools = Dictionary<string, Render.ToolState>()
-    let toolOrder = ResizeArray<string>()
-
-    let layout () =
-        let parts = ResizeArray<Spectre.Console.Rendering.IRenderable>()
-        if assistantBuf.Length > 0 then
-            parts.Add(Render.assistantLive (assistantBuf.ToString()))
-        for id in toolOrder do
-            parts.Add(Render.toolBullet strings tools.[id])
-        Rows(parts) :> Spectre.Console.Rendering.IRenderable
-
-    let live = AnsiConsole.Live(layout()).AutoClear(true)
+    // id -> (name, args) bookkeeping so ToolCompleted can recover the tool's identity.
+    let toolMeta = Dictionary<string, string * string>()
+    let mutable assistantStreaming = false  // true while we're emitting raw assistant text without a trailing newline
 
     try
-        do! live.StartAsync(fun ctx -> task {
-            let stream = Conversation.run agent session input streamCts.Token
-            let enumerator = stream.GetAsyncEnumerator(streamCts.Token)
-            let mutable hasNext = true
-            while hasNext do
-                let! step = enumerator.MoveNextAsync().AsTask()
-                if step then
-                    match enumerator.Current with
-                    | Conversation.TextChunk t ->
-                        assistantBuf.Append t |> ignore
-                    | Conversation.ToolStarted(id, n, a) ->
-                        if not (tools.ContainsKey id) then toolOrder.Add id
-                        tools.[id] <- Render.Running(n, a)
-                    | Conversation.ToolCompleted(id, o, err) ->
-                        let prev =
-                            if tools.ContainsKey id then tools.[id]
-                            else Render.Running("?", "?")
-                        tools.[id] <- finishState prev err o
-                    | Conversation.Finished -> ()
-                    | Conversation.Failed ex -> raise ex
-                    ctx.UpdateTarget(layout())
-                    ctx.Refresh()
-                else hasNext <- false
-        })
-        // Live cleared. Now render final state.
-        if assistantBuf.Length > 0 then
-            AnsiConsole.Write(Render.assistantFinal (assistantBuf.ToString()))
-            AnsiConsole.WriteLine()
-        for id in toolOrder do
-            AnsiConsole.Write(Render.toolBullet strings tools.[id])
-            AnsiConsole.WriteLine()
+        let stream = Conversation.run agent session input streamCts.Token
+        let enumerator = stream.GetAsyncEnumerator(streamCts.Token)
+        let mutable hasNext = true
+        while hasNext do
+            let! step = enumerator.MoveNextAsync().AsTask()
+            if step then
+                match enumerator.Current with
+                | Conversation.TextChunk t ->
+                    // Stream raw text directly — scroll region handles wrapping.
+                    Console.Out.Write t
+                    Console.Out.Flush()
+                    assistantStreaming <- true
+                | Conversation.ToolStarted(id, name, args) ->
+                    toolMeta.[id] <- (name, args)
+                    if assistantStreaming then
+                        Console.Out.WriteLine ()
+                        assistantStreaming <- false
+                    AnsiConsole.Write(Render.toolBullet strings (Render.Running(name, args)))
+                    AnsiConsole.WriteLine ()
+                | Conversation.ToolCompleted(id, output, isErr) ->
+                    let name, args =
+                        match toolMeta.TryGetValue id with
+                        | true, v -> v
+                        | false, _ -> "?", "?"
+                    let state =
+                        if isErr then Render.Failed(name, args, output)
+                        else Render.Completed(name, args, output)
+                    AnsiConsole.Write(Render.toolBullet strings state)
+                    AnsiConsole.WriteLine ()
+                | Conversation.Finished -> ()
+                | Conversation.Failed ex -> raise ex
+            else hasNext <- false
+        if assistantStreaming then Console.Out.WriteLine ()
     with
     | :? OperationCanceledException ->
+        if assistantStreaming then Console.Out.WriteLine ()
         AnsiConsole.Write(Render.cancelled strings)
         AnsiConsole.WriteLine()
     | ex ->
+        if assistantStreaming then Console.Out.WriteLine ()
         AnsiConsole.Write(Render.errorLine strings ex.Message)
         AnsiConsole.WriteLine()
 }
