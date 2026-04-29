@@ -16,6 +16,7 @@
     <Compile Include="ToolRegistryTests.fs" />
     <Compile Include="ConfigTests.fs" />
     <Compile Include="LocalizationTests.fs" />
+    <Compile Include="ReadLineTests.fs" />
     <Compile Include="ReadToolTests.fs" />
     <Compile Include="WriteToolTests.fs" />
     <Compile Include="EditToolTests.fs" />
@@ -37,5 +38,6 @@
     <ProjectReference Include="..\..\src\Fugue.Core\Fugue.Core.fsproj" />
     <ProjectReference Include="..\..\src\Fugue.Tools\Fugue.Tools.fsproj" />
     <ProjectReference Include="..\..\src\Fugue.Agent\Fugue.Agent.fsproj" />
+    <ProjectReference Include="..\..\src\Fugue.Cli\Fugue.Cli.fsproj" />
   </ItemGroup>
 </Project>

@@ -9,11 +9,6 @@
 
   <ItemGroup>
     <Compile Include="ReadLine.fs" />
-    <Compile Include="MarkdownRender.fs" />
-    <Compile Include="DiffRender.fs" />
-    <Compile Include="Render.fs" />
-    <Compile Include="StatusBar.fs" />
-    <Compile Include="Repl.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
