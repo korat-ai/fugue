@@ -5,6 +5,12 @@ open System.IO
 open System.ComponentModel
 open Fugue.Tools.PathSafety
 
+let private formatBytes (n: int64) : string =
+    if n >= 1_073_741_824L then sprintf "%.1f GB" (float n / 1_073_741_824.0)
+    elif n >= 1_048_576L then sprintf "%.1f MB" (float n / 1_048_576.0)
+    elif n >= 1024L then sprintf "%.1f KB" (float n / 1024.0)
+    else sprintf "%d B" n
+
 [<Description("Read a text file. Returns lines prefixed with 1-based line numbers (cat -n format).")>]
 let read
     ([<Description("File path (absolute or relative to working directory).")>] cwd: string)
@@ -14,6 +20,11 @@ let read
     : string =
     let full = resolve cwd path
     if not (File.Exists full) then raise (FileNotFoundException("file not found", full))
+    let sizeBytes = FileInfo(full).Length
+    if sizeBytes > 1_048_576L then
+        raise (InvalidOperationException(
+            sprintf "file too large (%s) — use Grep to search or Glob to list sections"
+                (formatBytes sizeBytes)))
 
     let allLines = File.ReadAllLines full
     let off = offset |> Option.defaultValue 0
