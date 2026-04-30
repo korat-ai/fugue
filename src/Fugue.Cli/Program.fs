@@ -125,7 +125,27 @@ let main argv =
         argv
         |> Array.tryFindIndex ((=) "--print")
         |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
-    if argv |> Array.contains "doctor" then
+    if argv |> Array.exists (fun a -> a = "--help" || a = "-h") then
+        Console.Write """Usage: fugue [--profile <name>] [--template <name>] [--low-bandwidth] [--offline] [--print "prompt"]
+       fugue doctor | init | aliases | man
+
+Subcommands:
+  doctor    Run environment diagnostics
+  init      Bootstrap FUGUE.md in current directory
+  aliases   Print/install shell aliases
+  man       Display full manual page
+
+Options:
+  --profile <name>    Load ~/.fugue/profiles/<name>.md as system-prompt prefix
+  --template <name>   Load ~/.fugue/templates/<name>.md as session template
+  --low-bandwidth     Skip session summary, cap tool output to 500 lines
+  --offline           Require a local provider (Ollama)
+  --print "prompt"    Non-interactive: send one prompt, stream to stdout, exit
+
+Run `fugue man` for the full manual.
+"""
+        0
+    elif argv |> Array.contains "doctor" then
         let cwd = Environment.CurrentDirectory
         let passed = Doctor.run cwd
         if passed then 0 else 1
