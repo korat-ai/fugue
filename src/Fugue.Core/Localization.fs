@@ -74,7 +74,22 @@ type Strings =
 
       // /init command
       CmdInitDesc: string
-      InitExists:  string }
+      InitExists:  string
+
+      // /tools command
+      CmdToolsDesc: string
+      ToolsHeader:  string
+      CmdClearHistoryDesc: string
+      ClearHistoryDone:    string
+
+      // /short /long verbosity
+      CmdShortDesc:      string
+      CmdLongDesc:       string
+      VerbosityShortSet: string
+      VerbosityLongSet:  string
+
+      // /summary
+      CmdSummaryDesc: string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -120,7 +135,16 @@ let en : Strings =
       CmdDiffDesc           = "show unstaged git diff (use /diff --staged for staged changes)"
       NoDiff                = "no changes"
       CmdInitDesc           = "generate FUGUE.md for this project (creates if absent)"
-      InitExists            = "FUGUE.md already exists. Edit it directly or delete it first." }
+      InitExists            = "FUGUE.md already exists. Edit it directly or delete it first."
+      CmdToolsDesc          = "list all available tools with descriptions"
+      ToolsHeader           = "Available tools"
+      CmdClearHistoryDesc   = "reset conversation history without clearing screen"
+      ClearHistoryDone      = "Conversation history cleared. Screen preserved."
+      CmdShortDesc          = "switch to brief responses"
+      CmdLongDesc           = "switch to detailed responses"
+      VerbosityShortSet     = "Brevity mode on. Responses will be concise."
+      VerbosityLongSet      = "Detail mode on. Responses will be thorough."
+      CmdSummaryDesc        = "ask the agent to summarize the current session" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -166,7 +190,16 @@ let ru : Strings =
       CmdDiffDesc           = "показать unstaged git diff (используйте /diff --staged для staged изменений)"
       NoDiff                = "изменений нет"
       CmdInitDesc           = "создать FUGUE.md для проекта (если отсутствует)"
-      InitExists            = "FUGUE.md уже существует. Отредактируйте его напрямую или сначала удалите." }
+      InitExists            = "FUGUE.md уже существует. Отредактируйте его напрямую или сначала удалите."
+      CmdToolsDesc          = "показать список инструментов с описаниями"
+      ToolsHeader           = "Доступные инструменты"
+      CmdClearHistoryDesc   = "сбросить историю разговора без очистки экрана"
+      ClearHistoryDone      = "История разговора сброшена. Экран сохранён."
+      CmdShortDesc          = "перейти к кратким ответам"
+      CmdLongDesc           = "перейти к подробным ответам"
+      VerbosityShortSet     = "Режим краткости включён. Ответы будут краткими."
+      VerbosityLongSet      = "Режим подробности включён. Ответы будут развёрнутыми."
+      CmdSummaryDesc        = "попросить агента резюмировать текущую сессию" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =

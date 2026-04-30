@@ -237,46 +237,53 @@ let private streamAndRender
     let toolMeta = Dictionary<string, string * string>()
     let mutable assistantStreaming = false   // are we mid-line in the plain-text stream
 
+    StatusBar.startStreaming()
     try
-        let stream = Conversation.run agent session input streamCts.Token
-        let enumerator = stream.GetAsyncEnumerator(streamCts.Token)
-        let mutable hasNext = true
-        while hasNext do
-            let! step = enumerator.MoveNextAsync().AsTask()
-            if step then
-                match enumerator.Current with
-                | Conversation.TextChunk t ->
-                    Console.Out.Write t
-                    Console.Out.Flush()
-                    assistantStreaming <- true
-                | Conversation.ToolStarted(id, name, args) ->
-                    toolMeta.[id] <- (name, args)
-                    if assistantStreaming then
-                        Console.Out.WriteLine ()
-                        assistantStreaming <- false
-                | Conversation.ToolCompleted(id, output, isErr) ->
-                    let name, args =
-                        match toolMeta.TryGetValue id with
-                        | true, v -> v
-                        | false, _ -> "?", "?"
-                    let state =
-                        if isErr then Render.Failed(name, args, output)
-                        else Render.Completed(name, args, output)
-                    AnsiConsole.Write(Render.toolBullet strings state)
-                    AnsiConsole.WriteLine ()
-                | Conversation.Finished -> ()
-                | Conversation.Failed ex -> raise ex
-            else hasNext <- false
-        if assistantStreaming then Console.Out.WriteLine ()
-    with
-    | :? OperationCanceledException ->
-        if assistantStreaming then Console.Out.WriteLine ()
-        AnsiConsole.Write(Render.cancelled strings)
-        AnsiConsole.WriteLine()
-    | ex ->
-        if assistantStreaming then Console.Out.WriteLine ()
-        AnsiConsole.Write(Render.errorLine strings ex.Message)
-        AnsiConsole.WriteLine()
+        try
+            let stream = Conversation.run agent session input streamCts.Token
+            let enumerator = stream.GetAsyncEnumerator(streamCts.Token)
+            let mutable hasNext = true
+            while hasNext do
+                let! step = enumerator.MoveNextAsync().AsTask()
+                if step then
+                    match enumerator.Current with
+                    | Conversation.TextChunk t ->
+                        Console.Out.Write t
+                        Console.Out.Flush()
+                        assistantStreaming <- true
+                    | Conversation.ToolStarted(id, name, args) ->
+                        toolMeta.[id] <- (name, args)
+                        if assistantStreaming then
+                            Console.Out.WriteLine ()
+                            assistantStreaming <- false
+                        StatusBar.refresh()
+                    | Conversation.ToolCompleted(id, output, isErr) ->
+                        let name, args =
+                            match toolMeta.TryGetValue id with
+                            | true, v -> v
+                            | false, _ -> "?", "?"
+                        let state =
+                            if isErr then Render.Failed(name, args, output)
+                            else Render.Completed(name, args, output)
+                        AnsiConsole.Write(Render.toolBullet strings state)
+                        AnsiConsole.WriteLine ()
+                        StatusBar.refresh()
+                    | Conversation.Finished -> ()
+                    | Conversation.Failed ex -> raise ex
+                else hasNext <- false
+            if assistantStreaming then Console.Out.WriteLine ()
+        with
+        | :? OperationCanceledException ->
+            if assistantStreaming then Console.Out.WriteLine ()
+            AnsiConsole.Write(Render.cancelled strings)
+            AnsiConsole.WriteLine()
+        | ex ->
+            if assistantStreaming then Console.Out.WriteLine ()
+            AnsiConsole.Write(Render.errorLine strings ex.Message)
+            AnsiConsole.WriteLine()
+    finally
+        StatusBar.stopStreaming()
+        StatusBar.refresh()
 }
 
 [<RequiresUnreferencedCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
@@ -292,6 +299,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     StatusBar.start cwd cfg
 
     let strings = pick cfg.Ui.Locale
+    let mutable verbosityPrefix : string option = None
     try
         while not cancelSrc.QuitRequested do
             let callbacks : ReadLine.ReadLineCallbacks = { OnClearScreen = StatusBar.refresh }
@@ -308,6 +316,11 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 let helpItems = [ "/help",           strings.CmdHelpDesc
                                   "/ask <q>",        strings.CmdAskDesc
                                   "/clear",          strings.CmdClearDesc
+                                  "/summary",         strings.CmdSummaryDesc
+                                  "/short",           strings.CmdShortDesc
+                                  "/long",            strings.CmdLongDesc
+                                  "/clear-history",   strings.CmdClearHistoryDesc
+                                  "/tools",           strings.CmdToolsDesc
                                   "/new",             strings.CmdNewDesc
                                   "/diff",           strings.CmdDiffDesc
                                   "/init",           strings.CmdInitDesc
@@ -353,6 +366,38 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s = "/short" ->
+                verbosityPrefix <- Some "[VERBOSITY: respond briefly, 1-2 sentences per point, no elaboration unless asked]\n\n"
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.VerbosityShortSet + "[/]"))
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s = "/long" ->
+                verbosityPrefix <- Some "[VERBOSITY: respond in detail, include explanations, examples, and context]\n\n"
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.VerbosityLongSet + "[/]"))
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s = "/clear-history" ->
+                match box session with
+                | :? IAsyncDisposable as d ->
+                    try do! d.DisposeAsync().AsTask() with _ -> ()
+                | _ -> ()
+                try
+                    let! newSession = agent.CreateSessionAsync(CancellationToken.None)
+                    session <- newSession
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ClearHistoryDone + "[/]"))
+                    AnsiConsole.WriteLine()
+                with ex ->
+                    session <- null
+                    AnsiConsole.Write(Render.errorLine strings ex.Message)
+                    AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s = "/tools" ->
+                AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.ToolsHeader + "[/]"))
+                AnsiConsole.WriteLine()
+                for (name, desc) in Fugue.Tools.ToolRegistry.descriptions do
+                    AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
+                    AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/issue" || s.StartsWith "/issue " ->
                 let rawArg = if s = "/issue" then "" else s.Substring(7).TrimStart()
@@ -632,6 +677,19 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     finally
                         cancelSrc.ExitChild ()
                         StatusBar.start cwd cfg
+            | Some s when s = "/summary" ->
+                let summaryPrompt =
+                    "Please generate a structured summary of our session so far.\n\n" +
+                    "Include:\n" +
+                    "- What we worked on (tasks, files changed, problems solved)\n" +
+                    "- Key decisions made\n" +
+                    "- Any open questions or next steps\n\n" +
+                    "Be concise but complete."
+                AnsiConsole.Write(Render.userMessage cfg.Ui "/summary")
+                AnsiConsole.WriteLine()
+                do! streamAndRender agent session summaryPrompt cfg cancelSrc
+                StatusBar.refresh ()
+
                 StatusBar.refresh ()
             | Some userInput ->
                 if ReadLine.hasZeroWidth userInput then
@@ -641,10 +699,12 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 let expandedInput = expandClipboard expandedInput strings
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
                 AnsiConsole.WriteLine()
+                let effectiveInput =
+                    match verbosityPrefix with
+                    | Some prefix -> prefix + expandedInput
+                    | None -> expandedInput
                 let sw = System.Diagnostics.Stopwatch.StartNew()
-                do! streamAndRender agent session expandedInput cfg cancelSrc
-                sw.Stop()
-                DebugLog.turnCompleted userInput.Length 0 sw.ElapsedMilliseconds
+                do! streamAndRender agent session effectiveInput cfg cancelSrc
                 StatusBar.refresh ()
     finally
         Console.CancelKeyPress.RemoveHandler handler

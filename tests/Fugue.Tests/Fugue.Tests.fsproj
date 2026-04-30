@@ -18,12 +18,14 @@
     <Compile Include="ConfigDisplayNameTests.fs" />
     <Compile Include="DebugLogTests.fs" />
     <Compile Include="LocalizationTests.fs" />
+    <Compile Include="SystemPromptTests.fs" />
     <Compile Include="ReadLineTests.fs" />
     <Compile Include="InputSanitizeTests.fs" />
     <Compile Include="MarkdownRenderTests.fs" />
     <Compile Include="MathRenderTests.fs" />
     <Compile Include="DiffRenderTests.fs" />
     <Compile Include="RenderTests.fs" />
+    <Compile Include="StatusBarTests.fs" />
     <Compile Include="ReadToolTests.fs" />
     <Compile Include="WriteToolTests.fs" />
     <Compile Include="EditToolTests.fs" />
