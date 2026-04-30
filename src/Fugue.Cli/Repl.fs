@@ -334,7 +334,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     try
         while not cancelSrc.QuitRequested do
             let callbacks : ReadLine.ReadLineCallbacks = { OnClearScreen = StatusBar.refresh }
-            let! lineOpt = ReadLine.readAsync (Render.prompt cwd) strings callbacks cancelSrc.Token
+            let! lineOpt = ReadLine.readAsync (Render.prompt cwd) strings callbacks (Render.isColorEnabled ()) cancelSrc.Token
             match lineOpt with
             | None ->
                 cancelSrc.RequestQuit()

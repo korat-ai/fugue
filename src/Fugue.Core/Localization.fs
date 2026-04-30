@@ -104,7 +104,10 @@ type Strings =
       CmdSummarizeDesc: string
 
       // @path injection hints
-      TestFileHint:  string }
+      TestFileHint:  string
+
+      // Input prompt
+      InputPlaceholder: string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -166,7 +169,8 @@ let en : Strings =
       CmdTodoDesc           = "scan workspace for TODO/FIXME/HACK comments"
       TodoNone              = "no TODO/FIXME/HACK comments found in workspace"
       CmdSummarizeDesc      = "summarize a file or directory"
-      TestFileHint          = "[test file found: {0} — include it with @{1}]" }
+      TestFileHint          = "[test file found: {0} — include it with @{1}]"
+      InputPlaceholder      = "Type a message or /help" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -228,7 +232,8 @@ let ru : Strings =
       CmdTodoDesc           = "найти TODO/FIXME/HACK комментарии в проекте"
       TodoNone              = "TODO/FIXME/HACK комментарии не найдены"
       CmdSummarizeDesc      = "резюме файла или директории"
-      TestFileHint          = "[найден тест-файл: {0} — подключите его через @{1}]" }
+      TestFileHint          = "[найден тест-файл: {0} — подключите его через @{1}]"
+      InputPlaceholder      = "Введите сообщение или /help" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =
