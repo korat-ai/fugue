@@ -1,5 +1,6 @@
 module Fugue.Cli.Render
 
+open System
 open Spectre.Console
 open Spectre.Console.Rendering
 open Fugue.Core.Config
@@ -37,6 +38,24 @@ let cancelled (s: Strings) : IRenderable =
 let errorLine (s: Strings) (msg: string) : IRenderable =
     Markup(sprintf "[red]⚠ %s:[/] %s" (Markup.Escape s.ErrorPrefix) (Markup.Escape msg)) :> _
 
+let private termWidth () =
+    let w = Console.WindowWidth
+    if w >= 20 then w else 120
+
+/// Soft-wrap a single line to `width` columns, appending "↩" at each break.
+let private softWrap (width: int) (line: string) : string list =
+    if line.Length <= width then [ line ]
+    else
+        let usable = width - 1  // reserve 1 col for ↩
+        let mutable result = []
+        let mutable i = 0
+        while i < line.Length do
+            let chunkEnd = min line.Length (i + usable)
+            let chunk = line.[i .. chunkEnd - 1]
+            result <- result @ [ if chunkEnd < line.Length then chunk + "↩" else chunk ]
+            i <- chunkEnd
+        result
+
 let private renderToolBody (output: string) : IRenderable =
     if DiffRender.looksLikeDiff output then DiffRender.toRenderable output
     elif output.Contains "```" || output.Contains "**" || output.StartsWith "#" then
@@ -49,8 +68,10 @@ let private renderToolBody (output: string) : IRenderable =
                 Array.append (Array.truncate 12 lines)
                     [| "+ " + string (lines.Length - 12) + " more lines" |]
             else lines
+        let w = termWidth ()
         let rows =
             trimmed
+            |> Array.collect (fun l -> softWrap w l |> List.toArray)
             |> Array.map (fun l ->
                 Markup(sprintf "[dim]%s[/]" (Markup.Escape l)) :> IRenderable)
         Padder(Rows(rows)).PadLeft(2) :> _
