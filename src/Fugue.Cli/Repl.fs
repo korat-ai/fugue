@@ -666,6 +666,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/gen uuid|ulid|nanoid", "generate a unique identifier"
                                   "/rename <title>",     "set a human-readable title for this session"
                                   "/env set|unset|list", "manage session-scoped environment variables"
+                                  "/cron \"description\"", "convert NL schedule to cron + next 5 fire times"
+                                  "/regex \"pat\" \"in\"", "test a regex pattern against sample input"
                                   "/rate up|down [n]", strings.CmdRateDesc
                                   "/annotate [n] [up|down] <note>", strings.CmdAnnotateDesc
                                   "/theme …",        strings.CmdThemeDesc
@@ -1639,6 +1641,134 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                             AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AliasUsage + "[/]"))
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
+            | Some s when s = "/cron" || s.StartsWith "/cron " ->
+                let desc = (if s = "/cron" then "" else s.Substring(5)).Trim().ToLowerInvariant()
+                if String.IsNullOrWhiteSpace desc then
+                    AnsiConsole.MarkupLine "[dim]Usage: /cron \"every weekday at 9am UTC\"[/]"
+                else
+                    // Simple NLP parser for common patterns
+                    let dayNames = [| "sun"; "mon"; "tue"; "wed"; "thu"; "fri"; "sat" |]
+                    let parseHour (s: string) =
+                        let s = s.Replace("am", "").Replace("pm", "").Trim()
+                        match System.Int32.TryParse s with
+                        | true, h ->
+                            if desc.Contains "pm" && h < 12 then Some (h + 12)
+                            elif desc.Contains "am" && h = 12 then Some 0
+                            else Some h
+                        | _ -> None
+                    let extractHour () =
+                        let m = System.Text.RegularExpressions.Regex.Match(desc, @"\b(\d{1,2})\s*(am|pm)\b")
+                        if m.Success then parseHour (m.Groups.[1].Value + m.Groups.[2].Value)
+                        else
+                            let m2 = System.Text.RegularExpressions.Regex.Match(desc, @"at\s+(\d{1,2})")
+                            if m2.Success then parseHour m2.Groups.[1].Value else None
+                    let extractMinute () =
+                        let m = System.Text.RegularExpressions.Regex.Match(desc, @":(\d{2})")
+                        if m.Success then match System.Int32.TryParse m.Groups.[1].Value with | true, n -> Some n | _ -> None
+                        else Some 0
+                    let extractN unit =
+                        let m = System.Text.RegularExpressions.Regex.Match(desc, @"every\s+(\d+)\s+" + unit)
+                        if m.Success then match System.Int32.TryParse m.Groups.[1].Value with | true, n -> Some n | _ -> None
+                        else None
+                    let cronExpr =
+                        if desc.Contains "every minute" || desc = "* * * * *" then Some "* * * * *"
+                        elif desc.Contains "every hour" && not (desc.Contains "every hour at") then Some "0 * * * *"
+                        elif desc.Contains "every day" || desc.Contains "daily" then
+                            let h = extractHour () |> Option.defaultValue 0
+                            let min = extractMinute () |> Option.defaultValue 0
+                            Some (sprintf "%d %d * * *" min h)
+                        elif desc.Contains "weekday" || desc.Contains "working day" then
+                            let h = extractHour () |> Option.defaultValue 9
+                            let min = extractMinute () |> Option.defaultValue 0
+                            Some (sprintf "%d %d * * 1-5" min h)
+                        elif desc.Contains "weekend" then
+                            let h = extractHour () |> Option.defaultValue 10
+                            let min = extractMinute () |> Option.defaultValue 0
+                            Some (sprintf "%d %d * * 0,6" min h)
+                        elif desc.Contains "every week" || (dayNames |> Array.exists (fun d -> desc.Contains d)) then
+                            let dow = dayNames |> Array.tryFindIndex (fun d -> desc.Contains d) |> Option.defaultValue 1
+                            let h = extractHour () |> Option.defaultValue 0
+                            let min = extractMinute () |> Option.defaultValue 0
+                            Some (sprintf "%d %d * * %d" min h dow)
+                        else
+                            match extractN "minute" |> Option.orElse (extractN "minutes") with
+                            | Some n -> Some (sprintf "*/%d * * * *" n)
+                            | None ->
+                                match extractN "hour" |> Option.orElse (extractN "hours") with
+                                | Some n -> Some (sprintf "0 */%d * * *" n)
+                                | None -> None
+                    match cronExpr with
+                    | None -> AnsiConsole.MarkupLine "[red]Could not parse cron expression. Try: \"every day at 9am\", \"every 5 minutes\", \"every weekday at 17:00\"[/]"
+                    | Some expr ->
+                        AnsiConsole.MarkupLine(sprintf "[bold cyan]%s[/]" (Markup.Escape expr))
+                        // Compute next 5 fire times
+                        let mutable t = DateTimeOffset.UtcNow.AddMinutes 1.0
+                        let mutable count = 0
+                        let parts = expr.Split(' ')
+                        let minPart  = if parts.Length > 0 then parts.[0] else "*"
+                        let hourPart = if parts.Length > 1 then parts.[1] else "*"
+                        let dowPart  = if parts.Length > 4 then parts.[4] else "*"
+                        let matchField (v: int) (field: string) =
+                            if field = "*" then true
+                            elif field.StartsWith "*/" then
+                                match System.Int32.TryParse(field.Substring 2) with
+                                | true, n -> v % n = 0
+                                | _ -> true
+                            elif field.Contains "-" then
+                                let r = field.Split '-'
+                                match System.Int32.TryParse r.[0], System.Int32.TryParse r.[1] with
+                                | (true, lo), (true, hi) -> v >= lo && v <= hi
+                                | _ -> true
+                            elif field.Contains "," then
+                                field.Split(',') |> Array.exists (fun p -> match System.Int32.TryParse p with | true, n -> n = v | _ -> false)
+                            else
+                                match System.Int32.TryParse field with
+                                | true, n -> n = v
+                                | _ -> true
+                        AnsiConsole.MarkupLine "[dim]Next 5 fire times (UTC):[/]"
+                        while count < 5 do
+                            if matchField t.Minute minPart && matchField t.Hour hourPart && matchField (int t.DayOfWeek) dowPart then
+                                AnsiConsole.MarkupLine(sprintf "  [dim]%s[/]" (t.ToString "yyyy-MM-dd HH:mm"))
+                                count <- count + 1
+                            t <- t.AddMinutes 1.0
+                StatusBar.refresh ()
+
+            | Some s when s.StartsWith "/regex " ->
+                let raw = s.Substring(7).Trim()
+                // Parse: /regex "pattern" "input" or /regex pattern input
+                let parseQuotedOrWord (t: string) =
+                    let t = t.TrimStart()
+                    if t.StartsWith "\"" then
+                        let closing = t.IndexOf('"', 1)
+                        if closing < 0 then t, ""
+                        else t.[1..closing - 1], t.[closing + 1..].TrimStart()
+                    else
+                        let space = t.IndexOf ' '
+                        if space < 0 then t, ""
+                        else t.[..space - 1], t.[space..].TrimStart()
+                let pattern, rest = parseQuotedOrWord raw
+                let input, _     = parseQuotedOrWord rest
+                if String.IsNullOrWhiteSpace pattern then
+                    AnsiConsole.MarkupLine "[dim]Usage: /regex \"pattern\" \"input\"[/]"
+                else
+                    try
+                        let rx = System.Text.RegularExpressions.Regex(pattern)
+                        let matches = rx.Matches(input)
+                        if matches.Count = 0 then
+                            AnsiConsole.MarkupLine "[dim]No matches[/]"
+                        else
+                            AnsiConsole.MarkupLine(sprintf "[dim]%d match(es) for [/][cyan]%s[/]" matches.Count (Markup.Escape pattern))
+                            for m in matches do
+                                AnsiConsole.MarkupLine(sprintf "  index=[bold]%d[/] length=[bold]%d[/] value=[green]%s[/]" m.Index m.Length (Markup.Escape m.Value))
+                                for g in rx.GetGroupNames() do
+                                    if g <> "0" then
+                                        let grp = m.Groups.[g]
+                                        if grp.Success then
+                                            AnsiConsole.MarkupLine(sprintf "    [cyan]%s[/]=[green]%s[/]" (Markup.Escape g) (Markup.Escape grp.Value))
+                    with ex ->
+                        AnsiConsole.MarkupLine(sprintf "[red]Regex error: %s[/]" (Markup.Escape ex.Message))
+                StatusBar.refresh ()
+
             | Some s when s = "/rename" || s.StartsWith "/rename " ->
                 let title = (if s = "/rename" then "" else s.Substring(7)).Trim().Trim('"').Trim('\'')
                 if String.IsNullOrWhiteSpace title then
