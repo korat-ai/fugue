@@ -193,6 +193,9 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                         do! streamAndRender agent session prompt cfg cancelSrc
                 StatusBar.refresh ()
             | Some userInput ->
+                if ReadLine.hasZeroWidth userInput then
+                    AnsiConsole.Write(Markup("[dim yellow]" + Markup.Escape strings.ZeroWidthWarning + "[/]"))
+                    AnsiConsole.WriteLine()
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
                 AnsiConsole.WriteLine()
                 do! streamAndRender agent session userInput cfg cancelSrc
