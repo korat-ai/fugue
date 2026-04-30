@@ -20,14 +20,14 @@ let private toStr (r: Spectre.Console.Rendering.IRenderable) : string =
 
 [<Fact>]
 let ``userMessage Left contains '> ' prefix`` () =
-    let out = userMessage uiLeft "hello" |> toStr
+    let out = userMessage uiLeft "hello" 1 |> toStr
     out |> should haveSubstring "›"
     out |> should haveSubstring "hello"
 
 [<Fact>]
 let ``userMessage Right does not have left-edge prefix`` () =
     // Right-aligned: text is right-justified within terminal width, no '>' prefix
-    let out = userMessage uiRight "hello" |> toStr
+    let out = userMessage uiRight "hello" 1 |> toStr
     out |> should haveSubstring "hello"
 
 [<Fact>]
