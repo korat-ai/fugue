@@ -783,7 +783,10 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/migrate oop-to-fp [file]", "convert OOP class hierarchy to F# DUs"
                                   "/derive codec <Type>",      "generate AOT-safe STJ JsonSerializerContext"
                                   "/scaffold cqrs <Cmd>",      "generate CQRS Command/Handler/Event/Test slice"
-                                  "/scaffold actor <Name>",    "generate typed actor with command DU and supervision" ]
+                                  "/scaffold actor <Name>",    "generate typed actor with command DU and supervision"
+                                  "/check tail-rec <file>",    "detect non-tail-recursive functions and offer rewrites"
+                                  "/check effects <file>",     "verify ZIO/Cats Effect/Async type consistency"
+                                  "/translate comments <file>","translate code comments to English" ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
@@ -2263,6 +2266,55 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.Write(Render.userMessage cfg.Ui ("/summarize " + rawArg) 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session summarizePrompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/check tail-rec " || s = "/check tail-rec" ->
+                // /check tail-rec [file] — detect non-tail-recursive functions and offer rewrites
+                let arg = if s = "/check tail-rec" then "" else s.Substring("/check tail-rec ".Length).Trim()
+                let (code, label) =
+                    if arg = "" then "", ""
+                    else
+                        let fullPath = if IO.Path.IsPathRooted arg then arg else IO.Path.GetFullPath(IO.Path.Combine(cwd, arg))
+                        if IO.File.Exists fullPath then IO.File.ReadAllText fullPath, arg else arg, arg
+                if code = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /check tail-rec <file>[/]")
+                    AnsiConsole.WriteLine()
+                else
+                    let prompt =
+                        sprintf "Analyse the following F# code for tail-recursion correctness:\n\n```fsharp\n%s\n```\n\nFor each recursive function:\n1. Determine whether it is tail-recursive (the recursive call is the last operation in all branches).\n2. If NOT tail-recursive, explain which call site is the problem and why it would stack-overflow on large inputs.\n3. Offer a rewrite using:\n   - Accumulator pattern (preferred)\n   - Continuation-passing style (CPS) if accumulator doesn't fit\n   - `[<TailCall>]` attribute hint where F# can optimise\n4. Show the rewritten function alongside the original.\n\nSource: %s" code label
+                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/check tail-rec %s" label) 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/check effects " || s = "/check effects" ->
+                // /check effects [file] — verify ZIO/Cats Effect type consistency
+                let arg = if s = "/check effects" then "" else s.Substring("/check effects ".Length).Trim()
+                let (code, label) =
+                    if arg = "" then "", ""
+                    else
+                        let fullPath = if IO.Path.IsPathRooted arg then arg else IO.Path.GetFullPath(IO.Path.Combine(cwd, arg))
+                        if IO.File.Exists fullPath then IO.File.ReadAllText fullPath, arg else arg, arg
+                if code = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /check effects <file>[/]")
+                    AnsiConsole.WriteLine()
+                else
+                    let prompt =
+                        sprintf "Review the following code for effect system type consistency:\n\n```\n%s\n```\n\nCheck:\n1. Are all effectful operations wrapped in the same effect type (IO/ZIO/Task/F# Async) consistently?\n2. Are effects mixed (e.g. ZIO and Future in the same for-comprehension) without proper lifting?\n3. Are error channels compatible across composed effects?\n4. Are any side effects performed outside the effect system (unsafe I/O, mutable state leaks)?\n\nFor each issue: show the problematic code, explain the violation, and provide a corrected version.\n\nSource: %s" code label
+                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/check effects %s" label) 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/translate comments " || s = "/translate comments" ->
+                // /translate comments [file] — translate code comments to English
+                let arg = if s = "/translate comments" then "" else s.Substring("/translate comments ".Length).Trim()
+                if arg = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /translate comments <file>[/]")
+                    AnsiConsole.WriteLine()
+                else
+                    let prompt =
+                        sprintf "Translate all code comments in the file \"%s\" to English.\n\nRules:\n1. Translate only comment text — do NOT touch identifiers, string literals, or code.\n2. Preserve comment style (// vs /// vs /* */).\n3. Keep the original meaning precisely; prefer clarity over literal translation.\n4. Apply the translations using the Edit tool (one edit per comment block or file section).\n\nRead the file first, then apply targeted edits." arg
+                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/translate comments %s" arg) 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/derive codec " || s = "/derive codec" ->
                 let typeName = if s = "/derive codec" then "" else s.Substring("/derive codec ".Length).Trim()
