@@ -40,7 +40,7 @@ let errorLine (s: Strings) (msg: string) : IRenderable =
 
 let private termWidth () =
     let w = Console.WindowWidth
-    if w > 0 then w else 120
+    if w >= 20 then w else 120
 
 /// Soft-wrap a single line to `width` columns, appending "↩" at each break.
 let private softWrap (width: int) (line: string) : string list =
