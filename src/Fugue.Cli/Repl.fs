@@ -122,15 +122,28 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             | Some s when s = "/help" ->
                 AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.HelpHeader + "[/]"))
                 AnsiConsole.WriteLine()
-                let helpItems = [ "/help",  strings.CmdHelpDesc
-                                  "/clear", strings.CmdClearDesc
-                                  "/exit",  strings.CmdExitDesc ]
+                let helpItems = [ "/help",    strings.CmdHelpDesc
+                                  "/clear",   strings.CmdClearDesc
+                                  "/summary", strings.CmdSummaryDesc
+                                  "/exit",    strings.CmdExitDesc ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s = "/summary" ->
+                let summaryPrompt =
+                    "Please generate a structured summary of our session so far.\n\n" +
+                    "Include:\n" +
+                    "- What we worked on (tasks, files changed, problems solved)\n" +
+                    "- Key decisions made\n" +
+                    "- Any open questions or next steps\n\n" +
+                    "Be concise but complete."
+                AnsiConsole.Write(Render.userMessage cfg.Ui "/summary")
+                AnsiConsole.WriteLine()
+                do! streamAndRender agent session summaryPrompt cfg cancelSrc
                 StatusBar.refresh ()
             | Some userInput ->
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
