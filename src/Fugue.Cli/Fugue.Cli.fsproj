@@ -41,6 +41,7 @@
     <Compile Include="Macros.fs" />
     <Compile Include="CaBundle.fs" />
     <Compile Include="DryRun.fs" />
+    <Compile Include="BugReport.fs" />
     <Compile Include="Repl.fs" />
     <Compile Include="Doctor.fs" />
     <Compile Include="Program.fs" />

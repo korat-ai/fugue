@@ -44,6 +44,12 @@ let mutable private sessionTitle : string option = None
 // Session-scoped env vars set via /env
 let mutable private sessionEnvVars : Set<string> = Set.empty
 
+// Per-session ID for error trend logging (reset on /new).
+let mutable private currentSessionId = ""
+
+// Last turn that had tool errors — used by /report-bug.
+let mutable private lastFailedTurn : BugReport.TurnRecord option = None
+
 let internal generateUlid () : string =
     let alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
     let rng = System.Security.Cryptography.RandomNumberGenerator.Create()
@@ -350,6 +356,7 @@ let private streamAndRender
     let mutable assistantStreaming = false   // are we mid-line in the plain-text stream
     let mutable toolCallsThisTurn = 0
     let responseText = StringBuilder()
+    let errorToolCalls = ResizeArray<string * string * string>()
 
     StatusBar.startStreaming()
     try
@@ -409,6 +416,9 @@ let private streamAndRender
                                         activityStore <- activityStore |> Map.add p (count + 1)
                         if not isErr && output.Length > 0 then
                             ClipRing.push output
+                        if isErr then
+                            errorToolCalls.Add((name, args, output))
+                            Fugue.Core.ErrorTrend.record currentSessionId name output
                         let state =
                             if isErr then Render.Failed(name, args, output, elapsed)
                             else Render.Completed(name, args, output, elapsed)
@@ -461,6 +471,8 @@ let private streamAndRender
                         AnsiConsole.MarkupLine(sprintf "[dim yellow]⚠️ %s[/]" (Markup.Escape msg))
                     else
                         Console.Out.WriteLine(sprintf "⚠️ %s" msg)
+                if errorToolCalls.Count > 0 then
+                    lastFailedTurn <- Some { BugReport.UserPrompt = input; BugReport.ToolCalls = errorToolCalls |> Seq.toList; BugReport.AiResponse = responseText.ToString(); BugReport.ErrorText = None }
         with
         | :? OperationCanceledException ->
             if assistantStreaming then Console.Out.WriteLine ()
@@ -470,6 +482,7 @@ let private streamAndRender
             if assistantStreaming then Console.Out.WriteLine ()
             AnsiConsole.Write(Render.errorLine strings ex.Message)
             AnsiConsole.WriteLine()
+            lastFailedTurn <- Some { BugReport.UserPrompt = input; BugReport.ToolCalls = errorToolCalls |> Seq.toList; BugReport.AiResponse = responseText.ToString(); BugReport.ErrorText = Some ex.Message }
     finally
         StatusBar.stopStreaming()
         StatusBar.refresh()
@@ -490,6 +503,7 @@ let private coda (cfg: AppConfig) =
 [<RequiresDynamicCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string option) : Task<unit> = task {
     let sessionStartedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+    currentSessionId <- generateUlid ()
     use cancelSrc = new CancelSource()
     let handler = ConsoleCancelEventHandler(fun _ args -> cancelSrc.OnCtrlC args)
     Console.CancelKeyPress.AddHandler handler
@@ -732,7 +746,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/annotate [n] [up|down] <note>", liveStrings.CmdAnnotateDesc
                                   "/theme …",        liveStrings.CmdThemeDesc
                                   "/exit",           liveStrings.CmdExitDesc
-                                  "/review pr <N>",  liveStrings.CmdReviewPrDesc ]
+                                  "/review pr <N>",  liveStrings.CmdReviewPrDesc
+                                  "/report-bug",     "capture last failed turn as a GitHub issue draft" ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
@@ -1527,6 +1542,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 FileWatcher.clear ()
                 Macros.clear ()
                 Fugue.Core.Checkpoint.clear ()
+                currentSessionId <- generateUlid ()
+                lastFailedTurn <- None
                 StatusBar.refresh ()
             | Some s when s.StartsWith "!" ->
                 let cmd = s.Substring(1).Trim()
@@ -1556,6 +1573,27 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     finally
                         cancelSrc.ExitChild ()
                         StatusBar.start cwd cfg
+            | Some s when s = "/report-bug" ->
+                match lastFailedTurn with
+                | None ->
+                    if Render.isColorEnabled () then AnsiConsole.MarkupLine "[dim]No failed turn to report yet.[/]"
+                    else Console.Out.WriteLine "No failed turn to report yet."
+                | Some turn ->
+                    let asm     = System.Reflection.Assembly.GetExecutingAssembly()
+                    let ver     = asm.GetName().Version |> Option.ofObj |> Option.map (fun v -> v.ToString()) |> Option.defaultValue "unknown"
+                    let os      = System.Runtime.InteropServices.RuntimeInformation.OSDescription
+                    let prov    = match cfg.Provider with | Anthropic _ -> "anthropic" | OpenAI _ -> "openai" | Ollama _ -> "ollama"
+                    let model   = match cfg.Provider with | Anthropic(_, m) -> m | OpenAI(_, m) -> m | Ollama(_, m) -> m
+                    let body    = BugReport.format ver os prov model cwd turn
+                    let tmpPath = IO.Path.GetTempFileName() + ".md"
+                    IO.File.WriteAllText(tmpPath, body)
+                    if Render.isColorEnabled () then
+                        AnsiConsole.MarkupLine(sprintf "[dim]Bug report saved to %s[/]" tmpPath)
+                        AnsiConsole.MarkupLine(sprintf "[dim]To file: gh issue create -R korat-ai/fugue --title '...' --body-file %s[/]" tmpPath)
+                    else
+                        Console.Out.WriteLine(sprintf "Bug report saved to %s" tmpPath)
+                        Console.Out.WriteLine(sprintf "To file: gh issue create -R korat-ai/fugue --title '...' --body-file %s" tmpPath)
+                AnsiConsole.WriteLine()
             | Some s when s = "/summary" ->
                 let summaryPrompt =
                     "Please generate a structured summary of our session so far.\n\n" +
@@ -2132,6 +2170,16 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 let sw = System.Diagnostics.Stopwatch.StartNew()
                 do! streamAndRender agent session effectiveInput cfg cancelSrc zenMode
                 StatusBar.refresh ()
+                // Nudge if the same tool error has recurred across sessions.
+                let recurring = Fugue.Core.ErrorTrend.findRecurring 3 14
+                match recurring with
+                | (sig', count) :: _ ->
+                    let short = if sig'.Length > 80 then sig'.[..79] + "…" else sig'
+                    if Render.isColorEnabled () then
+                        AnsiConsole.MarkupLine(sprintf "[dim yellow]⚠ recurring error (%d×): %s — type [bold]/report-bug[/] to file a report[/]" count (Markup.Escape short))
+                    else
+                        Console.Out.WriteLine(sprintf "⚠ recurring error (%d×): %s — type /report-bug to file a report" count short)
+                | [] -> ()
         // Generate and persist a 3-sentence session summary when the session had at least one turn.
         if turnNumber > 0 then
             try
