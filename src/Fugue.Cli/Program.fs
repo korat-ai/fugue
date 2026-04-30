@@ -33,6 +33,11 @@ let private runWithCfg (cfg: AppConfig) : int =
 let main argv =
     Fugue.Core.Log.session ()
     Fugue.Core.Log.info "main" ("fugue starting, argv=[" + String.concat "; " argv + "]")
+    if argv |> Array.contains "doctor" then
+        let cwd = Environment.CurrentDirectory
+        let passed = Doctor.run cwd
+        if passed then 0 else 1
+    else
     match Fugue.Core.Config.load argv with
     | Error (NoConfigFound help) ->
         let candidates = Discovery.discover (Discovery.defaultSources ())
