@@ -28,7 +28,7 @@ let ``en strings are all non-empty`` () =
       s.ConfigHelpHeader; s.ConfigHelpEnvHint; s.ConfigHelpFileHint
       s.DiscoveryNoCandidates; s.DiscoveryPickProvider
       s.CmdHelpDesc; s.CmdClearDesc; s.CmdExitDesc; s.CmdToolsDesc
-      s.HelpHeader; s.ToolsHeader ]
+      s.HelpHeader; s.ToolsHeader; s.TestFileHint ]
     |> List.iter (fun v -> v |> should not' (equal ""))
 
 [<Fact>]
@@ -40,5 +40,5 @@ let ``ru strings are all non-empty`` () =
       s.ConfigHelpHeader; s.ConfigHelpEnvHint; s.ConfigHelpFileHint
       s.DiscoveryNoCandidates; s.DiscoveryPickProvider
       s.CmdHelpDesc; s.CmdClearDesc; s.CmdExitDesc; s.CmdToolsDesc
-      s.HelpHeader; s.ToolsHeader ]
+      s.HelpHeader; s.ToolsHeader; s.TestFileHint ]
     |> List.iter (fun v -> v |> should not' (equal ""))

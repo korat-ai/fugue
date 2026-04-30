@@ -4,6 +4,7 @@ open System
 open System.Collections.Generic
 open System.Diagnostics
 open System.Diagnostics.CodeAnalysis
+open System.IO
 open System.Text
 open System.Threading
 open System.Threading.Tasks
@@ -40,6 +41,28 @@ let private findGitRoot (startDir: string) : string option =
         else None
     with _ -> None
 
+
+
+/// Search for a sibling test file in the `tests/` subdirectory of cwd.
+/// Returns the relative path from cwd if found, or None.
+let tryFindTestFile (cwd: string) (sourceFile: string) : string option =
+    let stem =
+        System.IO.Path.GetFileNameWithoutExtension sourceFile
+        |> Option.ofObj
+        |> Option.defaultValue ""
+    let testsDir = System.IO.Path.Combine(cwd, "tests")
+    if not (System.IO.Directory.Exists testsDir) then None
+    else
+        let candidates = [| stem + "Tests.fs"; stem + "Test.fs" |]
+        candidates |> Array.tryPick (fun name ->
+            try
+                System.IO.Directory.GetFiles(testsDir, name, SearchOption.AllDirectories)
+                |> Array.tryHead
+                |> Option.map (fun abs ->
+                    try System.IO.Path.GetRelativePath(cwd, abs)
+                    with _ -> abs)
+            with _ -> None)
+
 /// Find @path tokens in a string.
 /// Returns list of (startIdx, tokenLength, path) for each @word token that is preceded
 /// by start-of-string or whitespace.
@@ -62,7 +85,7 @@ let private findAtTokens (input: string) : (int * int * string) list =
 /// Expand @path tokens in user input. Each @word that resolves to an existing file
 /// within cwd is replaced with its contents (up to 4000 chars). Skips missing, binary,
 /// or out-of-cwd files silently or with a dim notice.
-let private expandAtFiles (cwd: string) (strings: Fugue.Core.Localization.Strings) (input: string) : string =
+let expandAtFiles (cwd: string) (strings: Fugue.Core.Localization.Strings) (input: string) : string =
     let tokens = findAtTokens input
     if tokens.IsEmpty then input
     else
@@ -80,7 +103,13 @@ let private expandAtFiles (cwd: string) (strings: Fugue.Core.Localization.String
                     let truncated = content.Length > 4000
                     let body = if truncated then content.[..3999] else content
                     let header = sprintf "[contents of %s]%s:\n" pathPart (if truncated then " " + strings.AtFileTooBig else "")
-                    result <- result.[0 .. start - 1] + header + body + result.[start + length ..]
+                    let hint =
+                        match tryFindTestFile cwd fullPath with
+                        | Some testRel ->
+                            let msg = System.String.Format(strings.TestFileHint, testRel, testRel)
+                            sprintf "\n\n%s" msg
+                        | None -> ""
+                    result <- result.[0 .. start - 1] + header + body + hint + result.[start + length ..]
                 with _ ->
                     AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (System.String.Format(strings.AtFileNotFound, pathPart))))
         result
@@ -90,7 +119,6 @@ let private providerInfo (p: ProviderConfig) : string * string =
     | Anthropic(_, m) -> "anthropic", m
     | OpenAI(_, m)    -> "openai", m
     | Ollama(ep, m)   -> string ep, m
-
 /// Cheap heuristic — does the text contain markdown markers worth re-rendering?
 /// Avoids re-printing pure plain text twice. False positives (e.g. raw `**` in code)
 /// are acceptable; the markdown render still produces readable output.

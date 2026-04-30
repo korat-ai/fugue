@@ -101,7 +101,10 @@ type Strings =
       TodoNone:    string
 
       // /summarize command
-      CmdSummarizeDesc: string }
+      CmdSummarizeDesc: string
+
+      // @path injection hints
+      TestFileHint: string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -162,7 +165,8 @@ let en : Strings =
       SquashNoRepo          = "not a git repository or git unavailable"
       CmdTodoDesc           = "scan workspace for TODO/FIXME/HACK comments"
       TodoNone              = "no TODO/FIXME/HACK comments found in workspace"
-      CmdSummarizeDesc      = "summarize a file or directory" }
+      CmdSummarizeDesc      = "summarize a file or directory"
+      TestFileHint          = "[test file found: {0} — include it with @{1}]" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -223,7 +227,8 @@ let ru : Strings =
       SquashNoRepo          = "не git-репозиторий или git недоступен"
       CmdTodoDesc           = "найти TODO/FIXME/HACK комментарии в проекте"
       TodoNone              = "TODO/FIXME/HACK комментарии не найдены"
-      CmdSummarizeDesc      = "резюме файла или директории" }
+      CmdSummarizeDesc      = "резюме файла или директории"
+      TestFileHint          = "[найден тест-файл: {0} — подключите его через @{1}]" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =
