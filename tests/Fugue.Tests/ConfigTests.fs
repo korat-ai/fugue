@@ -1,6 +1,7 @@
 module Fugue.Tests.ConfigTests
 
 open System
+open System.IO
 open Xunit
 open FsUnit.Xunit
 open Fugue.Core.Config
@@ -127,4 +128,35 @@ let ``load defaults BaseUrl=None when baseUrl absent`` () =
     Environment.SetEnvironmentVariable("HOME", tmpHome)
     match load [||] with
     | Ok cfg -> cfg.BaseUrl |> should equal None
+    | Error e -> failwithf "expected Ok, got %A" e
+
+[<Fact>]
+let ``loadProfile returns Some content when profile file exists`` () =
+    let tmpHome = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    let profilesDir = Path.Combine(tmpHome, ".fugue", "profiles")
+    Directory.CreateDirectory profilesDir |> ignore
+    File.WriteAllText(Path.Combine(profilesDir, "senior-reviewer.md"), "You are a senior code reviewer.")
+    // Override HOME so Environment.SpecialFolder.UserProfile resolves to tmpHome.
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    let result = loadProfile "senior-reviewer"
+    result |> should equal (Some "You are a senior code reviewer.")
+
+[<Fact>]
+let ``loadProfile returns None when profile file does not exist`` () =
+    let tmpHome = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    Directory.CreateDirectory tmpHome |> ignore
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    let result = loadProfile "nonexistent"
+    result |> should equal (None: string option)
+
+[<Fact>]
+let ``AppConfig ProfileContent is None after load when no profile passed`` () =
+    let tmpHome = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    Directory.CreateDirectory tmpHome |> ignore
+    Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", "sk-ant-test")
+    Environment.SetEnvironmentVariable("OPENAI_API_KEY", null)
+    Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    match load [||] with
+    | Ok cfg -> cfg.ProfileContent |> should equal (None: string option)
     | Error e -> failwithf "expected Ok, got %A" e

@@ -37,9 +37,18 @@ let defaultUi () : UiConfig =
 type AppConfig =
     { Provider: ProviderConfig
       SystemPrompt: string option
+      ProfileContent: string option
       MaxIterations: int
       Ui: UiConfig
       BaseUrl: string option }
+
+let loadProfile (name: string) : string option =
+    let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+    let path = Path.Combine(home, ".fugue", "profiles", name + ".md")
+    if File.Exists path then
+        try Some (File.ReadAllText path)
+        with _ -> None
+    else None
 
 type ConfigError =
     | NoConfigFound of help: string
@@ -147,19 +156,19 @@ Set environment variables:
 let load (_argv: string[]) : Result<AppConfig, ConfigError> =
     match fromExplicitEnv () with
     | Some provider ->
-        Ok { Provider = provider; SystemPrompt = None; MaxIterations = 30; Ui = defaultUi (); BaseUrl = None }
+        Ok { Provider = provider; SystemPrompt = None; ProfileContent = None; MaxIterations = 30; Ui = defaultUi (); BaseUrl = None }
     | None ->
         let path = configPath ()
         if File.Exists path then
             match fromFile path with
             | Ok (p, mi, ui, baseUrl) ->
                 let mi = if mi <= 0 then 30 else mi
-                Ok { Provider = p; SystemPrompt = None; MaxIterations = mi; Ui = ui; BaseUrl = baseUrl }
+                Ok { Provider = p; SystemPrompt = None; ProfileContent = None; MaxIterations = mi; Ui = ui; BaseUrl = baseUrl }
             | Error e -> Error(InvalidConfig e)
         else
             match fromImplicitEnv () with
             | Some provider ->
-                Ok { Provider = provider; SystemPrompt = None; MaxIterations = 30; Ui = defaultUi (); BaseUrl = None }
+                Ok { Provider = provider; SystemPrompt = None; ProfileContent = None; MaxIterations = 30; Ui = defaultUi (); BaseUrl = None }
             | None ->
                 Error(NoConfigFound (helpText ()))
 
