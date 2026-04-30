@@ -433,6 +433,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/ask <q>",        strings.CmdAskDesc
                                   "/clear",          strings.CmdClearDesc
                                   "/summary",         strings.CmdSummaryDesc
+                                  "/document [path]", strings.CmdDocumentDesc
                                   "/squash <N>",      strings.CmdSquashDesc
                                   "/short",           strings.CmdShortDesc
                                   "/long",            strings.CmdLongDesc
@@ -1032,6 +1033,18 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 AnsiConsole.Write(Render.userMessage cfg.Ui "/summary" 0)
                 AnsiConsole.WriteLine()
                 do! streamAndRender agent session summaryPrompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/document" ->
+                let arg = s.Substring("/document".Length).Trim()
+                let docPath =
+                    if String.IsNullOrWhiteSpace arg then "docs/session-notes.md"
+                    else
+                        let clean = arg.TrimStart('/')
+                        if clean.StartsWith "docs/" then clean else "docs/" + clean
+                let docPrompt = System.String.Format(strings.DocumentPrompt, docPath)
+                AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/document %s" docPath) 0)
+                AnsiConsole.WriteLine()
+                do! streamAndRender agent session docPrompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/note " ->
                 let text = s.Substring("/note ".Length).Trim()

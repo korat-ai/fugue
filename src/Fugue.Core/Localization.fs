@@ -111,6 +111,10 @@ type Strings =
       BookmarkRemoved:   string
       BookmarkUsage:     string
 
+      // /document command
+      CmdDocumentDesc:   string
+      DocumentPrompt:    string
+
       // /summary
       CmdSummaryDesc: string
 
@@ -222,6 +226,8 @@ let en : Strings =
       BookmarkNone          = "no bookmarks"
       BookmarkRemoved       = "bookmark removed: {0}"
       BookmarkUsage         = "usage: /bookmark <name> [<file>:<start>-<end>] | /bookmarks | /bookmark remove <name>"
+      CmdDocumentDesc       = "write session learnings to docs/ as a reference document"
+      DocumentPrompt        = "Review our conversation and synthesize the key explanations, decisions, and insights into a well-structured reference document. Write it to {0} using your Write tool. Include: overview, key concepts explained, code examples from our session, and any important decisions or trade-offs discussed. Use clear Markdown with headers. If the target path does not exist, create it. Do not include conversational filler — this should read as a standalone reference doc."
       CmdSummaryDesc        = "ask the agent to summarize the current session"
       CmdSquashDesc         = "generate squash commit message for last N commits"
       SquashUsage           = "usage: /squash <N>"
@@ -314,6 +320,8 @@ let ru : Strings =
       BookmarkNone          = "закладок нет"
       BookmarkRemoved       = "закладка удалена: {0}"
       BookmarkUsage         = "использование: /bookmark <имя> [<файл>:<от>-<до>] | /bookmarks | /bookmark remove <имя>"
+      CmdDocumentDesc       = "записать знания из сессии в docs/ как справочный документ"
+      DocumentPrompt        = "Просмотри наш разговор и составь подробный справочный документ. Запиши его в {0} с помощью инструмента Write. Включи: обзор, ключевые концепции, примеры кода из нашей сессии, важные решения и компромиссы. Используй структурированный Markdown с заголовками. Если путь не существует — создай его."
       CmdSummaryDesc        = "попросить агента резюмировать текущую сессию"
       CmdSquashDesc         = "сгенерировать squash-сообщение для последних N коммитов"
       SquashUsage           = "использование: /squash <N>"
