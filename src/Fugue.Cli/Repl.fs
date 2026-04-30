@@ -8,10 +8,17 @@ open System.Threading
 open System.Threading.Tasks
 open Microsoft.Agents.AI
 open Spectre.Console
+open Fugue.Core
 open Fugue.Core.Config
 open Fugue.Core.Localization
 open Fugue.Agent
 open Fugue.Cli
+
+let private providerInfo (p: ProviderConfig) : string * string =
+    match p with
+    | Anthropic(_, m) -> "anthropic", m
+    | OpenAI(_, m)    -> "openai", m
+    | Ollama(ep, m)   -> string ep, m
 
 /// Cheap heuristic — does the text contain markdown markers worth re-rendering?
 /// Avoids re-printing pure plain text twice. False positives (e.g. raw `**` in code)
@@ -107,6 +114,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     let handler = ConsoleCancelEventHandler(fun _ args -> cancelSrc.OnCtrlC args)
     Console.CancelKeyPress.AddHandler handler
     let! session = agent.CreateSessionAsync(CancellationToken.None)
+    let providerName, modelName = providerInfo cfg.Provider
+    DebugLog.sessionStart providerName modelName cwd
     StatusBar.start cwd cfg
 
     let strings = pick cfg.Ui.Locale
@@ -135,7 +144,10 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             | Some userInput ->
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
                 AnsiConsole.WriteLine()
+                let sw = System.Diagnostics.Stopwatch.StartNew()
                 do! streamAndRender agent session userInput cfg cancelSrc
+                sw.Stop()
+                DebugLog.turnCompleted userInput.Length 0 sw.ElapsedMilliseconds
                 StatusBar.refresh ()
     finally
         Console.CancelKeyPress.RemoveHandler handler

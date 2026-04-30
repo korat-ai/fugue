@@ -2,6 +2,7 @@ module Fugue.Agent.Conversation
 
 open System
 open System.Collections.Generic
+open System.Diagnostics
 open System.Diagnostics.CodeAnalysis
 open System.Threading
 open System.Threading.Tasks
@@ -31,6 +32,8 @@ let run
 
     taskSeq {
         let mutable failed = false
+        // id -> (name, argsJson, stopwatch) for debug timing
+        let toolTimers = Dictionary<string, string * string * Stopwatch>()
         Fugue.Core.Log.info "conv" ("run start, input=" + string userInput.Length + " chars, ct.IsCancelled=" + string cancel.IsCancellationRequested)
         try
             let stream = agent.RunStreamingAsync(userInput, session, options = null, cancellationToken = cancel)
@@ -56,11 +59,17 @@ let run
                                     try System.Text.Json.JsonSerializer.Serialize fc.Arguments
                                     with _ -> "{}"
                             Fugue.Core.Log.info "conv" (sprintf "  tool start id=%s name=%s args=%s" fc.CallId fc.Name argsJson)
+                            toolTimers.[fc.CallId] <- (fc.Name, argsJson, Stopwatch.StartNew())
                             yield ToolStarted(fc.CallId, fc.Name, argsJson)
                         | :? FunctionResultContent as fr ->
                             let output = if isNull (box fr.Result) then "" else string fr.Result
                             let isError = not (isNull (box fr.Exception))
                             Fugue.Core.Log.info "conv" ("  tool done id=" + fr.CallId + " isError=" + string isError + " outLen=" + string output.Length)
+                            let name, argsJson, durationMs =
+                                match toolTimers.TryGetValue fr.CallId with
+                                | true, (n, a, sw) -> sw.Stop(); n, a, sw.ElapsedMilliseconds
+                                | _ -> fr.CallId, "{}", 0L
+                            Fugue.Core.DebugLog.toolCall name argsJson output durationMs
                             yield ToolCompleted(fr.CallId, output, isError)
                         | other ->
                             Fugue.Core.Log.info "conv" (sprintf "  ignored content type=%s" (other.GetType().Name))
