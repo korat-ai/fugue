@@ -78,7 +78,9 @@ type Strings =
 
       // /tools command
       CmdToolsDesc: string
-      ToolsHeader:  string }
+      ToolsHeader:  string
+      CmdClearHistoryDesc: string
+      ClearHistoryDone:    string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -126,7 +128,9 @@ let en : Strings =
       CmdInitDesc           = "generate FUGUE.md for this project (creates if absent)"
       InitExists            = "FUGUE.md already exists. Edit it directly or delete it first."
       CmdToolsDesc          = "list all available tools with descriptions"
-      ToolsHeader           = "Available tools" }
+      ToolsHeader           = "Available tools"
+      CmdClearHistoryDesc   = "reset conversation history without clearing screen"
+      ClearHistoryDone      = "Conversation history cleared. Screen preserved." }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -174,7 +178,9 @@ let ru : Strings =
       CmdInitDesc           = "создать FUGUE.md для проекта (если отсутствует)"
       InitExists            = "FUGUE.md уже существует. Отредактируйте его напрямую или сначала удалите."
       CmdToolsDesc          = "показать список инструментов с описаниями"
-      ToolsHeader           = "Доступные инструменты" }
+      ToolsHeader           = "Доступные инструменты"
+      CmdClearHistoryDesc   = "сбросить историю разговора без очистки экрана"
+      ClearHistoryDone      = "История разговора сброшена. Экран сохранён." }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =
