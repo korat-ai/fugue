@@ -316,6 +316,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 let helpItems = [ "/help",           strings.CmdHelpDesc
                                   "/ask <q>",        strings.CmdAskDesc
                                   "/clear",          strings.CmdClearDesc
+                                  "/summary",         strings.CmdSummaryDesc
                                   "/short",           strings.CmdShortDesc
                                   "/long",            strings.CmdLongDesc
                                   "/clear-history",   strings.CmdClearHistoryDesc
@@ -676,6 +677,19 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     finally
                         cancelSrc.ExitChild ()
                         StatusBar.start cwd cfg
+            | Some s when s = "/summary" ->
+                let summaryPrompt =
+                    "Please generate a structured summary of our session so far.\n\n" +
+                    "Include:\n" +
+                    "- What we worked on (tasks, files changed, problems solved)\n" +
+                    "- Key decisions made\n" +
+                    "- Any open questions or next steps\n\n" +
+                    "Be concise but complete."
+                AnsiConsole.Write(Render.userMessage cfg.Ui "/summary")
+                AnsiConsole.WriteLine()
+                do! streamAndRender agent session summaryPrompt cfg cancelSrc
+                StatusBar.refresh ()
+
                 StatusBar.refresh ()
             | Some userInput ->
                 if ReadLine.hasZeroWidth userInput then

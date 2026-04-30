@@ -86,7 +86,10 @@ type Strings =
       CmdShortDesc:      string
       CmdLongDesc:       string
       VerbosityShortSet: string
-      VerbosityLongSet:  string }
+      VerbosityLongSet:  string
+
+      // /summary
+      CmdSummaryDesc: string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -140,7 +143,8 @@ let en : Strings =
       CmdShortDesc          = "switch to brief responses"
       CmdLongDesc           = "switch to detailed responses"
       VerbosityShortSet     = "Brevity mode on. Responses will be concise."
-      VerbosityLongSet      = "Detail mode on. Responses will be thorough." }
+      VerbosityLongSet      = "Detail mode on. Responses will be thorough."
+      CmdSummaryDesc        = "ask the agent to summarize the current session" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -194,7 +198,8 @@ let ru : Strings =
       CmdShortDesc          = "перейти к кратким ответам"
       CmdLongDesc           = "перейти к подробным ответам"
       VerbosityShortSet     = "Режим краткости включён. Ответы будут краткими."
-      VerbosityLongSet      = "Режим подробности включён. Ответы будут развёрнутыми." }
+      VerbosityLongSet      = "Режим подробности включён. Ответы будут развёрнутыми."
+      CmdSummaryDesc        = "попросить агента резюмировать текущую сессию" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =
