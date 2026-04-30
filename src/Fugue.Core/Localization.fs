@@ -25,10 +25,16 @@ type Strings =
       DiscoveryPickProvider:  string
 
       // Slash commands
-      CmdHelpDesc:  string
-      CmdClearDesc: string
-      CmdExitDesc:  string
-      HelpHeader:   string }
+      CmdHelpDesc:       string
+      CmdClearDesc:      string
+      CmdExitDesc:       string
+      CmdReviewPrDesc:   string
+      HelpHeader:        string
+
+      // /review pr
+      ReviewPrUsage:     string
+      ReviewPrNotFound:  string
+      ReviewPrPrompt:    string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -48,7 +54,11 @@ let en : Strings =
       CmdHelpDesc           = "show this help"
       CmdClearDesc          = "clear the screen"
       CmdExitDesc           = "exit Fugue"
-      HelpHeader            = "Available slash commands:" }
+      CmdReviewPrDesc       = "fetch PR diff and generate AI review"
+      HelpHeader            = "Available slash commands:"
+      ReviewPrUsage         = "Usage: /review pr <N>"
+      ReviewPrNotFound      = "PR not found or gh CLI unavailable"
+      ReviewPrPrompt        = "Please review GitHub PR #{0}.\n\nPR metadata:\n{1}\n\nDiff:\n```\n{2}\n```\n\nProvide a thorough code review: identify bugs, style issues, missing tests, security concerns, and any improvements. Be specific with line references where possible." }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -68,7 +78,11 @@ let ru : Strings =
       CmdHelpDesc           = "показать эту справку"
       CmdClearDesc          = "очистить экран"
       CmdExitDesc           = "выйти из Fugue"
-      HelpHeader            = "Доступные команды:" }
+      CmdReviewPrDesc       = "получить diff PR и сгенерировать AI-ревью"
+      HelpHeader            = "Доступные команды:"
+      ReviewPrUsage         = "Использование: /review pr <N>"
+      ReviewPrNotFound      = "PR не найден или gh CLI недоступен"
+      ReviewPrPrompt        = "Пожалуйста, проверь GitHub PR #{0}.\n\nМетаданные PR:\n{1}\n\nDiff:\n```\n{2}\n```\n\nПроведи подробное ревью кода: выяви баги, проблемы со стилем, отсутствующие тесты, уязвимости безопасности и возможные улучшения. Указывай конкретные строки там, где это возможно." }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =

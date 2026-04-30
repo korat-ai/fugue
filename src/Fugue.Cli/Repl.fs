@@ -2,6 +2,7 @@ module Fugue.Cli.Repl
 
 open System
 open System.Collections.Generic
+open System.Diagnostics
 open System.Diagnostics.CodeAnalysis
 open System.Text
 open System.Threading
@@ -22,6 +23,24 @@ let private hasMarkdown (s: string) : bool =
         let t = l.TrimStart()
         t.StartsWith "# " || t.StartsWith "## " || t.StartsWith "### "
         || t.StartsWith "- " || t.StartsWith "* " || t.StartsWith "1. ")
+
+/// Run an external command and return Some stdout on exit 0, None on failure.
+/// stderr is not redirected to avoid deadlock risk with unbuffered tools like gh.
+let private runCmd (exe: string) (args: string[]) (workingDir: string) : string option =
+    try
+        let psi = ProcessStartInfo(exe, args)
+        psi.WorkingDirectory <- workingDir
+        psi.RedirectStandardOutput <- true
+        psi.UseShellExecute <- false
+        psi.CreateNoWindow <- true
+        match Process.Start psi with
+        | null -> None
+        | p ->
+            use _ = p
+            let stdout = p.StandardOutput.ReadToEnd()
+            p.WaitForExit()
+            if p.ExitCode = 0 then Some stdout else None
+    with _ -> None
 
 /// Holder for the currently active stream's CancellationTokenSource.
 /// Console.CancelKeyPress handler uses this to cancel mid-stream Ctrl+C.
@@ -122,15 +141,50 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             | Some s when s = "/help" ->
                 AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.HelpHeader + "[/]"))
                 AnsiConsole.WriteLine()
-                let helpItems = [ "/help",  strings.CmdHelpDesc
-                                  "/clear", strings.CmdClearDesc
-                                  "/exit",  strings.CmdExitDesc ]
+                let helpItems = [ "/help",           strings.CmdHelpDesc
+                                  "/clear",          strings.CmdClearDesc
+                                  "/exit",           strings.CmdExitDesc
+                                  "/review pr <N>",  strings.CmdReviewPrDesc ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s = "/review pr" || s = "/review pr " ->
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ReviewPrUsage + "[/]"))
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/review pr " ->
+                let arg = s.Substring(11).Trim()
+                match System.Int32.TryParse arg with
+                | false, _ ->
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ReviewPrUsage + "[/]"))
+                    AnsiConsole.WriteLine()
+                | true, prNum when prNum < 1 ->
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ReviewPrUsage + "[/]"))
+                    AnsiConsole.WriteLine()
+                | true, prNum ->
+                    let meta = runCmd "gh" [| "pr"; "view"; string prNum; "--json"; "title,body" |] cwd
+                    let diff = runCmd "gh" [| "pr"; "diff"; string prNum |] cwd
+                    match diff with
+                    | None ->
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ReviewPrNotFound + "[/]"))
+                        AnsiConsole.WriteLine()
+                    | Some diffText ->
+                        let truncatedDiff =
+                            if diffText.Length > 8000 then diffText.[..7999] + "\n[diff truncated]"
+                            else diffText
+                        let titleBody = meta |> Option.defaultValue ""
+                        let prompt =
+                            strings.ReviewPrPrompt
+                                .Replace("{0}", string prNum)
+                                .Replace("{1}", titleBody)
+                                .Replace("{2}", truncatedDiff)
+                        AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "Reviewing PR #%d…" prNum))
+                        AnsiConsole.WriteLine()
+                        do! streamAndRender agent session prompt cfg cancelSrc
                 StatusBar.refresh ()
             | Some userInput ->
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
