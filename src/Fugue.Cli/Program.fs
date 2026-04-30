@@ -106,6 +106,7 @@ let private runWithCfg (cfg: AppConfig) : int =
 let main argv =
     Fugue.Core.Log.session ()
     Fugue.Core.Log.info "main" ("fugue starting, argv=[" + String.concat "; " argv + "]")
+    CaBundle.install () |> ignore
     let profileContent =
         argv
         |> Array.tryFindIndex ((=) "--profile")
@@ -126,6 +127,112 @@ let main argv =
         let cwd = Environment.CurrentDirectory
         let passed = Doctor.run cwd
         if passed then 0 else 1
+    elif argv |> Array.contains "man" then
+        let manContent = """fugue(1)                    Fugue Manual                    fugue(1)
+
+NAME
+       fugue - lean AOT-native CLI coding assistant
+
+SYNOPSIS
+       fugue [--profile <name>] [--template <name>] [--low-bandwidth]
+             [--offline] [--print "prompt"]
+       fugue doctor
+       fugue init
+       fugue aliases [--install]
+       fugue man [--install]
+
+DESCRIPTION
+       fugue is a fast, single-binary terminal coding agent for polyglot
+       engineers. Cold-starts in ~40ms, uses ~47MB RSS, and works with
+       Anthropic, OpenAI-compatible, and Ollama providers.
+
+OPTIONS
+       --profile <name>
+              Load ~/.fugue/profiles/<name>.md as a system-prompt prefix.
+
+       --template <name>
+              Load ~/.fugue/templates/<name>.md as a session template.
+
+       --low-bandwidth
+              Skip session summary, cap tool output to 500 lines.
+
+       --offline
+              Require a local provider (Ollama). Reject remote API calls.
+
+       --print "prompt"
+              Non-interactive: send one prompt, stream to stdout, exit.
+              Reads stdin if piped: git diff | fugue --print "review this"
+
+SUBCOMMANDS
+       doctor     Run environment diagnostics.
+       init       Bootstrap FUGUE.md in the current project directory.
+       aliases    Print recommended shell aliases; --install appends to shell rc.
+       man        Display this manual; --install places it in man path.
+
+ENVIRONMENT
+       ANTHROPIC_API_KEY      Anthropic API key.
+       OPENAI_API_KEY         OpenAI API key.
+       ANTHROPIC_BASE_URL     Override Anthropic API endpoint.
+       OPENAI_BASE_URL        Override OpenAI API endpoint.
+       FUGUE_CA_BUNDLE        Path to PEM CA bundle for corporate TLS proxies.
+       FUGUE_NO_COLOR         Disable ANSI colour output.
+       NO_COLOR               Standard no-colour flag (https://no-color.org).
+
+SLASH COMMANDS (REPL)
+       /help       List all commands.
+       /new        Start a new session.
+       /clear      Clear the screen.
+       /rename     Set a human-readable session title.
+       /env        Manage session-scoped environment variables.
+       /gen        Generate UUID, ULID, or NanoID.
+       /cron       Convert natural-language schedule to cron expression.
+       /regex      Test a regex pattern against sample input.
+       /diff       Show current git diff.
+       /summary    Summarise the current session.
+       /tools      List available tools.
+       /exit       Exit fugue.
+
+FILES
+       ~/.fugue/config.json   Main configuration file.
+       ~/.fugue/FUGUE.md      Global project context (injected on start).
+       ~/.fugue/profiles/     Named system-prompt profiles.
+       ~/.fugue/templates/    Session templates.
+       ./FUGUE.md             Project-local context (injected on start).
+       .fugue/hooks/          Pre/post tool hooks (future).
+
+SEE ALSO
+       https://github.com/korat-ai/fugue
+
+"""
+        let install = argv |> Array.contains "--install"
+        if install then
+            let manDir = "/usr/local/share/man/man1"
+            let manFile = System.IO.Path.Combine(manDir, "fugue.1")
+            try
+                System.IO.Directory.CreateDirectory manDir |> ignore
+                System.IO.File.WriteAllText(manFile, manContent)
+                Console.WriteLine(sprintf "✓ Installed to %s" manFile)
+                Console.WriteLine "  Run: man fugue"
+                0
+            with ex ->
+                Console.Error.WriteLine(sprintf "Failed to install man page (try sudo): %s" ex.Message)
+                1
+        else
+            let pager =
+                let p = Environment.GetEnvironmentVariable "PAGER" |> Option.ofObj |> Option.defaultValue ""
+                if p <> "" then p else "less"
+            let tmpFile = System.IO.Path.GetTempFileName() + ".1"
+            System.IO.File.WriteAllText(tmpFile, manContent)
+            try
+                let psi = System.Diagnostics.ProcessStartInfo(pager, tmpFile)
+                psi.UseShellExecute <- true
+                match System.Diagnostics.Process.Start psi |> Option.ofObj with
+                | Some proc -> proc.WaitForExit()
+                | None -> Console.Write manContent
+            with _ ->
+                Console.Write manContent
+            try System.IO.File.Delete tmpFile with _ -> ()
+            0
     elif argv |> Array.contains "init" then
         let cwd = Environment.CurrentDirectory
         let fugueMd = System.IO.Path.Combine(cwd, "FUGUE.md")
