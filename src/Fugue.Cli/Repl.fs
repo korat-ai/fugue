@@ -771,7 +771,10 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/exit",           liveStrings.CmdExitDesc
                                   "/review pr <N>",  liveStrings.CmdReviewPrDesc
                                   "/report-bug",     "capture last failed turn as a GitHub issue draft"
-                                  "/http METHOD URL …", "inline HTTP client (HTTPie-style, -H/-d/--inject)" ]
+                                  "/http METHOD URL …", "inline HTTP client (HTTPie-style, -H/-d/--inject)"
+                                  "/refactor pipeline [f:N-M]", "rewrite F# let-bindings as |> pipe chain"
+                                  "/check exhaustive [dir]",     "find FS0025 incomplete-pattern warnings and fix"
+                                  "/compress",          "summarise session history and reset context window" ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
@@ -2251,6 +2254,128 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.Write(Render.userMessage cfg.Ui ("/summarize " + rawArg) 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session summarizePrompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/refactor pipeline" ->
+                // /refactor pipeline [file:start-end] — rewrite let-bindings as |> pipe chain
+                let arg = s.Substring("/refactor pipeline".Length).Trim()
+                let code, label =
+                    if arg = "" then "", ""
+                    else
+                        // Parse file:start-end
+                        let colonIdx = arg.LastIndexOf ':'
+                        if colonIdx > 0 then
+                            let filePart  = arg.[..colonIdx-1]
+                            let rangePart = arg.[colonIdx+1..]
+                            let fullPath  = if IO.Path.IsPathRooted filePart then filePart else IO.Path.GetFullPath(IO.Path.Combine(cwd, filePart))
+                            if IO.File.Exists fullPath then
+                                let lines  = IO.File.ReadAllLines fullPath
+                                let parsed =
+                                    let parts = rangePart.Split '-'
+                                    if parts.Length = 2 then
+                                        match System.Int32.TryParse parts.[0], System.Int32.TryParse parts.[1] with
+                                        | (true, s), (true, e) -> Some (max 0 (s-1), min (lines.Length-1) (e-1))
+                                        | _ -> None
+                                    else None
+                                match parsed with
+                                | Some (s, e) -> String.concat "\n" lines.[s..e], sprintf "%s:%d-%d" filePart (s+1) (e+1)
+                                | None        -> String.concat "\n" lines, filePart
+                            else "", ""
+                        else
+                            let fullPath = if IO.Path.IsPathRooted arg then arg else IO.Path.GetFullPath(IO.Path.Combine(cwd, arg))
+                            if IO.File.Exists fullPath then IO.File.ReadAllText fullPath, arg
+                            else "", ""
+                if code.Trim() = "" then
+                    AnsiConsole.Write(Markup("[dim]Usage: /refactor pipeline [file:start-end][/]"))
+                    AnsiConsole.WriteLine()
+                else
+                    let prompt =
+                        sprintf "Refactor the following F# code into an idiomatic pipe chain (`|>`).\n\nRules:\n1. Identify a linear data-flow sequence where each binding feeds into the next.\n2. Replace the sequence with a single `|>` chain.\n3. Use partial application where possible; inline lambdas only when necessary.\n4. Preserve all semantics exactly — no behaviour changes.\n5. Return only the refactored code block.\n\nSource (%s):\n```fsharp\n%s\n```" label code
+                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/refactor pipeline %s" label) 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s = "/check exhaustive" || s.StartsWith "/check exhaustive " ->
+                // Run dotnet build and feed FS0025 (incomplete pattern match) warnings back
+                let arg = if s = "/check exhaustive" then "." else s.Substring("/check exhaustive ".Length).Trim()
+                let buildDir = if arg = "" || arg = "." then cwd else if IO.Path.IsPathRooted arg then arg else IO.Path.Combine(cwd, arg)
+                AnsiConsole.MarkupLine "[dim]Running dotnet build to check pattern match exhaustiveness…[/]"
+                let psi = System.Diagnostics.ProcessStartInfo()
+                psi.FileName  <- "dotnet"
+                psi.Arguments <- "build --no-restore -warnaserror- /p:TreatWarningsAsErrors=false 2>&1"
+                psi.WorkingDirectory    <- buildDir
+                psi.UseShellExecute     <- false
+                psi.RedirectStandardOutput <- true
+                psi.RedirectStandardError  <- true
+                use proc = new System.Diagnostics.Process()
+                proc.StartInfo <- psi
+                proc.Start() |> ignore
+                let out = proc.StandardOutput.ReadToEnd()
+                let err = proc.StandardError.ReadToEnd()
+                proc.WaitForExit()
+                let combined = out + "\n" + err
+                let fs0025 =
+                    combined.Split('\n')
+                    |> Array.filter (fun l -> l.Contains "FS0025" || l.Contains "incomplete pattern")
+                    |> Array.toList
+                if fs0025.IsEmpty then
+                    AnsiConsole.MarkupLine "[green]No FS0025 incomplete pattern match warnings found.[/]"
+                    AnsiConsole.WriteLine()
+                else
+                    let diagnostics = String.concat "\n" fs0025
+                    let prompt =
+                        sprintf "The build found incomplete pattern match warnings (FS0025):\n\n```\n%s\n```\n\nPlease:\n1. Read each affected file.\n2. Add the missing match cases using `failwith \"TODO: <CaseName>\"` as placeholders.\n3. Apply the fixes using the Edit tool.\n\nFix all warnings before responding." diagnostics
+                    AnsiConsole.Write(Render.userMessage cfg.Ui "/check exhaustive" 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s = "/compress" ->
+                // Compress context: ask AI to summarise history, then reset session and inject summary.
+                AnsiConsole.MarkupLine "[dim]Compressing context — summarising session history…[/]"
+                let compressPrompt =
+                    "Summarise the complete conversation so far into a concise context block.\n\n" +
+                    "Include:\n" +
+                    "- Key decisions and conclusions\n" +
+                    "- Files created or modified (with paths)\n" +
+                    "- Problems solved and their solutions\n" +
+                    "- Open tasks and next steps\n\n" +
+                    "Output as a compact bulleted list. Preserve specific file paths, function names, and error codes mentioned."
+                let summaryBuf = System.Text.StringBuilder()
+                try
+                    use compressCts = new CancellationTokenSource(System.TimeSpan.FromSeconds 30.0)
+                    let stream = Conversation.run agent session compressPrompt compressCts.Token
+                    let enum   = stream.GetAsyncEnumerator(compressCts.Token)
+                    let mutable running = true
+                    while running do
+                        let! ok = enum.MoveNextAsync().AsTask()
+                        if ok then
+                            match enum.Current with
+                            | Conversation.TextChunk t -> summaryBuf.Append t |> ignore
+                            | Conversation.Finished    -> running <- false
+                            | Conversation.Failed _    -> running <- false
+                            | _ -> ()
+                        else running <- false
+                with _ -> ()
+                let summary = summaryBuf.ToString().Trim()
+                if summary.Length > 0 then
+                    // Reset session and inject compressed context
+                    match box session with
+                    | :? IAsyncDisposable as d -> try do! d.DisposeAsync().AsTask() with _ -> ()
+                    | _ -> ()
+                    try
+                        let! newSession = agent.CreateSessionAsync(CancellationToken.None)
+                        session <- newSession
+                    with ex ->
+                        AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
+                        AnsiConsole.WriteLine()
+                    let injection = sprintf "[Compressed session context]\n%s" summary
+                    do! streamAndRender agent session injection cfg cancelSrc zenMode
+                    if Render.isColorEnabled () then
+                        AnsiConsole.MarkupLine "[dim]Context compressed — previous history summarised and reset.[/]"
+                    else
+                        Console.Out.WriteLine "Context compressed — previous history summarised and reset."
+                else
+                    AnsiConsole.MarkupLine "[dim yellow]Could not generate summary — context unchanged.[/]"
+                AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some userInput ->
                 if ReadLine.hasZeroWidth userInput then
