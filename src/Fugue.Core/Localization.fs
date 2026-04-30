@@ -31,7 +31,8 @@ type Strings =
       HelpHeader:   string
 
       // @path injection hints
-      TestFileHint: string }
+      TestFileHint:  string
+      AtFileTooBig: string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -52,7 +53,8 @@ let en : Strings =
       CmdClearDesc          = "clear the screen"
       CmdExitDesc           = "exit Fugue"
       HelpHeader            = "Available slash commands:"
-      TestFileHint          = "[test file found: {0} — include it with @{1}]" }
+      TestFileHint          = "[test file found: {0} — include it with @{1}]"
+      AtFileTooBig          = "[file too large — truncated to 4000 chars]" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -73,7 +75,8 @@ let ru : Strings =
       CmdClearDesc          = "очистить экран"
       CmdExitDesc           = "выйти из Fugue"
       HelpHeader            = "Доступные команды:"
-      TestFileHint          = "[найден тест-файл: {0} — подключите его через @{1}]" }
+      TestFileHint          = "[найден тест-файл: {0} — подключите его через @{1}]"
+      AtFileTooBig          = "[файл слишком большой — обрезано до 4000 символов]" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =

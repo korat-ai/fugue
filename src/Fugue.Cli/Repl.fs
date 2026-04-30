@@ -13,8 +13,9 @@ open Fugue.Core.Config
 open Fugue.Core.Localization
 open Fugue.Agent
 open Fugue.Cli
+open Fugue.Tools.PathSafety
 
-/// Search for a sibling test file in the `tests/` subdirectory of cwd (up to 3 levels deep).
+/// Search for a sibling test file in the `tests/` subdirectory of cwd (recursively).
 /// Returns the relative path from cwd if found, or None.
 let tryFindTestFile (cwd: string) (sourceFile: string) : string option =
     let stem =
@@ -47,12 +48,13 @@ let expandAtFiles (cwd: string) (strings: Strings) (input: string) : string =
             let w = words.[i]
             if w.StartsWith "@" && w.Length > 1 then
                 let relPath = w.Substring 1
-                let absPath =
-                    if Path.IsPathRooted relPath then relPath
-                    else Path.Combine(cwd, relPath)
-                if File.Exists absPath then
+                let absPath = resolve cwd relPath
+                if isUnder cwd absPath && File.Exists absPath then
                     let contents =
-                        try File.ReadAllText absPath
+                        try
+                            let raw = File.ReadAllText absPath
+                            if raw.Length > 4000 then raw.[..3999] + "\n" + strings.AtFileTooBig
+                            else raw
                         with ex -> sprintf "[error reading %s: %s]" relPath ex.Message
                     if sb.Length > 0 then sb.Append ' ' |> ignore
                     sb.Append(sprintf "[contents of %s]:\n%s" relPath contents) |> ignore
