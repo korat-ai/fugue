@@ -26,6 +26,9 @@ let mutable private zenMode = false
 // Snippet store: name → (language, code, source)
 let mutable private snippetStore : Map<string, string * string * string> = Map.empty
 
+// Bookmark store: ordered list of (name, filePath, startLine, endLine)
+let mutable private bookmarks : (string * string * int * int) list = []
+
 /// Try to find the git repository root starting from startDir.
 /// Runs `git rev-parse --show-toplevel` as a best-effort child process; returns None on any failure.
 /// Stderr is redirected and drained concurrently to suppress git's "not a git repository" message.
@@ -435,6 +438,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/long",            strings.CmdLongDesc
                                   "/zen",             strings.CmdZenDesc
                                   "/snippet …",       strings.CmdSnippetDesc
+                                  "/bookmark <name>", strings.CmdBookmarkDesc
+                                  "/bookmarks",       strings.CmdBookmarksDesc
                                   "/clear-history",   strings.CmdClearHistoryDesc
                                   "/tools",           strings.CmdToolsDesc
                                   "/todo",            strings.CmdTodoDesc
@@ -617,6 +622,76 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                     StatusBar.refresh ()
                 | _ ->
                     AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.SnippetUsage + "[/]"))
+                    AnsiConsole.WriteLine()
+                    StatusBar.refresh ()
+            | Some s when s = "/bookmarks" || (s.StartsWith "/bookmark " && s.Contains " remove ") || s.StartsWith "/bookmark" ->
+                let parts = s.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                let isBookmarks = s = "/bookmarks"
+                let isRemove = parts.Length >= 3 && parts.[1] = "remove"
+                if isBookmarks then
+                    if bookmarks.IsEmpty then
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.BookmarkNone + "[/]"))
+                        AnsiConsole.WriteLine()
+                    else
+                        for (i, (name, file, s1, e1)) in bookmarks |> List.indexed do
+                            AnsiConsole.Write(Markup(sprintf "  [cyan]%d.[/] [bold]%s[/] [dim]%s:%d-%d[/]" (i+1) (Markup.Escape name) (Markup.Escape file) s1 e1))
+                            AnsiConsole.WriteLine()
+                    StatusBar.refresh ()
+                elif isRemove then
+                    let name = parts.[2..] |> String.concat " "
+                    let before = bookmarks.Length
+                    bookmarks <- bookmarks |> List.filter (fun (n, _, _, _) -> n <> name)
+                    if bookmarks.Length < before then
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.BookmarkRemoved, name)) + "[/]"))
+                    else
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.BookmarkNotFound, name)) + "[/]"))
+                    AnsiConsole.WriteLine()
+                    StatusBar.refresh ()
+                elif parts.Length >= 2 then
+                    let name = parts.[1]
+                    // Check if a file:range is provided as second arg
+                    let fileRef = if parts.Length >= 3 then Some parts.[2] else None
+                    let resolved =
+                        match fileRef with
+                        | Some ref ->
+                            let colonIdx = ref.LastIndexOf ':'
+                            if colonIdx < 1 then None
+                            else
+                                let filePart = ref.[..colonIdx-1]
+                                let rangePart = ref.[colonIdx+1..]
+                                let dashIdx = rangePart.IndexOf '-'
+                                if dashIdx < 1 then None
+                                else
+                                    match System.Int32.TryParse(rangePart.[..dashIdx-1]), System.Int32.TryParse(rangePart.[dashIdx+1..]) with
+                                    | (true, s1), (true, e1) ->
+                                        let full = Fugue.Tools.PathSafety.resolve cwd filePart
+                                        if System.IO.File.Exists full then Some(full, s1, e1)
+                                        else None
+                                    | _ -> None
+                        | None ->
+                            // Grep for the symbol in the workspace
+                            let grepArgs = [| "--include=*.fs"; "--include=*.cs"; "--include=*.ts"; "-rn"; sprintf "\\b%s\\b" name; cwd |]
+                            match runCmd "grep" grepArgs cwd with
+                            | Some output ->
+                                let firstLine = output.Split('\n') |> Array.tryHead |> Option.defaultValue ""
+                                let colonIdx = firstLine.IndexOf ':'
+                                if colonIdx > 0 then
+                                    let filePart = firstLine.[..colonIdx-1]
+                                    match System.Int32.TryParse(firstLine.[colonIdx+1..firstLine.IndexOf(':', colonIdx+1) - 1]) with
+                                    | true, lineN -> if System.IO.File.Exists filePart then Some(filePart, max 1 (lineN-2), lineN+5) else None
+                                    | _ -> None
+                                else None
+                            | None -> None
+                    match resolved with
+                    | None ->
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.BookmarkUsage + "[/]"))
+                    | Some(fullPath, s1, e1) ->
+                        bookmarks <- bookmarks @ [(name, fullPath, s1, e1)]
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.BookmarkSaved, name)) + "[/]"))
+                    AnsiConsole.WriteLine()
+                    StatusBar.refresh ()
+                else
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.BookmarkUsage + "[/]"))
                     AnsiConsole.WriteLine()
                     StatusBar.refresh ()
             | Some s when s = "/clear-history" ->
@@ -915,6 +990,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 lastFile <- None
                 zenMode <- false
                 snippetStore <- Map.empty
+                bookmarks <- []
                 Fugue.Core.Checkpoint.clear ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "!" ->

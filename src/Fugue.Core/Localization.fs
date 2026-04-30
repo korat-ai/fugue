@@ -102,6 +102,15 @@ type Strings =
       SnippetRemoved:    string
       SnippetUsage:      string
 
+      // /bookmark command
+      CmdBookmarkDesc:   string
+      CmdBookmarksDesc:  string
+      BookmarkSaved:     string
+      BookmarkNotFound:  string
+      BookmarkNone:      string
+      BookmarkRemoved:   string
+      BookmarkUsage:     string
+
       // /summary
       CmdSummaryDesc: string
 
@@ -206,6 +215,13 @@ let en : Strings =
       SnippetNone           = "no snippets saved"
       SnippetRemoved        = "snippet removed: {0}"
       SnippetUsage          = "usage: /snippet save <name> <file>:<start>-<end> | /snippet list | /snippet inject <name> | /snippet remove <name>"
+      CmdBookmarkDesc       = "pin a symbol or file range for quick inject"
+      CmdBookmarksDesc      = "list all bookmarks"
+      BookmarkSaved         = "bookmarked: {0}"
+      BookmarkNotFound      = "bookmark not found: {0}"
+      BookmarkNone          = "no bookmarks"
+      BookmarkRemoved       = "bookmark removed: {0}"
+      BookmarkUsage         = "usage: /bookmark <name> [<file>:<start>-<end>] | /bookmarks | /bookmark remove <name>"
       CmdSummaryDesc        = "ask the agent to summarize the current session"
       CmdSquashDesc         = "generate squash commit message for last N commits"
       SquashUsage           = "usage: /squash <N>"
@@ -291,6 +307,13 @@ let ru : Strings =
       SnippetNone           = "сниппетов нет"
       SnippetRemoved        = "сниппет удалён: {0}"
       SnippetUsage          = "использование: /snippet save <имя> <файл>:<от>-<до> | /snippet list | /snippet inject <имя> | /snippet remove <имя>"
+      CmdBookmarkDesc       = "закрепить символ или диапазон файла для быстрой вставки"
+      CmdBookmarksDesc      = "список всех закладок"
+      BookmarkSaved         = "закладка сохранена: {0}"
+      BookmarkNotFound      = "закладка не найдена: {0}"
+      BookmarkNone          = "закладок нет"
+      BookmarkRemoved       = "закладка удалена: {0}"
+      BookmarkUsage         = "использование: /bookmark <имя> [<файл>:<от>-<до>] | /bookmarks | /bookmark remove <имя>"
       CmdSummaryDesc        = "попросить агента резюмировать текущую сессию"
       CmdSquashDesc         = "сгенерировать squash-сообщение для последних N коммитов"
       SquashUsage           = "использование: /squash <N>"
