@@ -17,6 +17,9 @@ open Fugue.Agent
 open Fugue.Cli
 open Fugue.Tools.PathSafety
 
+// Session-scoped state: most recently accessed file path for @last expansion.
+let mutable private lastFile : string option = None
+
 /// Try to find the git repository root starting from startDir.
 /// Runs `git rev-parse --show-toplevel` as a best-effort child process; returns None on any failure.
 /// Stderr is redirected and drained concurrently to suppress git's "not a git repository" message.
@@ -92,6 +95,13 @@ let expandAtFiles (cwd: string) (strings: Fugue.Core.Localization.Strings) (inpu
         // Process tokens in reverse order so indices stay valid during replacement
         let mutable result = input
         for (start, length, pathPart) in List.rev tokens do
+            // @last expands to the most recently accessed file path
+            let pathPart =
+                if pathPart = "last" then
+                    match lastFile with
+                    | Some p -> p
+                    | None   -> pathPart
+                else pathPart
             let fullPath = Fugue.Tools.PathSafety.resolve cwd pathPart
             if not (Fugue.Tools.PathSafety.isUnder cwd fullPath) then
                 ()  // silently skip paths outside cwd
@@ -287,6 +297,15 @@ let private streamAndRender
                         if assistantStreaming then
                             Console.Out.WriteLine ()
                             assistantStreaming <- false
+                        // Track last accessed file for @last expansion
+                        if name = "Read" || name = "Write" || name = "Edit" then
+                            let key = "\"path\":"
+                            let idx = args.IndexOf key
+                            if idx >= 0 then
+                                let rest = args.Substring(idx + key.Length).TrimStart()
+                                if rest.StartsWith '"' then
+                                    let endIdx = rest.IndexOf('"', 1)
+                                    if endIdx > 1 then lastFile <- Some rest.[1..endIdx-1]
                         StatusBar.refresh()
                     | Conversation.ToolCompleted(id, output, isErr) ->
                         let name, args, elapsed =
@@ -369,6 +388,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     let strings = pick cfg.Ui.Locale
     let mutable verbosityPrefix : string option = None
     let mutable turnNumber = 0
+    let mutable sessionNotes : (int * string) list = []  // (turnNumber, text)
     try
         while not cancelSrc.QuitRequested do
             let callbacks : ReadLine.ReadLineCallbacks = { OnClearScreen = StatusBar.refresh }
@@ -397,6 +417,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/clear-history",   strings.CmdClearHistoryDesc
                                   "/tools",           strings.CmdToolsDesc
                                   "/todo",            strings.CmdTodoDesc
+                                  "/note <text>",     strings.CmdNoteDesc
+                                  "/notes",           strings.CmdNotesDesc
                                   "/undo",            strings.CmdUndoDesc
                                   "/find <query>",    strings.CmdFindDesc
                                   "/summarize <p>",   strings.CmdSummarizeDesc
@@ -783,6 +805,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.Write(Render.errorLine strings ex.Message)
                     AnsiConsole.WriteLine()
                 turnNumber <- 0
+                sessionNotes <- []
+                lastFile <- None
                 Fugue.Core.Checkpoint.clear ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "!" ->
@@ -824,6 +848,24 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 AnsiConsole.Write(Render.userMessage cfg.Ui "/summary" 0)
                 AnsiConsole.WriteLine()
                 do! streamAndRender agent session summaryPrompt cfg cancelSrc
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/note " ->
+                let text = s.Substring("/note ".Length).Trim()
+                if not (String.IsNullOrWhiteSpace text) then
+                    sessionNotes <- sessionNotes @ [(turnNumber, text)]
+                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.NoteAdded))
+                    AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s = "/notes" ->
+                if sessionNotes.IsEmpty then
+                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.NoteNone))
+                else
+                    for (turn, text) in sessionNotes do
+                        if Render.isColorEnabled () then
+                            AnsiConsole.MarkupLine(sprintf "[dim][[turn %d]][/] %s" turn (Markup.Escape text))
+                        else
+                            Console.Out.WriteLine(sprintf "[turn %d] %s" turn text)
+                AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/undo" ->
                 match Fugue.Core.Checkpoint.undo () with

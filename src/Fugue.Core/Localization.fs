@@ -103,6 +103,12 @@ type Strings =
       // /summarize command
       CmdSummarizeDesc: string
 
+      // /note command
+      CmdNoteDesc:  string
+      NoteAdded:    string
+      NoteNone:     string
+      CmdNotesDesc: string
+
       // /undo command
       CmdUndoDesc:      string
       UndoNothingToUndo: string
@@ -183,6 +189,10 @@ let en : Strings =
       CmdTodoDesc           = "scan workspace for TODO/FIXME/HACK comments"
       TodoNone              = "no TODO/FIXME/HACK comments found in workspace"
       CmdSummarizeDesc      = "summarize a file or directory"
+      CmdNoteDesc           = "attach a private annotation to the current turn"
+      NoteAdded             = "note added"
+      NoteNone              = "no notes yet"
+      CmdNotesDesc          = "list all notes for this session"
       CmdUndoDesc           = "undo the most recent AI file write or edit"
       UndoNothingToUndo     = "nothing to undo"
       UndoRestored          = "restored"
@@ -254,6 +264,10 @@ let ru : Strings =
       CmdTodoDesc           = "найти TODO/FIXME/HACK комментарии в проекте"
       TodoNone              = "TODO/FIXME/HACK комментарии не найдены"
       CmdSummarizeDesc      = "резюме файла или директории"
+      CmdNoteDesc           = "добавить личную заметку к текущему обороту"
+      NoteAdded             = "заметка добавлена"
+      NoteNone              = "заметок пока нет"
+      CmdNotesDesc          = "список всех заметок сессии"
       CmdUndoDesc           = "отменить последнее изменение файла ИИ"
       UndoNothingToUndo     = "нечего отменять"
       UndoRestored          = "восстановлен"
