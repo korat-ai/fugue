@@ -60,7 +60,7 @@ let assistantFinal (text: string) : IRenderable =
         if bubblesMode then
             let panel = Panel(inner)
             panel.Border <- BoxBorder.Rounded
-            panel.BorderStyle <- Style.Parse "dim"
+            panel.BorderStyle <- Style.Parse (themeColor "dim" "dim #1e3a5a")
             panel.Header <- PanelHeader(" Claude ")
             panel :> IRenderable
         else inner

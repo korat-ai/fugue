@@ -254,6 +254,58 @@ let ``load treats unknown emojiMode value as auto`` () =
     | Error e -> failwithf "expected Ok, got %A" e
 
 [<Fact>]
+let ``load reads bubblesMode=true from config`` () =
+    let tmpHome = IO.Path.Combine(IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    let dir = IO.Path.Combine(tmpHome, ".fugue")
+    IO.Directory.CreateDirectory dir |> ignore
+    let path = IO.Path.Combine(dir, "config.json")
+    IO.File.WriteAllText(path, """{
+        "provider":"ollama","model":"llama","apiKey":"","ollamaEndpoint":"http://localhost:11434",
+        "maxIterations":30,"ui":{"userAlignment":"left","bubblesMode":true}
+    }""")
+    Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null)
+    Environment.SetEnvironmentVariable("OPENAI_API_KEY", null)
+    Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    match load [||] with
+    | Ok cfg -> cfg.Ui.BubblesMode |> should equal true
+    | Error e -> failwithf "expected Ok, got %A" e
+
+[<Fact>]
+let ``load defaults bubblesMode=false when field absent`` () =
+    let tmpHome = IO.Path.Combine(IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    let dir = IO.Path.Combine(tmpHome, ".fugue")
+    IO.Directory.CreateDirectory dir |> ignore
+    let path = IO.Path.Combine(dir, "config.json")
+    IO.File.WriteAllText(path, """{
+        "provider":"ollama","model":"llama","apiKey":"","ollamaEndpoint":"http://localhost:11434",
+        "maxIterations":30,"ui":{"userAlignment":"left"}
+    }""")
+    Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null)
+    Environment.SetEnvironmentVariable("OPENAI_API_KEY", null)
+    Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    match load [||] with
+    | Ok cfg -> cfg.Ui.BubblesMode |> should equal false
+    | Error e -> failwithf "expected Ok, got %A" e
+
+[<Fact>]
+let ``saveToFile round-trips bubblesMode=true`` () =
+    let tmpHome = IO.Path.Combine(IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    IO.Directory.CreateDirectory tmpHome |> ignore
+    Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null)
+    Environment.SetEnvironmentVariable("OPENAI_API_KEY", null)
+    Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    let cfg = { Provider = Anthropic("key", "model"); SystemPrompt = None; ProfileContent = None
+                MaxIterations = 10; MaxTokens = None; BaseUrl = None
+                Ui = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false; Theme = ""; EmojiMode = "auto"; BubblesMode = true } }
+    saveToFile cfg
+    match load [||] with
+    | Ok loaded -> loaded.Ui.BubblesMode |> should equal true
+    | Error e -> failwithf "expected Ok, got %A" e
+
+[<Fact>]
 let ``AppConfig ProfileContent is None after load when no profile passed`` () =
     let tmpHome = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
     Directory.CreateDirectory tmpHome |> ignore
