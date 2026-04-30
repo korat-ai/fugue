@@ -49,7 +49,11 @@ type Strings =
       ReviewPrPrompt:    string
 
       // Input safety
-      ZeroWidthWarning: string }
+      ZeroWidthWarning: string
+
+      // @file injection
+      AtFileNotFound: string
+      AtFileTooBig:   string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -82,7 +86,9 @@ let en : Strings =
       ReviewPrUsage         = "Usage: /review pr <N>"
       ReviewPrNotFound      = "PR not found or gh CLI unavailable"
       ReviewPrPrompt        = "Please review GitHub PR #{0}.\n\nPR metadata:\n{1}\n\nDiff:\n```\n{2}\n```\n\nProvide a thorough code review: identify bugs, style issues, missing tests, security concerns, and any improvements. Be specific with line references where possible."
-      ZeroWidthWarning      = "Warning: input contains invisible zero-width characters — these may cause Edit tool diff mismatches" }
+      ZeroWidthWarning      = "Warning: input contains invisible zero-width characters — these may cause Edit tool diff mismatches"
+      AtFileNotFound        = "@{0}: file not found, skipping"
+      AtFileTooBig          = "[file too large — truncated to 4000 chars]" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -115,7 +121,9 @@ let ru : Strings =
       ReviewPrUsage         = "Использование: /review pr <N>"
       ReviewPrNotFound      = "PR не найден или gh CLI недоступен"
       ReviewPrPrompt        = "Пожалуйста, проверь GitHub PR #{0}.\n\nМетаданные PR:\n{1}\n\nDiff:\n```\n{2}\n```\n\nПроведи подробное ревью кода: выяви баги, проблемы со стилем, отсутствующие тесты, уязвимости безопасности и возможные улучшения. Указывай конкретные строки там, где это возможно."
-      ZeroWidthWarning      = "Предупреждение: ввод содержит невидимые символы нулевой ширины — они могут нарушить работу инструмента Edit" }
+      ZeroWidthWarning      = "Предупреждение: ввод содержит невидимые символы нулевой ширины — они могут нарушить работу инструмента Edit"
+      AtFileNotFound        = "@{0}: файл не найден, пропускаем"
+      AtFileTooBig          = "[файл слишком большой — обрезано до 4000 символов]" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =
