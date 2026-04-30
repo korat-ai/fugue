@@ -1,27 +1,58 @@
 module Fugue.Tests.AtFileTests
 
+open System
+open System.IO
 open Xunit
 open FsUnit.Xunit
 
-// findAtTokens is private in Repl, so we replicate the pure parser logic here
-// to keep the tests self-contained and AOT-safe (no Reflection needed).
+// findAtTokens and expandAtFiles are private in Repl, so we replicate the pure logic
+// here to keep the tests self-contained and AOT-safe (no Reflection needed).
 
 /// Replicated pure parser (mirrors Repl.findAtTokens) for unit testing.
 let private findAtTokens (input: string) : (int * int * string) list =
     let mutable i = 0
     let mutable results = []
     while i < input.Length do
-        if input.[i] = '@' && (i = 0 || System.Char.IsWhiteSpace input.[i - 1]) then
+        if input.[i] = '@' && (i = 0 || Char.IsWhiteSpace input.[i - 1]) then
             let start = i
             i <- i + 1
             let pathStart = i
-            while i < input.Length && not (System.Char.IsWhiteSpace input.[i]) do
+            while i < input.Length && not (Char.IsWhiteSpace input.[i]) do
                 i <- i + 1
             if i > pathStart then
                 results <- (start, i - start, input.[start + 1 .. i - 1]) :: results
         else
             i <- i + 1
     List.rev results
+
+/// Pure version of Repl.expandAtFiles for testing.
+/// Mirrors the production logic but emits not-found notices inline (no AnsiConsole).
+let private expandAtFilesLocal (cwd: string) (input: string) : string =
+    let tokens = findAtTokens input
+    if tokens.IsEmpty then input
+    else
+        let mutable result = input
+        for (start, length, pathPart) in List.rev tokens do
+            let fullPath = Fugue.Tools.PathSafety.resolve cwd pathPart
+            if not (Fugue.Tools.PathSafety.isUnder cwd fullPath) then
+                ()  // silently skip paths outside cwd — @token stays literal
+            elif not (File.Exists fullPath) then
+                let notice = sprintf "@%s: file not found, skipping" pathPart
+                result <- result.[0 .. start - 1] + notice + result.[start + length ..]
+            else
+                try
+                    let content = File.ReadAllText fullPath
+                    let truncated = content.Length > 4000
+                    let body = if truncated then content.[..3999] else content
+                    let tooBig = "[file too large — truncated to 4000 chars]"
+                    let header = sprintf "[contents of %s]%s:\n" pathPart (if truncated then " " + tooBig else "")
+                    result <- result.[0 .. start - 1] + header + body + result.[start + length ..]
+                with _ ->
+                    let notice = sprintf "@%s: file not found, skipping" pathPart
+                    result <- result.[0 .. start - 1] + notice + result.[start + length ..]
+        result
+
+// ── findAtTokens parser tests ──────────────────────────────────────────────────
 
 [<Fact>]
 let ``findAtTokens finds single token in middle of string`` () =
@@ -65,3 +96,48 @@ let ``findAtTokens handles path with directory separators`` () =
     tokens |> should haveLength 1
     let (_, _, path) = tokens.[0]
     path |> should equal "src/Fugue.Core/Config.fs"
+
+// ── expandAtFiles injector tests ───────────────────────────────────────────────
+
+[<Fact>]
+let ``expandAtFiles replaces nonexistent at-token with not-found notice`` () =
+    let tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName())
+    Directory.CreateDirectory tmpDir |> ignore
+    try
+        let result = expandAtFilesLocal tmpDir "@nonexistent.txt rest of message"
+        result |> should haveSubstring "nonexistent.txt"
+        result |> should haveSubstring "file not found"
+    finally
+        Directory.Delete(tmpDir, true)
+
+[<Fact>]
+let ``expandAtFiles truncates file content over 4000 chars`` () =
+    let tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName())
+    Directory.CreateDirectory tmpDir |> ignore
+    try
+        let bigContent = String.replicate 5000 "x"
+        File.WriteAllText(Path.Combine(tmpDir, "big.txt"), bigContent)
+        let result = expandAtFilesLocal tmpDir "@big.txt"
+        result.Length |> should be (lessThan 5100)
+        result |> should haveSubstring "too large"
+    finally
+        Directory.Delete(tmpDir, true)
+
+[<Fact>]
+let ``expandAtFiles silently drops at-token pointing outside cwd`` () =
+    let tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName())
+    Directory.CreateDirectory tmpDir |> ignore
+    try
+        // Write a real file outside cwd so it would be readable if traversal succeeded
+        let outsideFile = Path.Combine(Path.GetTempPath(), "secret.txt")
+        File.WriteAllText(outsideFile, "supersecret")
+        try
+            let result = expandAtFilesLocal tmpDir "@../secret.txt hello"
+            // @token must not inject file contents
+            result |> should not' (haveSubstring "supersecret")
+            // The rest of the message must be preserved
+            result |> should haveSubstring "hello"
+        finally
+            try File.Delete outsideFile with _ -> ()
+    finally
+        Directory.Delete(tmpDir, true)
