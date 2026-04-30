@@ -28,6 +28,8 @@ type Strings =
       CmdHelpDesc:  string
       CmdClearDesc: string
       CmdExitDesc:  string
+      CmdAskDesc:   string
+      AskUsage:     string
       HelpHeader:   string }
 
 let en : Strings =
@@ -48,6 +50,8 @@ let en : Strings =
       CmdHelpDesc           = "show this help"
       CmdClearDesc          = "clear the screen"
       CmdExitDesc           = "exit Fugue"
+      CmdAskDesc            = "ask a question without tool access (pure Q&A)"
+      AskUsage              = "Usage: /ask <question>"
       HelpHeader            = "Available slash commands:" }
 
 let ru : Strings =
@@ -68,6 +72,8 @@ let ru : Strings =
       CmdHelpDesc           = "показать эту справку"
       CmdClearDesc          = "очистить экран"
       CmdExitDesc           = "выйти из Fugue"
+      CmdAskDesc            = "задать вопрос без использования инструментов (только Q&A)"
+      AskUsage              = "Использование: /ask <вопрос>"
       HelpHeader            = "Доступные команды:" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.

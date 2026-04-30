@@ -122,15 +122,31 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             | Some s when s = "/help" ->
                 AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.HelpHeader + "[/]"))
                 AnsiConsole.WriteLine()
-                let helpItems = [ "/help",  strings.CmdHelpDesc
-                                  "/clear", strings.CmdClearDesc
-                                  "/exit",  strings.CmdExitDesc ]
+                let helpItems = [ "/help",       strings.CmdHelpDesc
+                                  "/ask <q>",   strings.CmdAskDesc
+                                  "/clear",     strings.CmdClearDesc
+                                  "/exit",      strings.CmdExitDesc ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/ask " ->
+                let question = s.Substring(5).Trim()
+                if String.IsNullOrWhiteSpace question then
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AskUsage + "[/]"))
+                    AnsiConsole.WriteLine()
+                else
+                    let augmented = sprintf "[System: answer from your training knowledge only — do not invoke any tools, do not read files, do not run commands]\n\nUser: %s" question
+                    AnsiConsole.Write(Render.userMessage cfg.Ui question)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session augmented cfg cancelSrc
+                StatusBar.refresh ()
+            | Some s when s = "/ask" ->
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AskUsage + "[/]"))
+                AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some userInput ->
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
