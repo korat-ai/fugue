@@ -9,10 +9,14 @@ open Fugue.Agent
 let private buildAgent (cfg: AppConfig) : AIAgent =
     let cwd = Environment.CurrentDirectory
     let tools = Fugue.Tools.ToolRegistry.buildAll cwd
-    let sysPrompt =
+    let basePrompt =
         match cfg.SystemPrompt with
         | Some s -> s
         | None -> Fugue.Core.SystemPrompt.render cwd Fugue.Tools.ToolRegistry.names
+    let sysPrompt =
+        match cfg.ProfileContent with
+        | Some profile -> profile + "\n\n---\n\n" + basePrompt
+        | None -> basePrompt
     AgentFactory.create cfg.Provider cfg.BaseUrl sysPrompt tools
 
 [<RequiresUnreferencedCode("Calls Repl.run and Config.saveToFile which use STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
@@ -33,6 +37,11 @@ let private runWithCfg (cfg: AppConfig) : int =
 let main argv =
     Fugue.Core.Log.session ()
     Fugue.Core.Log.info "main" ("fugue starting, argv=[" + String.concat "; " argv + "]")
+    let profileContent =
+        argv
+        |> Array.tryFindIndex ((=) "--profile")
+        |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
+        |> Option.bind Fugue.Core.Config.loadProfile
     if argv |> Array.contains "doctor" then
         let cwd = Environment.CurrentDirectory
         let passed = Doctor.run cwd
@@ -56,7 +65,7 @@ let main argv =
                     let m = if List.isEmpty models then "llama3.1" else List.head models
                     Ollama(ep, m)
                 | _ -> failwith "unsupported candidate"
-            let cfg = { Provider = provider; SystemPrompt = None; MaxIterations = 30; Ui = Fugue.Core.Config.defaultUi (); BaseUrl = None }
+            let cfg = { Provider = provider; SystemPrompt = None; ProfileContent = profileContent; MaxIterations = 30; Ui = Fugue.Core.Config.defaultUi (); BaseUrl = None }
             Fugue.Core.Config.saveToFile cfg
             runWithCfg cfg
         | None ->
@@ -66,4 +75,4 @@ let main argv =
         Console.Error.WriteLine("Invalid config: " + reason)
         1
     | Ok cfg ->
-        runWithCfg cfg
+        runWithCfg { cfg with ProfileContent = profileContent }
