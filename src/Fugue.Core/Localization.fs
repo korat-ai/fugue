@@ -104,7 +104,7 @@ type Strings =
       CmdSummarizeDesc: string
 
       // @path injection hints
-      TestFileHint: string }
+      TestFileHint:  string }
 
 let en : Strings =
     { Cancelled            = "cancelled"

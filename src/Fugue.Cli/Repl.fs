@@ -15,6 +15,7 @@ open Fugue.Core.Config
 open Fugue.Core.Localization
 open Fugue.Agent
 open Fugue.Cli
+open Fugue.Tools.PathSafety
 
 /// Try to find the git repository root starting from startDir.
 /// Runs `git rev-parse --show-toplevel` as a best-effort child process; returns None on any failure.
@@ -42,8 +43,7 @@ let private findGitRoot (startDir: string) : string option =
     with _ -> None
 
 
-
-/// Search for a sibling test file in the `tests/` subdirectory of cwd.
+/// Search for a sibling test file in the `tests/` subdirectory of cwd (recursively).
 /// Returns the relative path from cwd if found, or None.
 let tryFindTestFile (cwd: string) (sourceFile: string) : string option =
     let stem =
