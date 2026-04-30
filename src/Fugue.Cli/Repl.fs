@@ -153,6 +153,47 @@ let private unescapeJson (s: string) : string =
             sb.Append(s.[i]) |> ignore
             i <- i + 1
     sb.ToString()
+let private tryReadClipboard () : string option =
+    let tryCmd prog (args: string[]) =
+        try
+            let psi = System.Diagnostics.ProcessStartInfo()
+            psi.FileName <- prog
+            for a in args do psi.ArgumentList.Add a
+            psi.RedirectStandardOutput <- true
+            psi.UseShellExecute <- false
+            psi.CreateNoWindow <- true
+            use proc = new System.Diagnostics.Process()
+            proc.StartInfo <- psi
+            proc.Start() |> ignore
+            let out = proc.StandardOutput.ReadToEnd()
+            proc.WaitForExit()
+            if proc.ExitCode = 0 && not (System.String.IsNullOrEmpty out) then Some out
+            else None
+        with _ -> None
+    // macOS
+    match tryCmd "pbpaste" [||] with
+    | Some s -> Some s
+    | None ->
+    // Linux (X11)
+    match tryCmd "xclip" [| "-o"; "-sel"; "clipboard" |] with
+    | Some s -> Some s
+    | None ->
+    // Linux (Wayland)
+    match tryCmd "wl-paste" [||] with
+    | Some s -> Some s
+    | None -> None
+
+let private expandClipboard (input: string) (strings: Strings) : string =
+    if not (input.Contains "@clipboard") then input
+    else
+        match tryReadClipboard() with
+        | None ->
+            input.Replace("@clipboard", "[" + strings.ClipboardUnavailable + "]")
+        | Some content ->
+            let truncated =
+                if content.Length > 4000 then content.[..3999] + " " + strings.AtFileTooBig
+                else content
+            input.Replace("@clipboard", truncated)
 
 /// Holder for the currently active stream's CancellationTokenSource.
 /// Console.CancelKeyPress handler uses this to cancel mid-stream Ctrl+C.
@@ -496,6 +537,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.Write(Markup("[dim yellow]" + Markup.Escape strings.ZeroWidthWarning + "[/]"))
                     AnsiConsole.WriteLine()
                 let expandedInput = expandAtFiles cwd strings userInput
+                let expandedInput = expandClipboard expandedInput strings
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
                 AnsiConsole.WriteLine()
                 let sw = System.Diagnostics.Stopwatch.StartNew()

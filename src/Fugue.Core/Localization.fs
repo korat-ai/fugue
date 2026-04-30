@@ -62,7 +62,10 @@ type Strings =
 
       // @file injection
       AtFileNotFound: string
-      AtFileTooBig:   string }
+      AtFileTooBig:   string
+
+      // @clipboard expansion
+      ClipboardUnavailable: string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -102,7 +105,8 @@ let en : Strings =
       AskUsage              = "Usage: /ask <question>"
       ZeroWidthWarning      = "Warning: input contains invisible zero-width characters — these may cause Edit tool diff mismatches"
       AtFileNotFound        = "@{0}: file not found, skipping"
-      AtFileTooBig          = "[file too large — truncated to 4000 chars]" }
+      AtFileTooBig          = "[file too large — truncated to 4000 chars]"
+      ClipboardUnavailable  = "clipboard unavailable — pbpaste/xclip/wl-paste not found" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -142,7 +146,8 @@ let ru : Strings =
       AskUsage              = "Использование: /ask <вопрос>"
       ZeroWidthWarning      = "Предупреждение: ввод содержит невидимые символы нулевой ширины — они могут нарушить работу инструмента Edit"
       AtFileNotFound        = "@{0}: файл не найден, пропускаем"
-      AtFileTooBig          = "[файл слишком большой — обрезано до 4000 символов]" }
+      AtFileTooBig          = "[файл слишком большой — обрезано до 4000 символов]"
+      ClipboardUnavailable  = "буфер обмена недоступен — pbpaste/xclip/wl-paste не найдены" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =
