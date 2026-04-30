@@ -376,6 +376,42 @@ SEE ALSO
                 | _ -> found <- false
             if found then Some (el.ToString()) else None
         match argv.[1] with
+        | "validate" ->
+            if not (System.IO.File.Exists cfgPath) then
+                Console.Error.WriteLine(sprintf "No config file at %s" cfgPath); 1
+            else
+            match Fugue.Core.Config.load [||] with
+            | Ok cfg ->
+                let prov = match cfg.Provider with
+                           | Anthropic _ -> "anthropic" | OpenAI _ -> "openai" | Ollama _ -> "ollama"
+                Console.WriteLine(sprintf "✓ config.json is valid")
+                Console.WriteLine(sprintf "  provider:  %s" prov)
+                Console.WriteLine(sprintf "  model:     %s" (Fugue.Core.Config.modelDisplayName (match cfg.Provider with Anthropic(_,m)|OpenAI(_,m)|Ollama(_,m)->m)))
+                Console.WriteLine(sprintf "  path:      %s" cfgPath)
+                0
+            | Error (Fugue.Core.Config.InvalidConfig reason) ->
+                // Parse the JSON ourselves and give detailed hints.
+                try
+                    use doc = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText cfgPath)
+                    let root = doc.RootElement
+                    let mutable errors = []
+                    let str (k: string) = match root.TryGetProperty(k) with true, v when v.ValueKind = System.Text.Json.JsonValueKind.String -> v.GetString() |> Option.ofObj | _ -> None
+                    match str "provider" with
+                    | None -> errors <- errors @ ["[provider] missing — set to \"anthropic\", \"openai\", or \"ollama\""]
+                    | Some p when p <> "anthropic" && p <> "openai" && p <> "ollama" ->
+                        errors <- errors @ [sprintf "[provider] \"%s\" is not valid — use: anthropic, openai, ollama" p]
+                    | _ -> ()
+                    match str "model" with
+                    | None -> errors <- errors @ ["[model] missing — set to a model ID (e.g. claude-opus-4-7)"]
+                    | _ -> ()
+                    if errors.IsEmpty then errors <- [reason]
+                    Console.Error.WriteLine(sprintf "✗ config.json has %d error(s):" errors.Length)
+                    for e in errors do Console.Error.WriteLine(sprintf "  %s" e)
+                    1
+                with _ ->
+                    Console.Error.WriteLine(sprintf "✗ %s" reason); 1
+            | Error (Fugue.Core.Config.NoConfigFound _) ->
+                Console.Error.WriteLine "✗ No config found"; 1
         | "list" ->
             match readDoc () with
             | None -> Console.Error.WriteLine "No config file found."; 1
