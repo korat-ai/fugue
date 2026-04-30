@@ -6,6 +6,10 @@ open System.Threading
 open System.Threading.Tasks
 open Fugue.Core.Localization
 
+// Bracketed paste mode escape sequences.
+let private pasteBeginSeq = "\x1b[200~"
+let private pasteEndSeq   = "\x1b[201~"
+
 // Hardcoded — small list, easier than passing through state.
 let slashCommands : string list = [ "/help"; "/clear"; "/exit" ]
 
@@ -197,6 +201,31 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
     else
         Continue
 
+/// Bracketed paste state machine — tracks where we are in the \x1b[200~…\x1b[201~ sequence.
+/// States progress: Normal → EscSeen → BracketSeen → Digit2 → Digit0x → Digit0y → Tilde200
+///                  then PasteActive → EscInPaste → BracketInPaste → Digit2P → Digit0xP → Digit1P → (end)
+/// On any mismatch the accumulated prefix chars are flushed as normal input.
+type PasteState =
+    | Normal
+    | EscSeen           // saw \x1b
+    | BracketSeen       // saw \x1b[
+    | Digit2            // saw \x1b[2
+    | Digit0            // saw \x1b[20
+    | Digit0v2          // saw \x1b[200
+    | PasteActive       // inside paste; collecting content
+    | EscInPaste        // saw \x1b while in PasteActive
+    | BracketInPaste    // saw \x1b[ while in PasteActive
+    | Digit2InPaste     // saw \x1b[2 while in PasteActive
+    | Digit0InPaste     // saw \x1b[20 while in PasteActive
+    | Digit1InPaste     // saw \x1b[201 while in PasteActive
+
+/// Pure helper: set s.Buffer and s.Cursor to the pasted content (trim single trailing \n if any).
+let applyPastedText (text: string) (s: S) : unit =
+    let normalized = if text.EndsWith "\n" then text.[0 .. text.Length - 2] else text
+    s.Buffer.Clear()
+    s.Buffer.AddRange(normalized.ToCharArray())
+    s.Cursor <- s.Buffer.Count
+
 let private writeRaw (s: string) =
     Console.Out.Write s
     Console.Out.Flush()
@@ -298,31 +327,178 @@ let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task
     Console.TreatControlCAsInput <- true
     try
         redraw st
-        let mutable result : string option voption = ValueNone
+        let mutable result      : string option voption = ValueNone
+        let mutable pasteState  : PasteState             = Normal
+        let mutable pasteBuf    : System.Text.StringBuilder = System.Text.StringBuilder()
+        // Prefix chars accumulated while tentatively matching the begin/end bracket sequence.
+        // On mismatch they are flushed as ordinary input.
+        let mutable escapeBuf   : ResizeArray<char>      = ResizeArray<char>()
+
+        let eraseRendered () =
+            if st.RowsBelowCursor > 0 then
+                writeRaw ("\x1b[" + string st.RowsBelowCursor + "B")
+            eraseLines st.LinesRendered
+            st.RowsBelowCursor <- 0
+
+        // Flush accumulated escape prefix as normal key events (no-op chars go through applyKey).
+        let flushEscape () =
+            for ch in escapeBuf do
+                let ki = ConsoleKeyInfo(ch, ConsoleKey.A, false, false, false)
+                match applyKey ki st with
+                | Continue | Wipe -> ()
+                | Submit _ | Quit -> ()   // rare; ignore — these chars won't normally Submit/Quit
+            escapeBuf.Clear()
+            pasteState <- Normal
+
         while result.IsNone && not ct.IsCancellationRequested do
             // Console.ReadKey is blocking; we accept that — cancellation in this
             // path is not expected in normal flow (Ctrl+C while reading is a wipe).
             let k = Console.ReadKey(intercept = true)
-            let eraseRendered () =
-                if st.RowsBelowCursor > 0 then
-                    writeRaw ("\x1b[" + string st.RowsBelowCursor + "B")
-                eraseLines st.LinesRendered
-                st.RowsBelowCursor <- 0
-            match applyKey k st with
-            | Continue -> redraw st
-            | Wipe     -> redraw st
-            | Submit s ->
-                eraseRendered ()
-                if not (String.IsNullOrWhiteSpace s) then
-                    if historyStore.Count = 0 || historyStore.[historyStore.Count - 1] <> s then
-                        historyStore.Add s
-                st.HistoryIdx <- -1
-                st.SavedBuffer <- None
-                result <- ValueSome (Some s)
-            | Quit ->
-                eraseRendered ()
-                writeRaw "\n"
-                result <- ValueSome None
+            let c = k.KeyChar
+
+            // ── Paste state machine ───────────────────────────────────────────
+            match pasteState with
+            | Normal ->
+                if c = '\x1b' then
+                    escapeBuf.Clear()
+                    escapeBuf.Add c
+                    pasteState <- EscSeen
+                else
+                    match applyKey k st with
+                    | Continue -> redraw st
+                    | Wipe     -> redraw st
+                    | Submit s ->
+                        eraseRendered ()
+                        if not (String.IsNullOrWhiteSpace s) then
+                            if historyStore.Count = 0 || historyStore.[historyStore.Count - 1] <> s then
+                                historyStore.Add s
+                        st.HistoryIdx <- -1
+                        st.SavedBuffer <- None
+                        result <- ValueSome (Some s)
+                    | Quit ->
+                        eraseRendered ()
+                        writeRaw "\n"
+                        result <- ValueSome None
+
+            | EscSeen ->
+                if c = '[' then
+                    escapeBuf.Add c
+                    pasteState <- BracketSeen
+                else
+                    flushEscape ()
+                    let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
+                    match applyKey ki2 st with
+                    | Continue | Wipe -> redraw st
+                    | Submit _ | Quit -> ()
+
+            | BracketSeen ->
+                if c = '2' then
+                    escapeBuf.Add c
+                    pasteState <- Digit2
+                else
+                    flushEscape ()
+                    let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
+                    match applyKey ki2 st with
+                    | Continue | Wipe -> redraw st
+                    | Submit _ | Quit -> ()
+
+            | Digit2 ->
+                if c = '0' then
+                    escapeBuf.Add c
+                    pasteState <- Digit0
+                else
+                    flushEscape ()
+                    let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
+                    match applyKey ki2 st with
+                    | Continue | Wipe -> redraw st
+                    | Submit _ | Quit -> ()
+
+            | Digit0 ->
+                if c = '0' then
+                    escapeBuf.Add c
+                    pasteState <- Digit0v2
+                else
+                    flushEscape ()
+                    let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
+                    match applyKey ki2 st with
+                    | Continue | Wipe -> redraw st
+                    | Submit _ | Quit -> ()
+
+            | Digit0v2 ->
+                if c = '~' then
+                    // Confirmed \x1b[200~ — enter paste collection mode
+                    escapeBuf.Clear()
+                    pasteBuf.Clear() |> ignore
+                    pasteState <- PasteActive
+                else
+                    flushEscape ()
+                    let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
+                    match applyKey ki2 st with
+                    | Continue | Wipe -> redraw st
+                    | Submit _ | Quit -> ()
+
+            | PasteActive ->
+                if c = '\x1b' then
+                    escapeBuf.Clear()
+                    escapeBuf.Add c
+                    pasteState <- EscInPaste
+                else
+                    pasteBuf.Append c |> ignore
+
+            | EscInPaste ->
+                if c = '[' then
+                    escapeBuf.Add c
+                    pasteState <- BracketInPaste
+                else
+                    // Not an end bracket — flush escape to pasteBuf and continue collecting
+                    for ch in escapeBuf do pasteBuf.Append ch |> ignore
+                    escapeBuf.Clear()
+                    pasteBuf.Append c |> ignore
+                    pasteState <- PasteActive
+
+            | BracketInPaste ->
+                if c = '2' then
+                    escapeBuf.Add c
+                    pasteState <- Digit2InPaste
+                else
+                    for ch in escapeBuf do pasteBuf.Append ch |> ignore
+                    escapeBuf.Clear()
+                    pasteBuf.Append c |> ignore
+                    pasteState <- PasteActive
+
+            | Digit2InPaste ->
+                if c = '0' then
+                    escapeBuf.Add c
+                    pasteState <- Digit0InPaste
+                else
+                    for ch in escapeBuf do pasteBuf.Append ch |> ignore
+                    escapeBuf.Clear()
+                    pasteBuf.Append c |> ignore
+                    pasteState <- PasteActive
+
+            | Digit0InPaste ->
+                if c = '1' then
+                    escapeBuf.Add c
+                    pasteState <- Digit1InPaste
+                else
+                    for ch in escapeBuf do pasteBuf.Append ch |> ignore
+                    escapeBuf.Clear()
+                    pasteBuf.Append c |> ignore
+                    pasteState <- PasteActive
+
+            | Digit1InPaste ->
+                if c = '~' then
+                    // Confirmed \x1b[201~ — paste complete
+                    escapeBuf.Clear()
+                    applyPastedText (pasteBuf.ToString()) st
+                    pasteState <- Normal
+                    redraw st
+                else
+                    for ch in escapeBuf do pasteBuf.Append ch |> ignore
+                    escapeBuf.Clear()
+                    pasteBuf.Append c |> ignore
+                    pasteState <- PasteActive
+
         return
             match result with
             | ValueSome v -> v

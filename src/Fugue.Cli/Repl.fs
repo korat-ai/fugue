@@ -108,6 +108,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     Console.CancelKeyPress.AddHandler handler
     let! session = agent.CreateSessionAsync(CancellationToken.None)
     StatusBar.start cwd cfg
+    Console.Out.Write "\x1b[?2004h"   // enable bracketed paste
+    Console.Out.Flush()
 
     let strings = pick cfg.Ui.Locale
     try
@@ -139,5 +141,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 StatusBar.refresh ()
     finally
         Console.CancelKeyPress.RemoveHandler handler
+        Console.Out.Write "\x1b[?2004l"   // disable bracketed paste
+        Console.Out.Flush()
         StatusBar.stop ()
 }
