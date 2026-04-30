@@ -1,5 +1,6 @@
 module Fugue.Tools.GlobTool
 
+open System
 open System.IO
 open System.ComponentModel
 open Microsoft.Extensions.FileSystemGlobbing
@@ -12,6 +13,8 @@ let glob
     ([<Description("Search root, defaults to cwd.")>] root: string option)
     : string =
     let r = root |> Option.map (resolve cwd) |> Option.defaultValue cwd
+    if not (isUnder cwd r) then
+        raise (UnauthorizedAccessException(sprintf "search root outside working directory: %s" (Option.defaultValue "." root)))
     let matcher = Matcher()
     matcher.AddInclude pattern |> ignore
     let results = matcher.Execute(Microsoft.Extensions.FileSystemGlobbing.Abstractions.DirectoryInfoWrapper(DirectoryInfo r))

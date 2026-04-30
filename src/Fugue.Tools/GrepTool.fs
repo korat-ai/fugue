@@ -15,6 +15,8 @@ let grep
     ([<Description("Optional include glob (e.g. **/*.fs); default = all files.")>] glob: string option)
     : string =
     let r = root |> Option.map (resolve cwd) |> Option.defaultValue cwd
+    if not (isUnder cwd r) then
+        raise (UnauthorizedAccessException(sprintf "search root outside working directory: %s" (Option.defaultValue "." root)))
     let regex = Regex(pattern, RegexOptions.Compiled)
 
     let files =

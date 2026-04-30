@@ -13,6 +13,8 @@ let write
     ([<Description("Content to write (UTF-8, no BOM).")>] content: string)
     : string =
     let full = resolve cwd path
+    if not (isUnder cwd full) then
+        raise (UnauthorizedAccessException(sprintf "path outside working directory: %s" path))
     let dir = Path.GetDirectoryName full |> Option.ofObj |> Option.defaultValue "."
     if dir <> "." || not (Directory.Exists dir) then Directory.CreateDirectory dir |> ignore
     File.WriteAllText(full, content, UTF8Encoding(false))

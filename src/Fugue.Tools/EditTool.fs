@@ -14,6 +14,8 @@ let edit
     ([<Description("If true, replace every occurrence; default false.")>] replaceAll: bool option)
     : string =
     let full = resolve cwd path
+    if not (isUnder cwd full) then
+        raise (UnauthorizedAccessException(sprintf "path outside working directory: %s" path))
     if not (File.Exists full) then raise (FileNotFoundException("file not found", full))
     let original = File.ReadAllText full
     let count =
