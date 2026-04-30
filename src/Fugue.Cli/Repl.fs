@@ -56,49 +56,7 @@ let private streamAndRender
     use streamCts = cancelSrc.NewStreamCts()
     let strings = pick cfg.Ui.Locale
     let toolMeta = Dictionary<string, string * string>()
-    let textBuf = StringBuilder()
-    // Progressive render state for the current text segment.
-    // We use relative cursor moves (ESC[NA) instead of save/restore because save/restore
-    // preserves absolute screen coords that become stale after scroll-region scrolling.
-    let mutable segmentRows = 0   // rows the previous render of this segment occupied (cursor sits N rows below segment start)
-
-    let renderSegment () =
-        if textBuf.Length = 0 then () else
-        let text = textBuf.ToString()
-        let renderable : Spectre.Console.Rendering.IRenderable =
-            if hasMarkdown text then Render.assistantFinal text
-            else Spectre.Console.Text(text) :> _
-        // Erase prior render: move cursor up to start of segment, walk down clearing each row.
-        if segmentRows > 0 then
-            Console.Out.Write ("\x1b[" + string segmentRows + "A")
-            Console.Out.Write "\r"
-            for i in 0 .. segmentRows - 1 do
-                Console.Out.Write "\x1b[K"
-                if i < segmentRows - 1 then Console.Out.Write "\x1b[B"
-            // walk back up to start
-            if segmentRows > 1 then
-                Console.Out.Write ("\x1b[" + string (segmentRows - 1) + "A")
-            Console.Out.Write "\r"
-            Console.Out.Flush()
-        // Measure rows by rendering into a StringWriter-backed console.
-        let width = max 40 Console.WindowWidth
-        let sw = new System.IO.StringWriter()
-        let settings = new Spectre.Console.AnsiConsoleSettings(Out = new Spectre.Console.AnsiConsoleOutput(sw))
-        let measureCon = Spectre.Console.AnsiConsole.Create(settings)
-        measureCon.Profile.Width <- width
-        measureCon.Write(renderable)
-        let output : string = sw.ToString()
-        let nlCount = output |> Seq.filter (fun c -> c = '\n') |> Seq.length
-        let endsWithNl = output.Length > 0 && output.EndsWith "\n"
-        let rows = if output.Length > 0 && not endsWithNl then nlCount + 1 else nlCount
-        AnsiConsole.Write(renderable)
-        if output.Length > 0 && not endsWithNl then AnsiConsole.WriteLine ()
-        segmentRows <- max 1 rows
-
-    let endSegment () =
-        if textBuf.Length > 0 then renderSegment ()
-        textBuf.Clear() |> ignore
-        segmentRows <- 0
+    let mutable assistantStreaming = false   // are we mid-line in the plain-text stream
 
     try
         let stream = Conversation.run agent session input streamCts.Token
@@ -109,11 +67,14 @@ let private streamAndRender
             if step then
                 match enumerator.Current with
                 | Conversation.TextChunk t ->
-                    textBuf.Append t |> ignore
-                    renderSegment ()
+                    Console.Out.Write t
+                    Console.Out.Flush()
+                    assistantStreaming <- true
                 | Conversation.ToolStarted(id, name, args) ->
-                    endSegment ()
                     toolMeta.[id] <- (name, args)
+                    if assistantStreaming then
+                        Console.Out.WriteLine ()
+                        assistantStreaming <- false
                 | Conversation.ToolCompleted(id, output, isErr) ->
                     let name, args =
                         match toolMeta.TryGetValue id with
@@ -127,14 +88,14 @@ let private streamAndRender
                 | Conversation.Finished -> ()
                 | Conversation.Failed ex -> raise ex
             else hasNext <- false
-        endSegment ()
+        if assistantStreaming then Console.Out.WriteLine ()
     with
     | :? OperationCanceledException ->
-        endSegment ()
+        if assistantStreaming then Console.Out.WriteLine ()
         AnsiConsole.Write(Render.cancelled strings)
         AnsiConsole.WriteLine()
     | ex ->
-        endSegment ()
+        if assistantStreaming then Console.Out.WriteLine ()
         AnsiConsole.Write(Render.errorLine strings ex.Message)
         AnsiConsole.WriteLine()
 }
