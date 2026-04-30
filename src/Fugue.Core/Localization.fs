@@ -25,12 +25,14 @@ type Strings =
       DiscoveryPickProvider:  string
 
       // Slash commands
-      CmdHelpDesc:  string
-      CmdClearDesc: string
-      CmdExitDesc:  string
-      CmdToolsDesc: string
-      HelpHeader:   string
-      ToolsHeader:  string }
+      CmdHelpDesc:         string
+      CmdClearDesc:        string
+      CmdClearHistoryDesc: string
+      CmdExitDesc:         string
+      CmdToolsDesc:        string
+      HelpHeader:          string
+      ToolsHeader:         string
+      ClearHistoryDone:    string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -49,10 +51,12 @@ let en : Strings =
       DiscoveryPickProvider = "Pick a provider:"
       CmdHelpDesc           = "show this help"
       CmdClearDesc          = "clear the screen"
+      CmdClearHistoryDesc   = "reset conversation history without clearing screen"
       CmdExitDesc           = "exit Fugue"
       CmdToolsDesc          = "list all available tools with descriptions"
       HelpHeader            = "Available slash commands:"
-      ToolsHeader           = "Available tools" }
+      ToolsHeader           = "Available tools"
+      ClearHistoryDone      = "Conversation history cleared. Screen preserved." }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -71,10 +75,12 @@ let ru : Strings =
       DiscoveryPickProvider = "Выберите провайдер:"
       CmdHelpDesc           = "показать эту справку"
       CmdClearDesc          = "очистить экран"
+      CmdClearHistoryDesc   = "сбросить историю разговора без очистки экрана"
       CmdExitDesc           = "выйти из Fugue"
       CmdToolsDesc          = "показать список инструментов с описаниями"
       HelpHeader            = "Доступные команды:"
-      ToolsHeader           = "Доступные инструменты" }
+      ToolsHeader           = "Доступные инструменты"
+      ClearHistoryDone      = "История разговора сброшена. Экран сохранён." }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =

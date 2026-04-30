@@ -106,7 +106,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     use cancelSrc = new CancelSource()
     let handler = ConsoleCancelEventHandler(fun _ args -> cancelSrc.OnCtrlC args)
     Console.CancelKeyPress.AddHandler handler
-    let! session = agent.CreateSessionAsync(CancellationToken.None)
+    let! initialSession = agent.CreateSessionAsync(CancellationToken.None)
+    let mutable session : AgentSession | null = initialSession
     StatusBar.start cwd cfg
 
     let strings = pick cfg.Ui.Locale
@@ -122,16 +123,32 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             | Some s when s = "/help" ->
                 AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.HelpHeader + "[/]"))
                 AnsiConsole.WriteLine()
-                let helpItems = [ "/help",  strings.CmdHelpDesc
-                                  "/clear", strings.CmdClearDesc
-                                  "/tools", strings.CmdToolsDesc
-                                  "/exit",  strings.CmdExitDesc ]
+                let helpItems = [ "/help",          strings.CmdHelpDesc
+                                  "/clear",         strings.CmdClearDesc
+                                  "/clear-history", strings.CmdClearHistoryDesc
+                                  "/tools",         strings.CmdToolsDesc
+                                  "/exit",          strings.CmdExitDesc ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s = "/clear-history" ->
+                match box session with
+                | :? IAsyncDisposable as d ->
+                    try do! d.DisposeAsync().AsTask() with _ -> ()
+                | _ -> ()
+                try
+                    let! newSession = agent.CreateSessionAsync(CancellationToken.None)
+                    session <- newSession
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ClearHistoryDone + "[/]"))
+                    AnsiConsole.WriteLine()
+                with ex ->
+                    session <- null
+                    AnsiConsole.Write(Render.errorLine strings ex.Message)
+                    AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/tools" ->
                 AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.ToolsHeader + "[/]"))
