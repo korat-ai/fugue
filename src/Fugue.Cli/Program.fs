@@ -35,6 +35,11 @@ let private buildAgent (cfg: AppConfig) (lastSummary: string option) : AIAgent =
 [<RequiresUnreferencedCode("Calls Repl.run and Config.saveToFile which use STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 [<RequiresDynamicCode("Calls Repl.run and Config.saveToFile which use STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 let private runWithCfg (cfg: AppConfig) : int =
+    let isRemote = match cfg.Provider with Anthropic _ | OpenAI _ -> true | _ -> false
+    if cfg.Offline && isRemote then
+        Console.Error.WriteLine("--offline requires a local provider (Ollama). Set FUGUE_PROVIDER=ollama or update ~/.fugue/config.json.")
+        1
+    else
     let isClassic = cfg.Ui.Theme = "fugue-classic" || cfg.Ui.Theme = "monochrome"
     Render.initColor (not (noColor () || isClassic))
     let emojiEnabled =
@@ -49,7 +54,7 @@ let private runWithCfg (cfg: AppConfig) : int =
     Render.initTypewriter cfg.Ui.TypewriterMode
     Render.initBubbles (cfg.Ui.BubblesMode || cfg.Ui.Theme = "bubbles")
     let cwd = Environment.CurrentDirectory
-    let lastSummary = Fugue.Core.SessionSummary.loadLast cwd
+    let lastSummary = if cfg.LowBandwidth then None else Fugue.Core.SessionSummary.loadLast cwd
     let agent = buildAgent cfg lastSummary
     let t =
         if Console.IsInputRedirected then Repl.runHeadless agent cfg cwd
@@ -71,6 +76,8 @@ let main argv =
         |> Array.tryFindIndex ((=) "--profile")
         |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
         |> Option.bind Fugue.Core.Config.loadProfile
+    let lowBandwidth = argv |> Array.contains "--low-bandwidth"
+    let offline      = argv |> Array.contains "--offline"
     if argv |> Array.contains "doctor" then
         let cwd = Environment.CurrentDirectory
         let passed = Doctor.run cwd
@@ -94,7 +101,7 @@ let main argv =
                     let m = if List.isEmpty models then "llama3.1" else List.head models
                     Ollama(ep, m)
                 | _ -> failwith "unsupported candidate"
-            let cfg = { Provider = provider; SystemPrompt = None; ProfileContent = profileContent; MaxIterations = 30; MaxTokens = None; Ui = Fugue.Core.Config.defaultUi (); BaseUrl = None }
+            let cfg = { Provider = provider; SystemPrompt = None; ProfileContent = profileContent; MaxIterations = 30; MaxTokens = None; Ui = Fugue.Core.Config.defaultUi (); BaseUrl = None; LowBandwidth = lowBandwidth; Offline = offline }
             Fugue.Core.Config.saveToFile cfg
             runWithCfg cfg
         | None ->
@@ -104,4 +111,4 @@ let main argv =
         Console.Error.WriteLine("Invalid config: " + reason)
         1
     | Ok cfg ->
-        runWithCfg { cfg with ProfileContent = profileContent }
+        runWithCfg { cfg with ProfileContent = profileContent; LowBandwidth = lowBandwidth; Offline = offline }

@@ -53,7 +53,10 @@ type AppConfig =
       MaxIterations: int
       MaxTokens: int option
       Ui: UiConfig
-      BaseUrl: string option }
+      BaseUrl: string option
+      LowBandwidth: bool   // --low-bandwidth: skip context injection, cap tool output
+      Offline: bool        // --offline: refuse non-local providers
+    }
 
 let loadProfile (name: string) : string option =
     let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
@@ -223,19 +226,19 @@ Set environment variables:
 let load (_argv: string[]) : Result<AppConfig, ConfigError> =
     match fromExplicitEnv () with
     | Some provider ->
-        Ok { Provider = provider; SystemPrompt = None; ProfileContent = None; MaxIterations = 30; MaxTokens = None; Ui = defaultUi (); BaseUrl = None }
+        Ok { Provider = provider; SystemPrompt = None; ProfileContent = None; MaxIterations = 30; MaxTokens = None; Ui = defaultUi (); BaseUrl = None; LowBandwidth = false; Offline = false }
     | None ->
         let path = configPath ()
         if File.Exists path then
             match fromFile path with
             | Ok (p, mi, maxTokens, ui, baseUrl) ->
                 let mi = if mi <= 0 then 30 else mi
-                Ok { Provider = p; SystemPrompt = None; ProfileContent = None; MaxIterations = mi; MaxTokens = maxTokens; Ui = ui; BaseUrl = baseUrl }
+                Ok { Provider = p; SystemPrompt = None; ProfileContent = None; MaxIterations = mi; MaxTokens = maxTokens; Ui = ui; BaseUrl = baseUrl; LowBandwidth = false; Offline = false }
             | Error e -> Error(InvalidConfig e)
         else
             match fromImplicitEnv () with
             | Some provider ->
-                Ok { Provider = provider; SystemPrompt = None; ProfileContent = None; MaxIterations = 30; MaxTokens = None; Ui = defaultUi (); BaseUrl = None }
+                Ok { Provider = provider; SystemPrompt = None; ProfileContent = None; MaxIterations = 30; MaxTokens = None; Ui = defaultUi (); BaseUrl = None; LowBandwidth = false; Offline = false }
             | None ->
                 Error(NoConfigFound (helpText ()))
 
