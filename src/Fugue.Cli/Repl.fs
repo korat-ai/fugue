@@ -256,6 +256,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.HelpHeader + "[/]"))
                 AnsiConsole.WriteLine()
                 let helpItems = [ "/help",           strings.CmdHelpDesc
+                                  "/ask <q>",        strings.CmdAskDesc
                                   "/clear",          strings.CmdClearDesc
                                   "/git-log",        strings.CmdGitLogDesc
                                   "/issue <N>",      strings.CmdIssueDesc
@@ -474,6 +475,21 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "Reviewing PR #%d…" prNum))
                         AnsiConsole.WriteLine()
                         do! streamAndRender agent session prompt cfg cancelSrc
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/ask " ->
+                let question = s.Substring(5).Trim()
+                if String.IsNullOrWhiteSpace question then
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AskUsage + "[/]"))
+                    AnsiConsole.WriteLine()
+                else
+                    let augmented = sprintf "[System: answer from your training knowledge only — do not invoke any tools, do not read files, do not run commands]\n\nUser: %s" question
+                    AnsiConsole.Write(Render.userMessage cfg.Ui question)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session augmented cfg cancelSrc
+                StatusBar.refresh ()
+            | Some s when s = "/ask" ->
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AskUsage + "[/]"))
+                AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some userInput ->
                 if ReadLine.hasZeroWidth userInput then
