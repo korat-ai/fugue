@@ -44,3 +44,50 @@ let ``render with Some context appends project context section`` () =
     let result = render "/tmp" ["Read"] (Some "# My project\nDo X.")
     result |> should haveSubstring "Project context"
     result |> should haveSubstring "Do X."
+
+[<Fact>]
+let ``render injects Blazor platform hint for blazorwasm csproj`` () =
+    let tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName())
+    Directory.CreateDirectory tmpDir |> ignore
+    try
+        File.WriteAllText(Path.Combine(tmpDir, "App.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk.BlazorWebAssembly\"><PropertyGroup><TargetFramework>net10.0-browser</TargetFramework></PropertyGroup></Project>")
+        let result = render tmpDir ["Read"] None
+        result |> should haveSubstring "Blazor WebAssembly"
+        result |> should haveSubstring "Platform constraints"
+    finally
+        Directory.Delete(tmpDir, true)
+
+[<Fact>]
+let ``render injects nanoFramework platform hint for nfproj`` () =
+    let tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName())
+    Directory.CreateDirectory tmpDir |> ignore
+    try
+        File.WriteAllText(Path.Combine(tmpDir, "Device.nfproj"), "<Project ToolsVersion=\"15.0\"></Project>")
+        let result = render tmpDir ["Read"] None
+        result |> should haveSubstring "nanoFramework"
+        result |> should haveSubstring "Platform constraints"
+    finally
+        Directory.Delete(tmpDir, true)
+
+[<Fact>]
+let ``render injects Unity platform hint when Assets and ProjectSettings dirs exist`` () =
+    let tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName())
+    Directory.CreateDirectory tmpDir |> ignore
+    try
+        Directory.CreateDirectory(Path.Combine(tmpDir, "Assets")) |> ignore
+        Directory.CreateDirectory(Path.Combine(tmpDir, "ProjectSettings")) |> ignore
+        let result = render tmpDir ["Read"] None
+        result |> should haveSubstring "Unity"
+        result |> should haveSubstring "Platform constraints"
+    finally
+        Directory.Delete(tmpDir, true)
+
+[<Fact>]
+let ``render emits no platform section for plain project`` () =
+    let tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName())
+    Directory.CreateDirectory tmpDir |> ignore
+    try
+        let result = render tmpDir ["Read"] None
+        result |> should not' (haveSubstring "Platform constraints")
+    finally
+        Directory.Delete(tmpDir, true)

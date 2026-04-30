@@ -76,6 +76,41 @@ let loadFugueContext (startDir: string) : string option =
                 sprintf "<!-- FUGUE.md: %s -->\n%s" rel content)
         Some (String.concat "\n\n" sections)
 
+let private detectPlatformHints (cwd: string) : string list =
+    let csprojs =
+        try
+            let top = System.IO.Directory.GetFiles(cwd, "*.csproj", System.IO.SearchOption.TopDirectoryOnly)
+            let sub =
+                System.IO.Directory.GetDirectories cwd
+                |> Array.collect (fun d ->
+                    try System.IO.Directory.GetFiles(d, "*.csproj", System.IO.SearchOption.TopDirectoryOnly)
+                    with _ -> [||])
+            Array.append top sub
+        with _ -> [||]
+    let readProj f = try System.IO.File.ReadAllText f with _ -> ""
+
+    let blazor =
+        csprojs |> Array.exists (fun f ->
+            let txt = readProj f
+            txt.Contains "blazorwasm" || txt.Contains "-browser" ||
+            (txt.Contains "WebAssembly" && txt.Contains "Blazor"))
+
+    let nano =
+        (try System.IO.Directory.GetFiles(cwd, "*.nfproj", System.IO.SearchOption.TopDirectoryOnly).Length > 0
+         with _ -> false)
+        || csprojs |> Array.exists (fun f -> (readProj f).Contains "nanoFramework")
+
+    let unity =
+        System.IO.Directory.Exists(System.IO.Path.Combine(cwd, "Assets")) &&
+        System.IO.Directory.Exists(System.IO.Path.Combine(cwd, "ProjectSettings"))
+
+    [ if blazor then
+        yield "Platform: Blazor WebAssembly. Avoid Thread, blocking I/O, native P/Invoke, System.Threading.Mutex. Use async/await and HttpClient; JS interop via IJSRuntime."
+      if nano then
+        yield "Platform: .NET nanoFramework (MCU). BCL is a subset — no LINQ, no reflection, no Task. Use nanoFramework.CoreLibrary APIs. Memory-constrained: avoid large allocations."
+      if unity then
+        yield "Platform: Unity. Prefer IEnumerator coroutines over async/Task in MonoBehaviour. Avoid per-frame allocations (GC pressure). Use Unity.Jobs for CPU-bound work. UnityEngine APIs are main-thread only." ]
+
 let render (cwd: string) (toolNames: string list) (context: string option) : string =
     let os =
         if RuntimeInformation.IsOSPlatform(OSPlatform.OSX) then "macOS"
@@ -90,6 +125,13 @@ let render (cwd: string) (toolNames: string list) (context: string option) : str
         match context with
         | None -> ""
         | Some ctx -> "\n\n# Project context (from FUGUE.md)\n\n" + ctx
+
+    let platformHints = detectPlatformHints cwd
+    let platformSection =
+        if List.isEmpty platformHints then ""
+        else
+            "\n\n# Platform constraints\n\n" +
+            (platformHints |> List.map (fun h -> "- " + h) |> String.concat "\n")
 
     $"""You are Fugue, a lean CLI coding assistant. You help the user with software engineering tasks in their terminal.
 
@@ -112,4 +154,4 @@ Available tools: {tools}
 # Style
 - When you finish a task, stop. Do not summarize what you did unless asked.
 - When you call a tool, do not also narrate "I will call X" — the user sees the call.
-""" + contextSection
+""" + contextSection + platformSection
