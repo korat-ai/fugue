@@ -6,6 +6,29 @@ open System.Threading
 open System.Threading.Tasks
 open Fugue.Core.Localization
 
+module private InputSanitize =
+
+    let private zeroWidthCodePoints =
+        [| 0x200B; 0x200C; 0x200D; 0xFEFF; 0x2060; 0x00AD |]
+
+    /// True if the string contains any zero-width character.
+    let hasZeroWidth (s: string) =
+        zeroWidthCodePoints |> Array.exists (fun cp -> s.IndexOf(char cp) >= 0)
+
+    /// Normalize a pasted/submitted string:
+    /// CRLF → LF, standalone CR → LF, Unicode paragraph/line separators → LF.
+    let normalize (s: string) : string =
+        s.Replace("\r\n", "\n")
+         .Replace("\r", "\n")
+         .Replace(" ", "\n")   // LINE SEPARATOR
+         .Replace(" ", "\n")   // PARAGRAPH SEPARATOR
+
+/// True if the string contains any zero-width character (U+200B/C/D, U+FEFF, U+2060, U+00AD).
+let hasZeroWidth (s: string) = InputSanitize.hasZeroWidth s
+
+/// Normalize pasted input (CRLF→LF, standalone CR→LF, U+2028/2029→LF). For testing.
+let normalizeInput (s: string) = InputSanitize.normalize s
+
 // Hardcoded — small list, easier than passing through state.
 let slashCommands : string list = [ "/help"; "/clear"; "/exit" ]
 
