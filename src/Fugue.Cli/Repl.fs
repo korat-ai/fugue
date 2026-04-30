@@ -28,9 +28,12 @@ let private hasMarkdown (s: string) : bool =
 type CancelSource() =
     let mutable streamCts : CancellationTokenSource option = None
     let mutable quit = false
+    let mutable childRunning = false
     member _.QuitRequested = quit
     member _.RequestQuit() = quit <- true
     member _.Token = CancellationToken.None
+    member _.EnterChild () = childRunning <- true
+    member _.ExitChild ()  = childRunning <- false
     member _.NewStreamCts() =
         let cts = new CancellationTokenSource()
         streamCts <- Some cts
@@ -44,8 +47,12 @@ type CancelSource() =
                 try cts.Cancel() with _ -> ()
                 a.Cancel <- true
             | None ->
-                quit <- true
-                a.Cancel <- true
+                if childRunning then
+                    // Child gets SIGINT via process group; suppress quit.
+                    a.Cancel <- true
+                else
+                    quit <- true
+                    a.Cancel <- true
     interface IDisposable with
         member _.Dispose() =
             streamCts |> Option.iter (fun c -> try c.Dispose() with _ -> ())
@@ -136,8 +143,16 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 StatusBar.refresh ()
             | Some s when s = "/new" ->
                 AnsiConsole.Clear()
-                let! newSession = agent.CreateSessionAsync(CancellationToken.None)
-                session <- newSession
+                match box session with
+                | :? IAsyncDisposable as d ->
+                    try do! d.DisposeAsync().AsTask() with _ -> ()
+                | _ -> ()
+                try
+                    let! newSession = agent.CreateSessionAsync(CancellationToken.None)
+                    session <- newSession
+                with ex ->
+                    AnsiConsole.Write(Render.errorLine strings ex.Message)
+                    AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "!" ->
                 let cmd = s.Substring(1).Trim()
@@ -154,12 +169,16 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                     psi.UseShellExecute <- false
                     use proc = new System.Diagnostics.Process()
                     proc.StartInfo <- psi
+                    cancelSrc.EnterChild ()
                     try
-                        proc.Start() |> ignore
-                        proc.WaitForExit()
-                    with ex ->
-                        AnsiConsole.Write(Render.errorLine strings ex.Message)
-                        AnsiConsole.WriteLine()
+                        try
+                            proc.Start() |> ignore
+                            proc.WaitForExit()
+                        with ex ->
+                            AnsiConsole.Write(Render.errorLine strings ex.Message)
+                            AnsiConsole.WriteLine()
+                    finally
+                        cancelSrc.ExitChild ()
                 StatusBar.refresh ()
             | Some userInput ->
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
