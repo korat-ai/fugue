@@ -198,7 +198,13 @@ type Strings =
       ThemeBubblesOff:    string
       ThemeTypewriterOn:  string
       ThemeTypewriterOff: string
-      ThemeUsage:         string }
+      ThemeUsage:         string
+
+      // /compat command
+      CmdCompatDesc: string
+
+      // tool-call efficiency warning
+      ToolCallsWarning: string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -324,7 +330,9 @@ let en : Strings =
       ThemeBubblesOff       = "bubble borders off"
       ThemeTypewriterOn     = "typewriter effect on — responses fade in line by line"
       ThemeTypewriterOff    = "typewriter effect off"
-      ThemeUsage            = "usage: /theme bubbles|typewriter" }
+      ThemeUsage            = "usage: /theme bubbles|typewriter"
+      CmdCompatDesc         = "show terminal capability matrix"
+      ToolCallsWarning      = "{0} tool calls this turn — consider breaking the task into smaller steps" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -450,7 +458,9 @@ let ru : Strings =
       ThemeBubblesOff       = "рамки выключены"
       ThemeTypewriterOn     = "эффект машинки включён — ответы появляются построчно"
       ThemeTypewriterOff    = "эффект машинки выключен"
-      ThemeUsage            = "использование: /theme bubbles|typewriter" }
+      ThemeUsage            = "использование: /theme bubbles|typewriter"
+      CmdCompatDesc         = "показать матрицу возможностей терминала"
+      ToolCallsWarning      = "{0} вызовов инструментов за ход — попробуйте разбить задачу на части" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =

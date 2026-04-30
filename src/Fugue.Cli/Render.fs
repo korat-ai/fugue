@@ -102,13 +102,13 @@ let assistantFinal (text: string) : IRenderable =
 
 let cancelled (s: Strings) : IRenderable =
     if colorEnabled then
-        Markup(sprintf "[yellow]⚠ %s[/]" (Markup.Escape s.Cancelled)) :> _
+        Markup(sprintf "[yellow]⚠️ %s[/]" (Markup.Escape s.Cancelled)) :> _
     else
         Text(s.Cancelled) :> _
 
 let errorLine (s: Strings) (msg: string) : IRenderable =
     if colorEnabled then
-        Markup(sprintf "[red]⚠ %s:[/] %s" (Markup.Escape s.ErrorPrefix) (Markup.Escape msg)) :> _
+        Markup(sprintf "[red]⚠️ %s:[/] %s" (Markup.Escape s.ErrorPrefix) (Markup.Escape msg)) :> _
     else
         Text(sprintf "%s: %s" s.ErrorPrefix msg) :> _
 

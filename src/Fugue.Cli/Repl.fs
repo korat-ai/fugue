@@ -292,6 +292,7 @@ let private streamAndRender
     let strings = pick cfg.Ui.Locale
     let toolMeta = Dictionary<string, string * string * int64>()
     let mutable assistantStreaming = false   // are we mid-line in the plain-text stream
+    let mutable toolCallsThisTurn = 0
     let responseText = StringBuilder()
 
     StatusBar.startStreaming()
@@ -312,6 +313,7 @@ let private streamAndRender
                         assistantStreaming <- true
                     | Conversation.ToolStarted(id, name, args) ->
                         toolMeta.[id] <- (name, args, Stopwatch.GetTimestamp())
+                        toolCallsThisTurn <- toolCallsThisTurn + 1
                         if assistantStreaming then
                             Console.Out.WriteLine ()
                             assistantStreaming <- false
@@ -387,6 +389,12 @@ let private streamAndRender
                         AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape footer))
                     else
                         Console.Out.WriteLine footer
+                if toolCallsThisTurn >= 10 then
+                    let msg = strings.ToolCallsWarning.Replace("{0}", string toolCallsThisTurn)
+                    if Render.isColorEnabled () then
+                        AnsiConsole.MarkupLine(sprintf "[dim yellow]⚠️ %s[/]" (Markup.Escape msg))
+                    else
+                        Console.Out.WriteLine(sprintf "⚠️ %s" msg)
         with
         | :? OperationCanceledException ->
             if assistantStreaming then Console.Out.WriteLine ()
@@ -552,6 +560,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/onboard",        strings.CmdOnboardDesc
                                   "/watch <p> <cmd>", strings.CmdWatchDesc
                                   "/macro …",        strings.CmdMacroDesc
+                                  "/compat",         strings.CmdCompatDesc
                                   "/theme …",        strings.CmdThemeDesc
                                   "/exit",           strings.CmdExitDesc
                                   "/review pr <N>",  strings.CmdReviewPrDesc ]
@@ -813,6 +822,52 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 for (name, desc) in Fugue.Tools.ToolRegistry.descriptions do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s = "/compat" ->
+                let env (k: string) = System.Environment.GetEnvironmentVariable k |> Option.ofObj |> Option.defaultValue ""
+                let termProg   = env "TERM_PROGRAM"
+                let colorTerm  = env "COLORTERM"
+                let term       = env "TERM"
+                let lang       = env "LANG"
+                let lcAll      = env "LC_ALL"
+                let trueColor  = colorTerm = "truecolor" || colorTerm = "24bit"
+                let colors256  = term.Contains "256color"
+                let utf8       = lang.Contains "UTF-8" || lcAll.Contains "UTF-8"
+                let emoji      = Fugue.Core.EmojiMap.terminalSupportsEmoji ()
+                let kitty      = termProg.ToLowerInvariant().Contains "kitty" || term = "xterm-kitty"
+                let iterm2     = termProg.Contains "iTerm"
+                let wezterm    = termProg.ToLowerInvariant().Contains "wezterm"
+                let osc8       = kitty || iterm2 || wezterm
+                let ansiColor  = Render.isColorEnabled ()
+                let termW      = Console.WindowWidth
+                let check ok   = if ok then "[green]✓[/]" else "[red]✗[/]"
+                if Render.isColorEnabled () then
+                    let tbl = Table()
+                    tbl.Border <- TableBorder.Rounded
+                    tbl.AddColumn(TableColumn("[bold]Feature[/]").LeftAligned()) |> ignore
+                    tbl.AddColumn(TableColumn("[bold]Status[/]").Centered())    |> ignore
+                    tbl.AddColumn(TableColumn("[dim]Source[/]").LeftAligned())  |> ignore
+                    let row feat ok src =
+                        tbl.AddRow([| Markup.Escape feat; check ok; sprintf "[dim]%s[/]" (Markup.Escape src) |]) |> ignore
+                    row "ANSI color"        ansiColor  "--color flag"
+                    row "True color (24-bit)" trueColor (sprintf "COLORTERM=%s" colorTerm)
+                    row "256 colors"        colors256  (sprintf "TERM=%s" term)
+                    row "UTF-8"            utf8       (sprintf "LANG=%s" (if lang <> "" then lang else lcAll))
+                    row "Emoji"            emoji      (sprintf "TERM_PROGRAM=%s" termProg)
+                    row "Kitty protocol"   kitty      (sprintf "TERM_PROGRAM=%s" termProg)
+                    row "OSC 8 hyperlinks" osc8       (if kitty then "kitty" elif iterm2 then "iTerm2" elif wezterm then "WezTerm" else "—")
+                    row (sprintf "Terminal width = %d" termW) true "Console.WindowWidth"
+                    AnsiConsole.Write tbl
+                else
+                    let yn ok = if ok then "yes" else "no"
+                    Console.Out.WriteLine(sprintf "ANSI color:      %s" (yn ansiColor))
+                    Console.Out.WriteLine(sprintf "True color:      %s  COLORTERM=%s" (yn trueColor) colorTerm)
+                    Console.Out.WriteLine(sprintf "256 colors:      %s  TERM=%s" (yn colors256) term)
+                    Console.Out.WriteLine(sprintf "UTF-8:           %s  LANG=%s" (yn utf8) lang)
+                    Console.Out.WriteLine(sprintf "Emoji:           %s" (yn emoji))
+                    Console.Out.WriteLine(sprintf "Kitty protocol:  %s" (yn kitty))
+                    Console.Out.WriteLine(sprintf "OSC 8:           %s" (yn osc8))
+                    Console.Out.WriteLine(sprintf "Terminal width:  %d" termW)
                 StatusBar.refresh ()
             | Some s when s = "/issue" || s.StartsWith "/issue " ->
                 let rawArg = if s = "/issue" then "" else s.Substring(7).TrimStart()
