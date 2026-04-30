@@ -287,3 +287,23 @@ let ``plain text without math is unchanged`` () =
 [<Fact>]
 let ``empty string is unchanged`` () =
     MathRender.preprocess "" |> should equal ""
+
+// Bug #683: $digit should not be treated as a math delimiter (currency guard)
+[<Fact>]
+let ``dollar sign before digit is treated as currency not math`` () =
+    MathRender.preprocess "$5 and $10" |> should equal "$5 and $10"
+
+[<Fact>]
+let ``dollar sign before letter is still treated as math delimiter`` () =
+    MathRender.preprocess "$x$" |> should equal "x"
+
+// Bug #682 (known limitation): LaTeX inside code fences is preprocessed.
+// Correct behavior would leave code-fence content untouched; this test
+// documents the current behaviour so regressions are visible.
+[<Fact>]
+let ``dollar signs inside code fences are processed (known limitation 682)`` () =
+    // A TeX tutorial in a fenced block should ideally be left verbatim,
+    // but currently preprocess runs on the raw string before Markdig parses.
+    let input = "```tex\n$\\alpha$\n```"
+    // Current (undesirable) behaviour: α is substituted even inside the fence.
+    MathRender.preprocess input |> should haveSubstring "α"
