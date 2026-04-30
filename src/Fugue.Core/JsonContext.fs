@@ -20,6 +20,7 @@ type AppConfigDto =
       ollamaEndpoint: string
       baseUrl: string | null
       maxIterations: int
+      maxTokens: int
       ui: UiConfigDto | null }
 
 /// Shared JsonSerializerOptions for AppConfigDto serialization.

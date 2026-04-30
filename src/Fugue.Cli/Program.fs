@@ -24,7 +24,7 @@ let private buildAgent (cfg: AppConfig) : AIAgent =
         match cfg.ProfileContent with
         | Some profile -> profile + "\n\n---\n\n" + basePrompt
         | None -> basePrompt
-    AgentFactory.create cfg.Provider cfg.BaseUrl sysPrompt tools
+    AgentFactory.create cfg.Provider cfg.BaseUrl cfg.MaxTokens sysPrompt tools
 
 [<RequiresUnreferencedCode("Calls Repl.run and Config.saveToFile which use STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 [<RequiresDynamicCode("Calls Repl.run and Config.saveToFile which use STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
@@ -73,7 +73,7 @@ let main argv =
                     let m = if List.isEmpty models then "llama3.1" else List.head models
                     Ollama(ep, m)
                 | _ -> failwith "unsupported candidate"
-            let cfg = { Provider = provider; SystemPrompt = None; ProfileContent = profileContent; MaxIterations = 30; Ui = Fugue.Core.Config.defaultUi (); BaseUrl = None }
+            let cfg = { Provider = provider; SystemPrompt = None; ProfileContent = profileContent; MaxIterations = 30; MaxTokens = None; Ui = Fugue.Core.Config.defaultUi (); BaseUrl = None }
             Fugue.Core.Config.saveToFile cfg
             runWithCfg cfg
         | None ->
