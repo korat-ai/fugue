@@ -32,6 +32,12 @@ let mutable private bookmarks : (string * string * int * int) list = []
 // Activity store: file path → edit count
 let mutable private activityStore : Map<string, int> = Map.empty
 
+// Alias store: short name → expansion
+let mutable private aliasStore : Map<string, string> = Map.empty
+
+// Scratch buffer: accumulated lines
+let mutable private scratchLines : string list = []
+
 /// Try to find the git repository root starting from startDir.
 /// Runs `git rev-parse --show-toplevel` as a best-effort child process; returns None on any failure.
 /// Stderr is redirected and drained concurrently to suppress git's "not a git repository" message.
@@ -435,7 +441,26 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 let i = m.LastIndexOf '/'
                 if i >= 0 && i + 1 < m.Length then m.Substring(i + 1) else m
             let! lineOpt = ReadLine.readAsync (Render.prompt cfg.Ui modelShort) strings callbacks (Render.isColorEnabled ()) cancelSrc.Token
-            match lineOpt with
+            // Colon command expansion: :q → /exit, :n → /new, :h → /help, :s → /scratch send
+            let colonExpand (s: string) =
+                if not (s.StartsWith ':') || s.Length < 2 then s
+                else
+                    match s.Substring(1).Trim() with
+                    | "q" | "Q" -> "/exit"
+                    | "n"       -> "/new"
+                    | "h" | "?" -> "/help"
+                    | "s"       -> "/scratch send"
+                    | rest when rest.StartsWith "e " -> rest.Substring(2).Trim() |> sprintf "@%s"
+                    | _ -> s
+            // Alias expansion: /aliasname → stored expansion
+            let aliasExpand (s: string) =
+                if not (s.StartsWith '/') then s
+                else
+                    let name = s.TrimStart('/').Split(' ').[0]
+                    match aliasStore |> Map.tryFind name with
+                    | Some expansion -> expansion
+                    | None -> s
+            match lineOpt |> Option.map (colonExpand >> aliasExpand) with
             | None ->
                 cancelSrc.RequestQuit()
             | Some s when System.String.IsNullOrWhiteSpace s -> ()
@@ -450,6 +475,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/summary",         strings.CmdSummaryDesc
                                   "/document [path]", strings.CmdDocumentDesc
                                   "/activity",        strings.CmdActivityDesc
+                                  "/alias <n>=<exp>", strings.CmdAliasDesc
+                                  "/scratch <text>",  strings.CmdScratchDesc
                                   "/squash <N>",      strings.CmdSquashDesc
                                   "/short",           strings.CmdShortDesc
                                   "/long",            strings.CmdLongDesc
@@ -1009,6 +1036,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 snippetStore <- Map.empty
                 bookmarks <- []
                 activityStore <- Map.empty
+                aliasStore <- Map.empty
+                scratchLines <- []
                 Fugue.Core.Checkpoint.clear ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "!" ->
@@ -1083,6 +1112,74 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                             AnsiConsole.MarkupLine(sprintf "  [cyan]%s[/] [dim]%s[/] [grey]%dx[/]" heat (Markup.Escape label) count)
                         else
                             printfn "  %s %s %dx" bar label count
+                    AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/alias" ->
+                let parts = s.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                let sub = if parts.Length > 1 then parts.[1] else ""
+                match sub with
+                | "list" | "" when s = "/alias" || s = "/alias list" ->
+                    if aliasStore.IsEmpty then
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AliasNone + "[/]"))
+                    else
+                        for KeyValue(name, expansion) in aliasStore do
+                            AnsiConsole.Write(Markup(sprintf "  [cyan]/%s[/] [dim]→ %s[/]" (Markup.Escape name) (Markup.Escape expansion)))
+                            AnsiConsole.WriteLine()
+                    AnsiConsole.WriteLine()
+                | "remove" when parts.Length >= 3 ->
+                    let name = parts.[2]
+                    aliasStore <- aliasStore |> Map.remove name
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.AliasRemoved, name)) + "[/]"))
+                    AnsiConsole.WriteLine()
+                | _ ->
+                    // Parse: /alias <name> = <expansion>
+                    let rest = s.Substring("/alias ".Length)
+                    let eqIdx = rest.IndexOf '='
+                    if eqIdx < 1 then
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AliasUsage + "[/]"))
+                    else
+                        let name = rest.[..eqIdx-1].Trim().TrimStart('/')
+                        let expansion = rest.[eqIdx+1..].Trim()
+                        if not (String.IsNullOrWhiteSpace name) && not (String.IsNullOrWhiteSpace expansion) then
+                            aliasStore <- aliasStore |> Map.add name expansion
+                            AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.AliasSet, name, expansion)) + "[/]"))
+                        else
+                            AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AliasUsage + "[/]"))
+                    AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/scratch" ->
+                let sub = s.Substring("/scratch".Length).Trim()
+                match sub with
+                | "send" when not scratchLines.IsEmpty ->
+                    let text = scratchLines |> String.concat "\n"
+                    scratchLines <- []
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ScratchSent + "[/]"))
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session text cfg cancelSrc zenMode
+                | "send" ->
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ScratchEmpty + "[/]"))
+                    AnsiConsole.WriteLine()
+                | "clear" ->
+                    scratchLines <- []
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ScratchCleared + "[/]"))
+                    AnsiConsole.WriteLine()
+                | "show" ->
+                    if scratchLines.IsEmpty then
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ScratchEmpty + "[/]"))
+                    else
+                        AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.ScratchShowHeader + "[/]"))
+                        AnsiConsole.WriteLine()
+                        for line in scratchLines do
+                            AnsiConsole.Write(Markup("[dim]  " + Markup.Escape line + "[/]"))
+                            AnsiConsole.WriteLine()
+                    AnsiConsole.WriteLine()
+                | text when not (String.IsNullOrWhiteSpace text) ->
+                    scratchLines <- scratchLines @ [text]
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.ScratchAppended, scratchLines.Length)) + "[/]"))
+                    AnsiConsole.WriteLine()
+                | _ ->
+                    // /scratch alone with no subcommand: show usage
+                    AnsiConsole.Write(Markup("[dim]usage: /scratch <text> | /scratch send | /scratch show | /scratch clear[/]"))
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/note " ->
