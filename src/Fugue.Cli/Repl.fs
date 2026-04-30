@@ -18,14 +18,6 @@ open Fugue.Cli
 /// Try to find the git repository root starting from startDir.
 /// Runs `git rev-parse --show-toplevel` as a best-effort child process; returns None on any failure.
 /// Stderr is redirected and drained concurrently to suppress git's "not a git repository" message.
-let private findGitRoot (startDir: string) : string option =
-    let psi = System.Diagnostics.ProcessStartInfo()
-    psi.FileName <- "git"
-    psi.ArgumentList.Add "rev-parse"
-    psi.ArgumentList.Add "--show-toplevel"
-    psi.UseShellExecute <- false
-    psi.RedirectStandardOutput <- true
-    psi.RedirectStandardError <- true
     psi.WorkingDirectory <- startDir
     try
         use proc = new System.Diagnostics.Process()
