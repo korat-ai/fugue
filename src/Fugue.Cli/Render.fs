@@ -82,30 +82,27 @@ let private formatElapsed (e: TimeSpan) =
         sprintf "%dms" (int e.TotalMilliseconds)
 
 let private renderToolBody (output: string) : IRenderable =
+    let w = max 20 (termWidth () - 4)  // 2 col PadLeft + 2 col margin
     if colorEnabled then
         if DiffRender.looksLikeDiff output then DiffRender.toRenderable output
         elif output.Contains "```" || output.Contains "**" || output.StartsWith "#" then
             MarkdownRender.toRenderable output
         else
-            // dim plain text, indented
-            let lines = output.Split('\n')
+            let wrapped = output.Split('\n') |> Array.collect (softWrap w >> List.toArray)
             let trimmed =
-                if lines.Length > 12 then
-                    Array.append (Array.truncate 12 lines)
-                        [| "+ " + string (lines.Length - 12) + " more lines" |]
-                else lines
-            let rows =
-                trimmed
-                |> Array.map (fun l ->
-                    Markup(sprintf "[dim]%s[/]" (Markup.Escape l)) :> IRenderable)
+                if wrapped.Length > 20 then
+                    Array.append (Array.truncate 20 wrapped)
+                        [| sprintf "+ %d more lines" (wrapped.Length - 20) |]
+                else wrapped
+            let rows = trimmed |> Array.map (fun l -> Markup(sprintf "[dim]%s[/]" (Markup.Escape l)) :> IRenderable)
             Padder(Rows(rows)).PadLeft(2) :> _
     else
-        let lines = output.Split('\n')
+        let wrapped = output.Split('\n') |> Array.collect (softWrap w >> List.toArray)
         let trimmed =
-            if lines.Length > 12 then
-                Array.append (Array.truncate 12 lines)
-                    [| "+ " + string (lines.Length - 12) + " more lines" |]
-            else lines
+            if wrapped.Length > 20 then
+                Array.append (Array.truncate 20 wrapped)
+                    [| sprintf "+ %d more lines" (wrapped.Length - 20) |]
+            else wrapped
         Padder(Rows(trimmed |> Array.map (fun l -> Text(l) :> IRenderable))).PadLeft(2) :> _
 
 /// Extract the first readable line from a raw error string, suppressing .NET stack frames.
