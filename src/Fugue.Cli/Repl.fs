@@ -780,7 +780,10 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/pointfree <fn>",     "offer point-free rewrite of an F# function"
                                   "/scaffold du <name>", "generate F# DU with match examples and JSON attrs"
                                   "/monad <desc>",       "generate F# CE / Scala for-comprehension from pseudocode"
-                                  "/migrate oop-to-fp [file]", "convert OOP class hierarchy to F# DUs" ]
+                                  "/migrate oop-to-fp [file]", "convert OOP class hierarchy to F# DUs"
+                                  "/derive codec <Type>",      "generate AOT-safe STJ JsonSerializerContext"
+                                  "/scaffold cqrs <Cmd>",      "generate CQRS Command/Handler/Event/Test slice"
+                                  "/scaffold actor <Name>",    "generate typed actor with command DU and supervision" ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
@@ -2260,6 +2263,42 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.Write(Render.userMessage cfg.Ui ("/summarize " + rawArg) 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session summarizePrompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/derive codec " || s = "/derive codec" ->
+                let typeName = if s = "/derive codec" then "" else s.Substring("/derive codec ".Length).Trim()
+                if typeName = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /derive codec <TypeName>[/]")
+                    AnsiConsole.WriteLine()
+                else
+                    let prompt =
+                        sprintf "Generate an AOT-safe JSON codec for the F# type \"%s\".\n\n1. Read the type definition from the codebase (use the Read or Grep tools).\n2. Generate a `[<JsonSerializable>]` `JsonSerializerContext` subclass covering the type and any nested types.\n3. Add `[<JsonPropertyName>]` attributes for all fields to ensure stable serialization.\n4. If the type is a DU, add `[<JsonPolymorphic>]` and `[<JsonDerivedType>]` for each case.\n5. Show a usage example: `JsonSerializer.Serialize(value, MyContext.Default.MyType)`.\n\nTarget: System.Text.Json source generation, .NET 10, Native AOT compatible." typeName
+                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/derive codec %s" typeName) 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/scaffold cqrs " || s = "/scaffold cqrs" ->
+                let cmdName = if s = "/scaffold cqrs" then "" else s.Substring("/scaffold cqrs ".Length).Trim()
+                if cmdName = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /scaffold cqrs <CommandName>[/]")
+                    AnsiConsole.WriteLine()
+                else
+                    let prompt =
+                        sprintf "Generate a complete CQRS slice for \"%s\".\n\nInclude:\n1. **Command record** — immutable, validated constructor.\n2. **CommandHandler** — reads from the command, applies business logic, emits an event.\n3. **Domain Event** — added as a new DU case (or new type).\n4. **EventHandler** — updates read model or side-effects.\n5. **xUnit test skeleton** — arrange/act/assert for the happy path and one error case.\n\nFollow the naming and layering conventions visible in the existing codebase (use Glob/Read tools to discover them). Return separate fenced code blocks per file." cmdName
+                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/scaffold cqrs %s" cmdName) 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/scaffold actor " || s = "/scaffold actor" ->
+                let actorName = if s = "/scaffold actor" then "" else s.Substring("/scaffold actor ".Length).Trim()
+                if actorName = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /scaffold actor <ActorName> [brief responsibility description][/]")
+                    AnsiConsole.WriteLine()
+                else
+                    let prompt =
+                        sprintf "Generate a typed actor stub for \"%s\".\n\nFor F# / Proto.Actor:\n1. Command DU with all message types.\n2. `Actor` class implementing `IActor` with a `ReceiveAsync` dispatch.\n3. Supervision strategy.\n4. Props factory function.\n\nFor Scala / Akka Typed:\n1. `Command` sealed trait hierarchy.\n2. `Behavior[Command]` with `Behaviors.setup`.\n3. `SupervisorStrategy` using `Behaviors.supervise`.\n\nInfer the framework from the project (use Glob/Read to check dependencies). Return separate fenced blocks per file." actorName
+                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/scaffold actor %s" actorName) 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/scaffold du " || s = "/scaffold du" ->
                 // /scaffold du <concept> — generate F# DU / Scala sealed trait with match examples
