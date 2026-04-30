@@ -67,6 +67,41 @@ let private runCmd (exe: string) (args: string[]) (workingDir: string) : string 
             if p.ExitCode = 0 then Some stdout else None
     with _ -> None
 
+/// Unescape a JSON string value (the content between the outer quotes).
+/// Handles the standard escapes: \\ \" \/ \n \r \t and \uXXXX.
+/// AOT-safe: no Regex, no reflection.
+let private unescapeJson (s: string) : string =
+    let sb = StringBuilder(s.Length)
+    let mutable i = 0
+    while i < s.Length do
+        if s.[i] = '\\' && i + 1 < s.Length then
+            match s.[i + 1] with
+            | '"'  -> sb.Append('"')  |> ignore; i <- i + 2
+            | '\\' -> sb.Append('\\') |> ignore; i <- i + 2
+            | '/'  -> sb.Append('/')  |> ignore; i <- i + 2
+            | 'n'  -> sb.Append('\n') |> ignore; i <- i + 2
+            | 'r'  -> sb.Append('\r') |> ignore; i <- i + 2
+            | 't'  -> sb.Append('\t') |> ignore; i <- i + 2
+            | 'b'  -> sb.Append('\b') |> ignore; i <- i + 2
+            | 'f'  -> sb.Append('\f') |> ignore; i <- i + 2
+            | 'u' when i + 5 < s.Length ->
+                try
+                    let hex  = s.Substring(i + 2, 4)
+                    let code = Convert.ToInt32(hex, 16)
+                    sb.Append(char code) |> ignore
+                    i <- i + 6
+                with _ ->
+                    sb.Append('\\') |> ignore
+                    i <- i + 1
+            | c ->
+                sb.Append('\\') |> ignore
+                sb.Append(c)    |> ignore
+                i <- i + 2
+        else
+            sb.Append(s.[i]) |> ignore
+            i <- i + 1
+    sb.ToString()
+
 /// Holder for the currently active stream's CancellationTokenSource.
 /// Console.CancelKeyPress handler uses this to cancel mid-stream Ctrl+C.
 type CancelSource() =
@@ -168,6 +203,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 AnsiConsole.WriteLine()
                 let helpItems = [ "/help",           strings.CmdHelpDesc
                                   "/clear",          strings.CmdClearDesc
+                                  "/issue <N>",      strings.CmdIssueDesc
                                   "/model suggest",  strings.CmdModelDesc
                                   "/onboard",        strings.CmdOnboardDesc
                                   "/exit",           strings.CmdExitDesc
@@ -178,6 +214,101 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s = "/issue" || s.StartsWith "/issue " ->
+                let rawArg = if s = "/issue" then "" else s.Substring(7).TrimStart()
+                if String.IsNullOrWhiteSpace rawArg then
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.IssueUsage + "[/]"))
+                    AnsiConsole.WriteLine()
+                else
+                    let psi = System.Diagnostics.ProcessStartInfo()
+                    psi.FileName <- "gh"
+                    psi.ArgumentList.Add "issue"
+                    psi.ArgumentList.Add "view"
+                    psi.ArgumentList.Add rawArg
+                    psi.ArgumentList.Add "--json"
+                    psi.ArgumentList.Add "number,title,body"
+                    psi.UseShellExecute <- false
+                    psi.RedirectStandardOutput <- true
+                    psi.RedirectStandardError <- true
+                    psi.WorkingDirectory <- cwd
+                    try
+                        use proc = new System.Diagnostics.Process()
+                        proc.StartInfo <- psi
+                        match proc.Start() with
+                        | false ->
+                            AnsiConsole.Write(Render.errorLine strings (String.Format(strings.IssueNotFound, rawArg)))
+                            AnsiConsole.WriteLine()
+                        | true ->
+                            let output = proc.StandardOutput.ReadToEnd()
+                            proc.WaitForExit()
+                            if proc.ExitCode <> 0 then
+                                let err = proc.StandardError.ReadToEnd().Trim()
+                                AnsiConsole.Write(Render.errorLine strings (String.Format(strings.IssueNotFound, err)))
+                                AnsiConsole.WriteLine()
+                            else
+                                // Extract a string field from compact gh JSON output (AOT-safe, no JsonSerializer)
+                                let extractField (field: string) (json: string) =
+                                    let key = sprintf "\"%s\":" field
+                                    let idx = json.IndexOf key
+                                    if idx < 0 then ""
+                                    else
+                                        let start = idx + key.Length
+                                        let rest = json.Substring(start).TrimStart()
+                                        if rest.StartsWith "\"" then
+                                            // Collect raw JSON string content (skip escaped closing quotes)
+                                            let mutable i = 1
+                                            let sb = StringBuilder()
+                                            while i < rest.Length && rest.[i] <> '"' do
+                                                if rest.[i] = '\\' && i + 1 < rest.Length then
+                                                    sb.Append(rest.[i])     |> ignore
+                                                    sb.Append(rest.[i + 1]) |> ignore
+                                                    i <- i + 2
+                                                else
+                                                    sb.Append rest.[i] |> ignore
+                                                    i <- i + 1
+                                            unescapeJson (sb.ToString())
+                                        else
+                                            let j = rest.IndexOfAny [|','; '}'; '\n'|]
+                                            if j < 0 then rest else rest.Substring(0, j)
+                                let title = extractField "title" output
+                                let body  = extractField "body"  output
+                                let issueContext = sprintf "Issue #%s: %s\n\n%s" rawArg title body
+                                AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.IssueFetched, rawArg, title))))
+                                AnsiConsole.WriteLine()
+                                // Best-effort branch creation
+                                let slugify (src: string) =
+                                    src.ToLowerInvariant()
+                                    |> String.map (fun c -> if Char.IsLetterOrDigit c then c else '-')
+                                    |> fun s -> s.Trim '-'
+                                let words =
+                                    title.Split([|' '; '/'; ':'; '('; ')'; '['; ']'|], StringSplitOptions.RemoveEmptyEntries)
+                                    |> Array.truncate 5
+                                    |> Array.map slugify
+                                    |> String.concat "-"
+                                let branchName = sprintf "feat/issue-%s-%s" rawArg words
+                                let gitPsi = System.Diagnostics.ProcessStartInfo()
+                                gitPsi.FileName <- "git"
+                                gitPsi.ArgumentList.Add "checkout"
+                                gitPsi.ArgumentList.Add "-b"
+                                gitPsi.ArgumentList.Add branchName
+                                gitPsi.UseShellExecute <- false
+                                gitPsi.RedirectStandardError <- true
+                                gitPsi.WorkingDirectory <- cwd
+                                try
+                                    use gitProc = new System.Diagnostics.Process()
+                                    gitProc.StartInfo <- gitPsi
+                                    if gitProc.Start() then
+                                        gitProc.WaitForExit()
+                                        if gitProc.ExitCode = 0 then
+                                            AnsiConsole.MarkupLine(sprintf "[dim]created branch %s[/]" (Markup.Escape branchName))
+                                            AnsiConsole.WriteLine()
+                                with _ -> ()   // git unavailable or not a repo — silent
+                                // Inject issue context into conversation
+                                do! streamAndRender agent session issueContext cfg cancelSrc
+                    with ex ->
+                        AnsiConsole.Write(Render.errorLine strings ex.Message)
+                        AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/model suggest" ->
                 AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AskingModelRecommendation + "[/]"))
