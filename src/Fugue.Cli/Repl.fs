@@ -124,6 +124,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 AnsiConsole.WriteLine()
                 let helpItems = [ "/help",  strings.CmdHelpDesc
                                   "/clear", strings.CmdClearDesc
+                                  "/tools", strings.CmdToolsDesc
                                   "/exit",  strings.CmdExitDesc ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
@@ -131,6 +132,13 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s = "/tools" ->
+                AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.ToolsHeader + "[/]"))
+                AnsiConsole.WriteLine()
+                for (name, desc) in Fugue.Tools.ToolRegistry.descriptions do
+                    AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
+                    AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some userInput ->
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)

@@ -28,7 +28,9 @@ type Strings =
       CmdHelpDesc:  string
       CmdClearDesc: string
       CmdExitDesc:  string
-      HelpHeader:   string }
+      CmdToolsDesc: string
+      HelpHeader:   string
+      ToolsHeader:  string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -48,7 +50,9 @@ let en : Strings =
       CmdHelpDesc           = "show this help"
       CmdClearDesc          = "clear the screen"
       CmdExitDesc           = "exit Fugue"
-      HelpHeader            = "Available slash commands:" }
+      CmdToolsDesc          = "list all available tools with descriptions"
+      HelpHeader            = "Available slash commands:"
+      ToolsHeader           = "Available tools" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -68,7 +72,9 @@ let ru : Strings =
       CmdHelpDesc           = "показать эту справку"
       CmdClearDesc          = "очистить экран"
       CmdExitDesc           = "выйти из Fugue"
-      HelpHeader            = "Доступные команды:" }
+      CmdToolsDesc          = "показать список инструментов с описаниями"
+      HelpHeader            = "Доступные команды:"
+      ToolsHeader           = "Доступные инструменты" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =
