@@ -558,7 +558,9 @@ let private coda (cfg: AppConfig) =
 
 [<RequiresUnreferencedCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 [<RequiresDynamicCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
-let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string option) : Task<unit> = task {
+let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSummary: string option) (rebuildAgent: AppConfig -> AIAgent) : Task<unit> = task {
+    let mutable agent = initialAgent
+    let mutable cfg   = initialCfg
     let sessionStartedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
     currentSessionId <- generateUlid ()
     use cancelSrc = new CancelSource()
@@ -786,7 +788,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/init",           liveStrings.CmdInitDesc
                                   "/git-log",        liveStrings.CmdGitLogDesc
                                   "/issue <N>",      liveStrings.CmdIssueDesc
-                                  "/model suggest",  liveStrings.CmdModelDesc
+                                  "/model",          "show current model · /model set <name> to switch · /model suggest"
                                   "/onboard",        liveStrings.CmdOnboardDesc
                                   "/watch <p> <cmd>", liveStrings.CmdWatchDesc
                                   "/macro …",        liveStrings.CmdMacroDesc
@@ -1509,6 +1511,33 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                 AnsiConsole.WriteLine()
                 do! streamAndRender agent session liveStrings.ModelSuggestPrompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
+            | Some s when s = "/model" || s = "/model list" ->
+                let prov, model = providerInfo cfg.Provider
+                AnsiConsole.MarkupLine($"[bold]/model[/] — current: [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape model}[/]")
+                AnsiConsole.MarkupLine "[dim]  /model set <name>     change model (resets conversation)[/]"
+                AnsiConsole.MarkupLine "[dim]  /model suggest        ask agent for a recommendation[/]"
+            | Some s when s.StartsWith "/model set " ->
+                let newModel = s.Substring("/model set ".Length).Trim()
+                if newModel = "" then
+                    AnsiConsole.MarkupLine "[red]/model set requires a model name[/]"
+                else
+                    let newProvider =
+                        match cfg.Provider with
+                        | Anthropic(k, _) -> Anthropic(k, newModel)
+                        | OpenAI(k, _)    -> OpenAI(k, newModel)
+                        | Ollama(ep, _)   -> Ollama(ep, newModel)
+                    let newCfg = { cfg with Provider = newProvider }
+                    try
+                        let newAgent = rebuildAgent newCfg
+                        agent <- newAgent
+                        cfg   <- newCfg
+                        let! freshSession = agent.CreateSessionAsync(CancellationToken.None)
+                        session <- freshSession
+                        let prov, _ = providerInfo cfg.Provider
+                        AnsiConsole.MarkupLine($"[green]✓[/] model → [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape newModel}[/] [dim](history reset)[/]")
+                        StatusBar.start cwd cfg
+                    with ex ->
+                        AnsiConsole.MarkupLine($"[red]✗ failed to switch model: {Markup.Escape ex.Message}[/]")
             | Some s when s = "/onboard" ->
                 let tryRead (p: string) =
                     if System.IO.File.Exists p then

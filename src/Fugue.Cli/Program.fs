@@ -94,7 +94,7 @@ let private runWithCfg (cfg: AppConfig) : int =
     let agent = buildAgent cfg lastSummary
     let t =
         if Console.IsInputRedirected then Repl.runHeadless agent cfg cwd
-        else Repl.run agent cfg cwd lastSummary
+        else Repl.run agent cfg cwd lastSummary (fun newCfg -> buildAgent newCfg None)
     try t.Wait()
     with
     | :? AggregateException as agg ->
