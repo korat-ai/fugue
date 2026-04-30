@@ -98,7 +98,10 @@ type Strings =
 
       // /todo command
       CmdTodoDesc: string
-      TodoNone:    string }
+      TodoNone:    string
+
+      // /summarize command
+      CmdSummarizeDesc: string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -158,7 +161,8 @@ let en : Strings =
       SquashUsage           = "usage: /squash <N>"
       SquashNoRepo          = "not a git repository or git unavailable"
       CmdTodoDesc           = "scan workspace for TODO/FIXME/HACK comments"
-      TodoNone              = "no TODO/FIXME/HACK comments found in workspace" }
+      TodoNone              = "no TODO/FIXME/HACK comments found in workspace"
+      CmdSummarizeDesc      = "summarize a file or directory" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -218,7 +222,8 @@ let ru : Strings =
       SquashUsage           = "использование: /squash <N>"
       SquashNoRepo          = "не git-репозиторий или git недоступен"
       CmdTodoDesc           = "найти TODO/FIXME/HACK комментарии в проекте"
-      TodoNone              = "TODO/FIXME/HACK комментарии не найдены" }
+      TodoNone              = "TODO/FIXME/HACK комментарии не найдены"
+      CmdSummarizeDesc      = "резюме файла или директории" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =
