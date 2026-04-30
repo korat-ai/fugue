@@ -299,6 +299,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 let helpItems = [ "/help",           strings.CmdHelpDesc
                                   "/ask <q>",        strings.CmdAskDesc
                                   "/clear",          strings.CmdClearDesc
+                                  "/diff",           strings.CmdDiffDesc
                                   "/git-log",        strings.CmdGitLogDesc
                                   "/issue <N>",      strings.CmdIssueDesc
                                   "/model suggest",  strings.CmdModelDesc
@@ -531,6 +532,30 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
             | Some s when s = "/ask" ->
                 AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AskUsage + "[/]"))
                 AnsiConsole.WriteLine()
+            | Some s when s = "/diff" || s = "/diff --staged" ->
+                let args = if s = "/diff --staged" then "--staged" else ""
+                let psi = System.Diagnostics.ProcessStartInfo()
+                psi.FileName <- "git"
+                psi.ArgumentList.Add "diff"
+                if args <> "" then psi.ArgumentList.Add args
+                psi.UseShellExecute <- false
+                psi.RedirectStandardOutput <- true
+                psi.WorkingDirectory <- cwd
+                use proc = new System.Diagnostics.Process()
+                proc.StartInfo <- psi
+                try
+                    proc.Start() |> ignore
+                    let output = proc.StandardOutput.ReadToEnd()
+                    proc.WaitForExit()
+                    if System.String.IsNullOrWhiteSpace output then
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.NoDiff + "[/]"))
+                        AnsiConsole.WriteLine()
+                    else
+                        AnsiConsole.Write(DiffRender.toRenderable output)
+                        AnsiConsole.WriteLine()
+                with ex ->
+                    AnsiConsole.Write(Render.errorLine strings ex.Message)
+                    AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some userInput ->
                 if ReadLine.hasZeroWidth userInput then
