@@ -9,6 +9,7 @@ open Fugue.Core.Localization
 // Hardcoded — small list, easier than passing through state.
 let slashCommands : string list = [ "/help"; "/clear"; "/exit" ]
 
+/// Session history (REPL is single-threaded). Not private so tests can seed entries directly.
 let historyStore = ResizeArray<string>()
 
 /// For test isolation only.
@@ -138,12 +139,12 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
                 s.Buffer.AddRange(historyStore.[s.HistoryIdx].ToCharArray())
                 s.Cursor <- s.Buffer.Count
             Continue
-    elif k.Key = ConsoleKey.LeftArrow && k.Modifiers.HasFlag ConsoleModifiers.Control then
+    elif isCtrl k ConsoleKey.LeftArrow then
         exitHistoryMode ()
         s.ExitArmed <- false
         s.Cursor <- prevWordStart s.Buffer s.Cursor
         Continue
-    elif k.Key = ConsoleKey.RightArrow && k.Modifiers.HasFlag ConsoleModifiers.Control then
+    elif isCtrl k ConsoleKey.RightArrow then
         exitHistoryMode ()
         s.ExitArmed <- false
         s.Cursor <- nextWordEnd s.Buffer s.Cursor
@@ -153,7 +154,8 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
         s.ExitArmed <- false
         if s.Cursor > 0 then
             let mutable p = prevWordStart s.Buffer s.Cursor
-            // If everything before p is whitespace, consume it too (leading whitespace deletion)
+            // Divergence from GNU readline unix-word-rubout: when only whitespace precedes the
+            // deleted word, also consume it — clears short prompts in one keystroke (matches zsh).
             let mutable j = p - 1
             while j >= 0 && (s.Buffer.[j] = ' ' || s.Buffer.[j] = '\t') do j <- j - 1
             if j < 0 then p <- 0
