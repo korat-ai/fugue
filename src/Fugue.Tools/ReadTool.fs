@@ -35,11 +35,19 @@ let read
         | Some n -> n
         | None -> allLines.Length - off
 
-    seq {
-        for i in 0 .. take - 1 do
-            let idx = off + i
-            if idx < allLines.Length then
-                let lineNo = idx + 1
-                yield (string lineNo).PadLeft(6) + "\t" + allLines.[idx]
-    }
-    |> String.concat "\n"
+    let body =
+        seq {
+            for i in 0 .. take - 1 do
+                let idx = off + i
+                if idx < allLines.Length then
+                    let lineNo = idx + 1
+                    yield (string lineNo).PadLeft(6) + "\t" + allLines.[idx]
+        }
+        |> String.concat "\n"
+
+    // Nudge the model to use offset/limit on large full reads
+    let hint =
+        if offset.IsNone && limit.IsNone && allLines.Length > 300 then
+            sprintf "\n\n[file has %d lines — re-read with offset+limit to focus on the relevant section]" allLines.Length
+        else ""
+    body + hint
