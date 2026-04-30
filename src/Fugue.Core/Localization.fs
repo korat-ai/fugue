@@ -53,6 +53,10 @@ type Strings =
       GitLogNoRepo:  string
       GitLogPrompt:  string
 
+      // /ask
+      CmdAskDesc: string
+      AskUsage:   string
+
       // Input safety
       ZeroWidthWarning: string
 
@@ -94,6 +98,8 @@ let en : Strings =
       CmdGitLogDesc         = "explain recent git commit history"
       GitLogNoRepo          = "not a git repository or git unavailable"
       GitLogPrompt          = "Here are the last 20 commits from git log:\n\n%s\n\nPlease explain these commits in plain language — what changed, in what order, and what the overall direction seems to be."
+      CmdAskDesc            = "ask a question without tool access (pure Q&A)"
+      AskUsage              = "Usage: /ask <question>"
       ZeroWidthWarning      = "Warning: input contains invisible zero-width characters — these may cause Edit tool diff mismatches"
       AtFileNotFound        = "@{0}: file not found, skipping"
       AtFileTooBig          = "[file too large — truncated to 4000 chars]" }
@@ -132,6 +138,8 @@ let ru : Strings =
       CmdGitLogDesc         = "объяснить историю git коммитов"
       GitLogNoRepo          = "не git-репозиторий или git недоступен"
       GitLogPrompt          = "Вот последние 20 коммитов из git log:\n\n%s\n\nОбъясни эти коммиты простым языком — что изменилось, в каком порядке, и каково общее направление разработки."
+      CmdAskDesc            = "задать вопрос без использования инструментов (чистый Q&A)"
+      AskUsage              = "Использование: /ask <вопрос>"
       ZeroWidthWarning      = "Предупреждение: ввод содержит невидимые символы нулевой ширины — они могут нарушить работу инструмента Edit"
       AtFileNotFound        = "@{0}: файл не найден, пропускаем"
       AtFileTooBig          = "[файл слишком большой — обрезано до 4000 символов]" }
