@@ -4,8 +4,10 @@ open System.Collections.Generic
 open System.IO
 open System.Threading.Channels
 
-let private watchers = Dictionary<string, FileSystemWatcher * string>()
-let private channel = Channel.CreateUnbounded<string>()
+let private watchers   = Dictionary<string, FileSystemWatcher * string>()
+let private lastFire   = Dictionary<string, int64>()
+let private channel    = Channel.CreateUnbounded<string>()
+let private debounceMs = 300L
 
 let remove (absPath: string) =
     match watchers.TryGetValue(absPath) with
@@ -13,6 +15,7 @@ let remove (absPath: string) =
         fsw.EnableRaisingEvents <- false
         fsw.Dispose()
         watchers.Remove(absPath) |> ignore
+        lastFire.Remove(absPath) |> ignore
     | _ -> ()
 
 let add (absPath: string) (command: string) =
@@ -21,7 +24,13 @@ let add (absPath: string) (command: string) =
     let file = Path.GetFileName(absPath) |> Option.ofObj |> Option.defaultValue absPath
     let fsw  = new FileSystemWatcher(dir, file)
     fsw.NotifyFilter <- NotifyFilters.LastWrite
-    fsw.Changed.Add(fun _ -> channel.Writer.TryWrite(command) |> ignore)
+    fsw.Changed.Add(fun _ ->
+        let now  = System.Diagnostics.Stopwatch.GetTimestamp()
+        let prev = lastFire.GetValueOrDefault(absPath, 0L)
+        let elapsedMs = (now - prev) * 1000L / System.Diagnostics.Stopwatch.Frequency
+        if elapsedMs >= debounceMs then
+            lastFire.[absPath] <- now
+            channel.Writer.TryWrite(command) |> ignore)
     fsw.EnableRaisingEvents <- true
     watchers.[absPath] <- (fsw, command)
 
@@ -43,3 +52,4 @@ let clear () =
         fsw.EnableRaisingEvents <- false
         fsw.Dispose()
     watchers.Clear()
+    lastFire.Clear()

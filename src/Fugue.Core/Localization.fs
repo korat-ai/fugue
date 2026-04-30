@@ -180,7 +180,23 @@ type Strings =
       WatchAdded:    string
       WatchRemoved:  string
       WatchNone:     string
-      WatchUsage:    string }
+      WatchUsage:    string
+
+      // /macro command
+      CmdMacroDesc:   string
+      MacroRecording: string
+      MacroSaved:     string
+      MacroPlaying:   string
+      MacroNotFound:  string
+      MacroNone:      string
+      MacroRemoved:   string
+      MacroUsage:     string
+
+      // /theme command
+      CmdThemeDesc:    string
+      ThemeBubblesOn:  string
+      ThemeBubblesOff: string
+      ThemeUsage:      string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -292,7 +308,19 @@ let en : Strings =
       WatchAdded            = "watching {0} → will run: {1}"
       WatchRemoved          = "stopped watching {0}"
       WatchNone             = "no active watches"
-      WatchUsage            = "usage: /watch <path> <command> | /unwatch <path> | /watches" }
+      WatchUsage            = "usage: /watch <path> <command> | /unwatch <path> | /watches"
+      CmdMacroDesc          = "record and replay multi-step command sequences"
+      MacroRecording        = "recording macro '{0}'… run commands, then /macro stop"
+      MacroSaved            = "macro '{0}' saved ({1} steps)"
+      MacroPlaying          = "playing macro '{0}' ({1} steps)…"
+      MacroNotFound         = "macro not found: {0}"
+      MacroNone             = "no macros saved"
+      MacroRemoved          = "macro removed: {0}"
+      MacroUsage            = "usage: /macro record <name> | /macro stop | /macro play <name> | /macro list | /macro remove <name>"
+      CmdThemeDesc          = "toggle display themes (/theme bubbles)"
+      ThemeBubblesOn        = "bubble borders on — AI responses wrapped in panels"
+      ThemeBubblesOff       = "bubble borders off"
+      ThemeUsage            = "usage: /theme bubbles" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -404,7 +432,19 @@ let ru : Strings =
       WatchAdded            = "слежу за {0} → запущу: {1}"
       WatchRemoved          = "перестал следить за {0}"
       WatchNone             = "активных наблюдений нет"
-      WatchUsage            = "использование: /watch <путь> <команда> | /unwatch <путь> | /watches" }
+      WatchUsage            = "использование: /watch <путь> <команда> | /unwatch <путь> | /watches"
+      CmdMacroDesc          = "запись и воспроизведение последовательностей команд"
+      MacroRecording        = "запись макроса '{0}'… введите команды, затем /macro stop"
+      MacroSaved            = "макрос '{0}' сохранён ({1} шагов)"
+      MacroPlaying          = "воспроизвожу макрос '{0}' ({1} шагов)…"
+      MacroNotFound         = "макрос не найден: {0}"
+      MacroNone             = "макросов нет"
+      MacroRemoved          = "макрос удалён: {0}"
+      MacroUsage            = "использование: /macro record <имя> | /macro stop | /macro play <имя> | /macro list | /macro remove <имя>"
+      CmdThemeDesc          = "переключить визуальные темы (/theme bubbles)"
+      ThemeBubblesOn        = "рамки включены — ответы AI обёрнуты в панели"
+      ThemeBubblesOff       = "рамки выключены"
+      ThemeUsage            = "использование: /theme bubbles" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =

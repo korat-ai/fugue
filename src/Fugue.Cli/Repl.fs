@@ -452,7 +452,14 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                         | Fugue.Core.Config.Anthropic(_, m) | Fugue.Core.Config.OpenAI(_, m) | Fugue.Core.Config.Ollama(_, m) -> m
                 let i = m.LastIndexOf '/'
                 if i >= 0 && i + 1 < m.Length then m.Substring(i + 1) else m
-            let! lineOpt = ReadLine.readAsync (Render.prompt cfg.Ui modelShort) strings callbacks (Render.isColorEnabled ()) cancelSrc.Token
+            let! lineOpt =
+                match Macros.dequeueStep() with
+                | Some step ->
+                    AnsiConsole.Write(Markup(sprintf "[dim]▶ %s[/]" (Markup.Escape step)))
+                    AnsiConsole.WriteLine()
+                    System.Threading.Tasks.Task.FromResult(Some step)
+                | None ->
+                    ReadLine.readAsync (Render.prompt cfg.Ui modelShort) strings callbacks (Render.isColorEnabled ()) cancelSrc.Token
             // Colon command expansion: :q → /exit, :n → /new, :h → /help, :s → /scratch send
             let colonExpand (s: string) =
                 if not (s.StartsWith ':') || s.Length < 2 then s
@@ -472,7 +479,13 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                     match aliasStore |> Map.tryFind name with
                     | Some expansion -> expansion
                     | None -> s
-            match lineOpt |> Option.map (colonExpand >> aliasExpand) with
+            let processedLine = lineOpt |> Option.map (colonExpand >> aliasExpand)
+            // Record step if macro recording is active (but not /macro commands themselves)
+            match processedLine with
+            | Some s when Macros.isRecording() && not (s.StartsWith "/macro") ->
+                Macros.recordStep s
+            | _ -> ()
+            match processedLine with
             | None ->
                 cancelSrc.RequestQuit()
             | Some s when System.String.IsNullOrWhiteSpace s -> ()
@@ -512,6 +525,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/model suggest",  strings.CmdModelDesc
                                   "/onboard",        strings.CmdOnboardDesc
                                   "/watch <p> <cmd>", strings.CmdWatchDesc
+                                  "/macro …",        strings.CmdMacroDesc
+                                  "/theme bubbles",  strings.CmdThemeDesc
                                   "/exit",           strings.CmdExitDesc
                                   "/review pr <N>",  strings.CmdReviewPrDesc ]
                 for (name, desc) in helpItems do
@@ -1052,6 +1067,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 aliasStore <- Map.empty
                 scratchLines <- []
                 FileWatcher.clear ()
+                Macros.clear ()
                 Fugue.Core.Checkpoint.clear ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "!" ->
@@ -1127,6 +1143,60 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         else
                             printfn "  %s %s %dx" bar label count
                     AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/macro" ->
+                let rest = s.Substring("/macro".Length).Trim()
+                let sub  = if rest.Contains " " then rest.Substring(0, rest.IndexOf ' ') else rest
+                let arg  = if rest.Contains " " then rest.Substring(rest.IndexOf ' ' + 1).Trim() else ""
+                match sub with
+                | "record" when not (String.IsNullOrWhiteSpace arg) ->
+                    if Macros.isRecording() then Macros.stopRecording() |> ignore
+                    Macros.startRecording arg
+                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.MacroRecording, arg))))
+                | "stop" ->
+                    match Macros.stopRecording() with
+                    | Some name ->
+                        let cnt = Macros.list() |> List.tryFind (fun (n, _) -> n = name) |> Option.map snd |> Option.defaultValue 0
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.MacroSaved, name, cnt))))
+                    | None ->
+                        AnsiConsole.MarkupLine("[dim]no recording in progress[/]")
+                | "play" when not (String.IsNullOrWhiteSpace arg) ->
+                    match Macros.list() |> List.tryFind (fun (n, _) -> n = arg) with
+                    | Some (_, cnt) ->
+                        if Macros.enqueuePlay arg then
+                            AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.MacroPlaying, arg, cnt))))
+                        else
+                            AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.MacroNotFound, arg))))
+                    | None ->
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.MacroNotFound, arg))))
+                | "list" | "" ->
+                    let macros = Macros.list()
+                    if macros.IsEmpty then
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.MacroNone))
+                    else
+                        for (name, cnt) in macros do
+                            AnsiConsole.MarkupLine(sprintf "  [cyan]%s[/] [dim](%d steps)[/]" (Markup.Escape name) cnt)
+                | "remove" when not (String.IsNullOrWhiteSpace arg) ->
+                    if Macros.remove arg then
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.MacroRemoved, arg))))
+                    else
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.MacroNotFound, arg))))
+                | _ ->
+                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.MacroUsage))
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/theme" ->
+                let sub = s.Substring("/theme".Length).Trim()
+                match sub with
+                | "bubbles" ->
+                    Render.toggleBubbles ()
+                    if Render.isBubblesMode () then
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.ThemeBubblesOn))
+                    else
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.ThemeBubblesOff))
+                | _ ->
+                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.ThemeUsage))
+                AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/alias" ->
                 let parts = s.Split(' ', StringSplitOptions.RemoveEmptyEntries)

@@ -35,6 +35,7 @@ let private runWithCfg (cfg: AppConfig) : int =
     Render.initColor (not (noColor () || isClassic))
     MarkdownRender.initEmoji (not (Fugue.Core.EmojiMap.terminalSupportsEmoji ()))
     MarkdownRender.initTheme cfg.Ui.Theme
+    Render.initBubbles (cfg.Ui.Theme = "bubbles")
     let agent = buildAgent cfg
     let cwd = Environment.CurrentDirectory
     let t =

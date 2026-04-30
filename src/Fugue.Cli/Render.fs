@@ -12,11 +12,16 @@ type ToolState =
     | Failed    of name: string * args: string * err: string   * elapsed: TimeSpan
 
 let mutable private colorEnabled = true
+let mutable private bubblesMode  = false
 
 let initColor (enabled: bool) =
     colorEnabled <- enabled
 
 let isColorEnabled () = colorEnabled
+
+let initBubbles (enabled: bool) = bubblesMode <- enabled
+let toggleBubbles () = bubblesMode <- not bubblesMode
+let isBubblesMode () = bubblesMode
 
 /// Build the input prompt from the UiConfig template.
 /// Supports {model} interpolation. Falls back to "› " if template is empty.
@@ -44,7 +49,15 @@ let assistantLive (text: string) : IRenderable =
 
 /// Final assistant text rendered as markdown.
 let assistantFinal (text: string) : IRenderable =
-    if colorEnabled then MarkdownRender.toRenderable text
+    if colorEnabled then
+        let inner = MarkdownRender.toRenderable text
+        if bubblesMode then
+            let panel = Panel(inner)
+            panel.Border <- BoxBorder.Rounded
+            panel.BorderStyle <- Style.Parse "dim"
+            panel.Header <- PanelHeader(" Claude ")
+            panel :> IRenderable
+        else inner
     else Text(text) :> _
 
 let cancelled (s: Strings) : IRenderable =
