@@ -62,7 +62,7 @@ jobs:
           ARCHIVE=fugue-${{ env.VERSION }}-${{ matrix.rid }}.tar.gz
           tar -czf $ARCHIVE -C $OUTDIR ${{ matrix.binary }}
           echo "ARCHIVE=$ARCHIVE" >> $GITHUB_ENV
-          sha256sum $ARCHIVE > $ARCHIVE.sha256
+          (command -v sha256sum >/dev/null 2>&1 && sha256sum "$ARCHIVE" || shasum -a 256 "$ARCHIVE") > "$ARCHIVE.sha256"
 
       - name: Archive (windows)
         if: matrix.archive_ext == 'zip'
