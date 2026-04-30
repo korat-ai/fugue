@@ -30,6 +30,7 @@ type Strings =
       CmdExitDesc:       string
       CmdModelDesc:      string
       CmdReviewPrDesc:   string
+      CmdOnboardDesc:    string
       HelpHeader:        string
 
       // /model suggest
@@ -64,6 +65,7 @@ let en : Strings =
       CmdExitDesc           = "exit Fugue"
       CmdModelDesc          = "suggest best model for current task"
       CmdReviewPrDesc       = "fetch PR diff and generate AI review"
+      CmdOnboardDesc        = "generate developer onboarding checklist"
       HelpHeader            = "Available slash commands:"
       ModelSuggestPrompt    = "Based on our conversation so far, what Fugue model configuration would you recommend? Consider: task complexity, whether deep reasoning is needed, response speed requirements, and cost efficiency. Fugue supports any OpenAI-compatible endpoint — suggest a specific model name if appropriate."
       AskingModelRecommendation = "Asking for model recommendation…"
@@ -92,6 +94,7 @@ let ru : Strings =
       CmdExitDesc           = "выйти из Fugue"
       CmdModelDesc          = "рекомендовать лучшую модель для текущей задачи"
       CmdReviewPrDesc       = "получить diff PR и сгенерировать AI-ревью"
+      CmdOnboardDesc        = "сгенерировать чеклист онбординга разработчика"
       HelpHeader            = "Доступные команды:"
       ModelSuggestPrompt    = "На основе нашего разговора, какую конфигурацию модели Fugue вы бы порекомендовали? Учтите: сложность задачи, необходимость глубокого рассуждения, требования к скорости ответа и эффективность по затратам. Fugue поддерживает любой OpenAI-совместимый эндпоинт — при необходимости предложите конкретное название модели."
       AskingModelRecommendation = "Запрашиваю рекомендацию по модели…"

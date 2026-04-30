@@ -14,6 +14,28 @@ open Fugue.Core.Localization
 open Fugue.Agent
 open Fugue.Cli
 
+/// Try to find the git repository root starting from startDir.
+/// Runs `git rev-parse --show-toplevel` as a best-effort child process; returns None on any failure.
+let private findGitRoot (startDir: string) : string option =
+    let psi = System.Diagnostics.ProcessStartInfo()
+    psi.FileName <- "git"
+    psi.ArgumentList.Add "rev-parse"
+    psi.ArgumentList.Add "--show-toplevel"
+    psi.UseShellExecute <- false
+    psi.RedirectStandardOutput <- true
+    psi.WorkingDirectory <- startDir
+    try
+        use proc = new System.Diagnostics.Process()
+        proc.StartInfo <- psi
+        match proc.Start() with
+        | false -> None
+        | true ->
+            let out = proc.StandardOutput.ReadToEnd().Trim()
+            proc.WaitForExit()
+            if proc.ExitCode = 0 && not (String.IsNullOrWhiteSpace out) then Some out
+            else None
+    with _ -> None
+
 /// Cheap heuristic — does the text contain markdown markers worth re-rendering?
 /// Avoids re-printing pure plain text twice. False positives (e.g. raw `**` in code)
 /// are acceptable; the markdown render still produces readable output.
@@ -144,6 +166,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 let helpItems = [ "/help",           strings.CmdHelpDesc
                                   "/clear",          strings.CmdClearDesc
                                   "/model suggest",  strings.CmdModelDesc
+                                  "/onboard",        strings.CmdOnboardDesc
                                   "/exit",           strings.CmdExitDesc
                                   "/review pr <N>",  strings.CmdReviewPrDesc ]
                 for (name, desc) in helpItems do
@@ -158,6 +181,47 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 AnsiConsole.WriteLine()
                 do! streamAndRender agent session strings.ModelSuggestPrompt cfg cancelSrc
                 StatusBar.refresh ()
+            | Some s when s = "/onboard" ->
+                let tryRead (p: string) =
+                    if System.IO.File.Exists p then
+                        try Some (System.IO.File.ReadAllText p) with _ -> None
+                    else None
+                let fugueContent =
+                    let cwdFile = System.IO.Path.Combine(cwd, "FUGUE.md")
+                    match tryRead cwdFile with
+                    | Some c -> Some c
+                    | None ->
+                        match findGitRoot cwd with
+                        | Some root when root <> cwd ->
+                            tryRead (System.IO.Path.Combine(root, "FUGUE.md"))
+                        | _ -> None
+                let treeOutput =
+                    try
+                        System.IO.Directory.GetFileSystemEntries(cwd)
+                        |> Array.choose (fun p ->
+                            match System.IO.Path.GetFileName p with
+                            | null -> None
+                            | n    -> Some n)
+                        |> Array.sort
+                        |> String.concat "\n"
+                    with _ -> "(could not read directory)"
+                let contextParts =
+                    [ match fugueContent with
+                      | Some content ->
+                          let trimmed =
+                              if content.Length > 4000 then content.[..3999] + "\n...(truncated)"
+                              else content
+                          yield sprintf "=== FUGUE.md ===\n%s" trimmed
+                      | None -> yield "(no FUGUE.md found)"
+                      yield sprintf "=== Top-level directory contents of %s ===\n%s" cwd treeOutput ]
+                let onboardPrompt =
+                    sprintf """Based on the following project context, generate a developer onboarding checklist.
+Include: setup steps, key files to read, how to build/test, coding conventions, and first tasks to attempt.
+
+%s
+
+Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\n" contextParts)
+                do! streamAndRender agent session onboardPrompt cfg cancelSrc
             | Some s when s = "/review pr" || s = "/review pr " ->
                 AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ReviewPrUsage + "[/]"))
                 AnsiConsole.WriteLine()
