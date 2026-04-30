@@ -19,7 +19,8 @@ type UiConfig =
       PromptTemplate : string
       Bell           : bool
       Theme          : string
-      EmojiMode      : string }
+      EmojiMode      : string
+      BubblesMode    : bool }
 
 let private defaultLocale () =
     let envLoc =
@@ -40,7 +41,8 @@ let defaultUi () : UiConfig =
       PromptTemplate = "♩ "
       Bell           = false
       Theme          = ""
-      EmojiMode      = "auto" }
+      EmojiMode      = "auto"
+      BubblesMode    = false }
 
 type AppConfig =
     { Provider: ProviderConfig
@@ -191,7 +193,8 @@ let private fromFile (path: string) : Result<ProviderConfig * int * int option *
                     |> Option.map (fun s -> s.ToLowerInvariant())
                     |> Option.filter (fun s -> s = "always" || s = "never")
                     |> Option.defaultValue "auto"
-                let ui = { UserAlignment = alignment; Locale = locale; PromptTemplate = promptTemplate; Bell = bell; Theme = theme; EmojiMode = emojiMode }
+                let bubblesMode = uiDto |> Option.map (fun u -> u.bubblesMode) |> Option.defaultValue false
+                let ui = { UserAlignment = alignment; Locale = locale; PromptTemplate = promptTemplate; Bell = bell; Theme = theme; EmojiMode = emojiMode; BubblesMode = bubblesMode }
                 let baseUrl = dto.baseUrl |> Option.ofObj |> Option.filter (fun s -> not (String.IsNullOrEmpty s))
                 let maxTokens = if dto.maxTokens > 0 then Some dto.maxTokens else None
                 p, dto.maxIterations, maxTokens, ui, baseUrl)
@@ -245,7 +248,8 @@ let saveToFile (cfg: AppConfig) : unit =
           promptTemplate = if cfg.Ui.PromptTemplate = "♩ " then null else cfg.Ui.PromptTemplate
           bell           = cfg.Ui.Bell
           theme          = if cfg.Ui.Theme = "" then null else cfg.Ui.Theme
-          emojiMode      = if cfg.Ui.EmojiMode = "auto" then null else cfg.Ui.EmojiMode }
+          emojiMode      = if cfg.Ui.EmojiMode = "auto" then null else cfg.Ui.EmojiMode
+          bubblesMode    = cfg.Ui.BubblesMode }
     let baseUrlVal = cfg.BaseUrl |> Option.toObj
     let maxTokensVal = cfg.MaxTokens |> Option.defaultValue 0
     let dto =

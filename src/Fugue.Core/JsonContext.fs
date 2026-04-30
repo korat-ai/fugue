@@ -14,6 +14,7 @@ type UiConfigDto = {
     bell          : bool
     theme         : string | null
     emojiMode     : string | null
+    bubblesMode   : bool
 }
 
 [<CLIMutable; DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)>]

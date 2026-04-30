@@ -40,7 +40,9 @@ let private runWithCfg (cfg: AppConfig) : int =
         | _        -> not (Fugue.Core.EmojiMap.terminalSupportsEmoji ())
     MarkdownRender.initEmoji emojiEnabled
     MarkdownRender.initTheme cfg.Ui.Theme
-    Render.initBubbles (cfg.Ui.Theme = "bubbles")
+    Render.initTheme cfg.Ui.Theme
+    StatusBar.initTheme cfg.Ui.Theme
+    Render.initBubbles (cfg.Ui.BubblesMode || cfg.Ui.Theme = "bubbles")
     let agent = buildAgent cfg
     let cwd = Environment.CurrentDirectory
     let t =

@@ -13,6 +13,9 @@ let private writeRaw (s: string) =
 let mutable private cwd: string = "."
 let mutable private cfg: AppConfig option = None
 let mutable private active = false
+let mutable private activeTheme = ""
+
+let initTheme (theme: string) = activeTheme <- theme
 let mutable private compactMode = false
 let mutable private branchCache : string * DateTime = "", DateTime.MinValue
 let mutable private streamingSince : DateTime option = None
@@ -113,8 +116,9 @@ let refresh () =
         match cfg with
         | Some c -> Fugue.Core.Localization.pick c.Ui.Locale
         | None   -> Fugue.Core.Localization.en
+    let dimEsc = if activeTheme = "nocturne" then "\x1b[38;5;24m" else "\x1b[90m"
     let line1 =
-        "\x1b[90m" + (homeRel cwd) + " " + strings.StatusBarOn + " \x1b[1m" + (branchOf cwd) + "\x1b[0m"
+        dimEsc + (homeRel cwd) + " " + strings.StatusBarOn + " \x1b[1m" + (branchOf cwd) + "\x1b[0m"
     let elapsedSuffix, spinnerPrefix, cadenceSuffix =
         match streamingSince with
         | Some since ->
@@ -127,10 +131,11 @@ let refresh () =
             " · " + formatElapsed elapsed, frame + " " + strings.Thinking + dots + " ", cad
         | None -> "", "", ""
     let sshBadge = if isSSH then " · SSH" else ""
+    let dimEsc2 = if activeTheme = "nocturne" then "\x1b[38;5;67m" else "\x1b[90m"
     let line2 =
         match cfg with
-        | Some c -> "\x1b[90m" + spinnerPrefix + strings.StatusBarApp + " · " + (providerLabel c) + cadenceSuffix + elapsedSuffix + sshBadge + "\x1b[0m"
-        | None   -> "\x1b[90m" + spinnerPrefix + strings.StatusBarApp + cadenceSuffix + elapsedSuffix + sshBadge + "\x1b[0m"
+        | Some c -> dimEsc2 + spinnerPrefix + strings.StatusBarApp + " · " + (providerLabel c) + cadenceSuffix + elapsedSuffix + sshBadge + "\x1b[0m"
+        | None   -> dimEsc2 + spinnerPrefix + strings.StatusBarApp + cadenceSuffix + elapsedSuffix + sshBadge + "\x1b[0m"
     // save cursor, jump to bottom-1, clear two lines, write, restore
     writeRaw "\x1b[s"
     writeRaw ("\x1b[" + string (height - 1) + ";1H")

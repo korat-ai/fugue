@@ -96,11 +96,12 @@ let rec private renderBlock (block: Block) : IRenderable =
                 |> Seq.truncate f.Lines.Count
                 |> Seq.map (fun l -> l.ToString())
                 |> Seq.toArray
+        let lineStyle = if activeTheme = "nocturne" then "#5a7a99" else "dim"
         let body =
             lines
             |> Array.mapi (fun i ln ->
                 let nr = (string (i + 1)).PadLeft(3)
-                "[dim]" + nr + "  " + escape ln + "[/]")
+                "[" + lineStyle + "]" + nr + "  " + escape ln + "[/]")
             |> String.concat "\n"
         let codeBlock = Padder(Markup(body)).PadLeft(2) :> IRenderable
         if lang <> "" then

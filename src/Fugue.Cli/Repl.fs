@@ -445,6 +445,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             else rel = pat || rel.StartsWith(pat + "/"))
 
     let strings = pick cfg.Ui.Locale
+    let mutable savedUi = cfg.Ui   // mutable copy for persisting runtime UI toggles
     let mutable verbosityPrefix : string option = None
     let mutable turnNumber = 0
     let mutable sessionNotes : (int * string) list = []  // (turnNumber, text)
@@ -1206,10 +1207,13 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 match sub with
                 | "bubbles" ->
                     Render.toggleBubbles ()
-                    if Render.isBubblesMode () then
+                    let on = Render.isBubblesMode ()
+                    if on then
                         AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.ThemeBubblesOn))
                     else
                         AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.ThemeBubblesOff))
+                    savedUi <- { savedUi with BubblesMode = on }
+                    try Config.saveToFile { cfg with Ui = savedUi } with _ -> ()
                 | _ ->
                     AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.ThemeUsage))
                 AnsiConsole.WriteLine()

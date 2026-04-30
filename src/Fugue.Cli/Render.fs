@@ -13,6 +13,7 @@ type ToolState =
 
 let mutable private colorEnabled = true
 let mutable private bubblesMode  = false
+let mutable private activeTheme  = ""
 
 let initColor (enabled: bool) =
     colorEnabled <- enabled
@@ -22,6 +23,11 @@ let isColorEnabled () = colorEnabled
 let initBubbles (enabled: bool) = bubblesMode <- enabled
 let toggleBubbles () = bubblesMode <- not bubblesMode
 let isBubblesMode () = bubblesMode
+
+let initTheme (theme: string) = activeTheme <- theme
+
+let private themeColor (normal: string) (nocturne: string) =
+    if activeTheme = "nocturne" then nocturne else normal
 
 /// Build the input prompt from the UiConfig template.
 /// Supports {model} interpolation. Falls back to "› " if template is empty.
@@ -139,25 +145,28 @@ let private summarizeToolError (raw: string) : string =
 
 let toolBullet (s: Strings) (state: ToolState) : IRenderable =
     if colorEnabled then
+        let cYellow = themeColor "yellow"  "#c0a060"
+        let cGreen  = themeColor "green"   "#5a9060"
+        let cRed    = themeColor "red"     "#a04040"
         match state with
         | Running(name, args) ->
             let header =
-                sprintf "[yellow]●[/] [bold]%s[/]([dim]%s[/])"
-                    (Markup.Escape name) (Markup.Escape args)
+                sprintf "[%s]●[/] [bold]%s[/]([dim]%s[/])"
+                    cYellow (Markup.Escape name) (Markup.Escape args)
             let body =
                 Padder(Markup(sprintf "[dim]%s[/]" (Markup.Escape s.ToolRunning))).PadLeft(2)
             Rows([ Markup(header) :> IRenderable; body :> _ ]) :> _
         | Completed(name, args, output, elapsed) ->
             let header =
-                sprintf "[green]●[/] [bold]%s[/]([dim]%s[/]) [dim]%s[/]"
-                    (Markup.Escape name) (Markup.Escape args) (formatElapsed elapsed)
+                sprintf "[%s]●[/] [bold]%s[/]([dim]%s[/]) [dim]%s[/]"
+                    cGreen (Markup.Escape name) (Markup.Escape args) (formatElapsed elapsed)
             Rows([ Markup(header) :> IRenderable; renderToolBody output ]) :> _
         | Failed(name, args, err, elapsed) ->
             let header =
-                sprintf "[red]●[/] [bold]%s[/]([dim]%s[/]) [dim]%s[/]"
-                    (Markup.Escape name) (Markup.Escape args) (formatElapsed elapsed)
+                sprintf "[%s]●[/] [bold]%s[/]([dim]%s[/]) [dim]%s[/]"
+                    cRed (Markup.Escape name) (Markup.Escape args) (formatElapsed elapsed)
             let body =
-                Padder(Markup(sprintf "[red]%s[/]" (Markup.Escape (summarizeToolError err)))).PadLeft(2)
+                Padder(Markup(sprintf "[%s]%s[/]" cRed (Markup.Escape (summarizeToolError err)))).PadLeft(2)
             Rows([ Markup(header) :> IRenderable; body :> _ ]) :> _
     else
         match state with

@@ -214,7 +214,7 @@ let ``saveToFile round-trips emojiMode=never`` () =
     Environment.SetEnvironmentVariable("HOME", tmpHome)
     let cfg = { Provider = Anthropic("key", "model"); SystemPrompt = None; ProfileContent = None
                 MaxIterations = 10; MaxTokens = None; BaseUrl = None
-                Ui = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false; Theme = ""; EmojiMode = "never" } }
+                Ui = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false; Theme = ""; EmojiMode = "never"; BubblesMode = false } }
     saveToFile cfg
     match load [||] with
     | Ok loaded -> loaded.Ui.EmojiMode |> should equal "never"
@@ -230,7 +230,7 @@ let ``saveToFile omits emojiMode when auto (default)`` () =
     Environment.SetEnvironmentVariable("HOME", tmpHome)
     let cfg = { Provider = Anthropic("key", "model"); SystemPrompt = None; ProfileContent = None
                 MaxIterations = 10; MaxTokens = None; BaseUrl = None
-                Ui = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false; Theme = ""; EmojiMode = "auto" } }
+                Ui = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false; Theme = ""; EmojiMode = "auto"; BubblesMode = false } }
     saveToFile cfg
     let json = IO.File.ReadAllText(IO.Path.Combine(tmpHome, ".fugue", "config.json"))
     json.Contains "emojiMode" |> should equal false
