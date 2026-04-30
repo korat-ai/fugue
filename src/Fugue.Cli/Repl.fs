@@ -39,6 +39,51 @@ let private findGitRoot (startDir: string) : string option =
         else None
     with _ -> None
 
+/// Find @path tokens in a string.
+/// Returns list of (startIdx, tokenLength, path) for each @word token that is preceded
+/// by start-of-string or whitespace.
+let private findAtTokens (input: string) : (int * int * string) list =
+    let mutable i = 0
+    let mutable results = []
+    while i < input.Length do
+        if input.[i] = '@' && (i = 0 || Char.IsWhiteSpace input.[i - 1]) then
+            let start = i
+            i <- i + 1
+            let pathStart = i
+            while i < input.Length && not (Char.IsWhiteSpace input.[i]) do
+                i <- i + 1
+            if i > pathStart then
+                results <- (start, i - start, input.[start + 1 .. i - 1]) :: results
+        else
+            i <- i + 1
+    List.rev results
+
+/// Expand @path tokens in user input. Each @word that resolves to an existing file
+/// within cwd is replaced with its contents (up to 4000 chars). Skips missing, binary,
+/// or out-of-cwd files silently or with a dim notice.
+let private expandAtFiles (cwd: string) (strings: Fugue.Core.Localization.Strings) (input: string) : string =
+    let tokens = findAtTokens input
+    if tokens.IsEmpty then input
+    else
+        // Process tokens in reverse order so indices stay valid during replacement
+        let mutable result = input
+        for (start, length, pathPart) in List.rev tokens do
+            let fullPath = Fugue.Tools.PathSafety.resolve cwd pathPart
+            if not (Fugue.Tools.PathSafety.isUnder cwd fullPath) then
+                ()  // silently skip paths outside cwd
+            elif not (System.IO.File.Exists fullPath) then
+                AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (System.String.Format(strings.AtFileNotFound, pathPart))))
+            else
+                try
+                    let content = System.IO.File.ReadAllText fullPath
+                    let truncated = content.Length > 4000
+                    let body = if truncated then content.[..3999] else content
+                    let header = sprintf "[contents of %s]%s:\n" pathPart (if truncated then " " + strings.AtFileTooBig else "")
+                    result <- result.[0 .. start - 1] + header + body + result.[start + length ..]
+                with _ ->
+                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (System.String.Format(strings.AtFileNotFound, pathPart))))
+        result
+
 /// Cheap heuristic — does the text contain markdown markers worth re-rendering?
 /// Avoids re-printing pure plain text twice. False positives (e.g. raw `**` in code)
 /// are acceptable; the markdown render still produces readable output.
@@ -394,9 +439,10 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 if ReadLine.hasZeroWidth userInput then
                     AnsiConsole.Write(Markup("[dim yellow]" + Markup.Escape strings.ZeroWidthWarning + "[/]"))
                     AnsiConsole.WriteLine()
+                let expandedInput = expandAtFiles cwd strings userInput
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
                 AnsiConsole.WriteLine()
-                do! streamAndRender agent session userInput cfg cancelSrc
+                do! streamAndRender agent session expandedInput cfg cancelSrc
                 StatusBar.refresh ()
     finally
         Console.CancelKeyPress.RemoveHandler handler
