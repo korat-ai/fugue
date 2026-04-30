@@ -24,6 +24,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Fugue.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="ReadLine.fs" />
     <Compile Include="MathRender.fs" />
     <Compile Include="MarkdownRender.fs" />

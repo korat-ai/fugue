@@ -14,6 +14,7 @@ let mutable private cwd: string = "."
 let mutable private cfg: AppConfig option = None
 let mutable private active = false
 let mutable private branchCache : string * DateTime = "", DateTime.MinValue
+let mutable private streamingSince : DateTime option = None
 
 let private branchOf (cwd: string) : string =
     let now = DateTime.UtcNow
@@ -57,6 +58,13 @@ let private providerLabel (cfg: AppConfig) : string =
     | OpenAI(_, m)    -> "openai:" + friendlyModel m
     | Ollama(_, m)    -> "ollama:" + friendlyModel m
 
+let internal formatElapsed (t: TimeSpan) : string =
+    if t.TotalSeconds < 60.0 then sprintf "%.1fs" t.TotalSeconds
+    else sprintf "%dm %ds" (int t.TotalMinutes) t.Seconds
+
+let startStreaming () = streamingSince <- Some DateTime.UtcNow
+let stopStreaming ()  = streamingSince <- None
+
 let refresh () =
     if not active then () else
     let height = Console.WindowHeight
@@ -66,10 +74,16 @@ let refresh () =
         | None   -> Fugue.Core.Localization.en
     let line1 =
         "\x1b[90m" + (homeRel cwd) + " " + strings.StatusBarOn + " \x1b[1m" + (branchOf cwd) + "\x1b[0m"
+    let elapsedSuffix =
+        match streamingSince with
+        | Some since ->
+            let elapsed = DateTime.UtcNow - since
+            " · " + formatElapsed elapsed
+        | None -> ""
     let line2 =
         match cfg with
-        | Some c -> "\x1b[90m" + strings.StatusBarApp + " · " + (providerLabel c) + "\x1b[0m"
-        | None   -> "\x1b[90m" + strings.StatusBarApp + "\x1b[0m"
+        | Some c -> "\x1b[90m" + strings.StatusBarApp + " · " + (providerLabel c) + elapsedSuffix + "\x1b[0m"
+        | None   -> "\x1b[90m" + strings.StatusBarApp + elapsedSuffix + "\x1b[0m"
     // save cursor, jump to bottom-1, clear two lines, write, restore
     writeRaw "\x1b[s"
     writeRaw ("\x1b[" + string (height - 1) + ";1H")
