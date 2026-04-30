@@ -20,6 +20,7 @@ let mutable private compactMode = false
 let mutable private branchCache : string * DateTime = "", DateTime.MinValue
 let mutable private streamingSince : DateTime option = None
 let mutable private spinnerFrame  = 0
+let mutable private sessionWords  = 0   // cumulative word count for ctx% estimation
 let mutable private spinnerTimer  : System.Threading.Timer option = None
 let mutable private onTick        : (unit -> unit) = fun () -> ()
 
@@ -79,6 +80,26 @@ let internal formatElapsed (t: TimeSpan) : string =
     if t.TotalSeconds < 60.0 then sprintf "%.1fs" t.TotalSeconds
     else sprintf "%dm %ds" (int t.TotalMinutes) t.Seconds
 
+/// Accumulate words from a user input + assistant response pair.
+let recordWords (n: int) = sessionWords <- sessionWords + n
+
+/// Reset session word counter (e.g. on /new).
+let resetWords () = sessionWords <- 0
+
+/// Approximate context window (tokens) for a given model id.
+let internal contextWindowFor (model: string) : int =
+    let m = model.ToLowerInvariant()
+    if   m.Contains "claude"  then 200_000
+    elif m.Contains "gpt-4o"  || m.Contains "gpt4o"  then 128_000
+    elif m.Contains "gpt-4"   || m.Contains "gpt4"   then 128_000
+    elif m.Contains "gpt-3.5" || m.Contains "gpt35"  then 16_000
+    elif m.Contains "qwen"                            then  32_000
+    elif m.Contains "llama"                           then   8_000
+    elif m.Contains "gemma"                           then   8_000
+    elif m.Contains "mistral" || m.Contains "mixtral" then  32_000
+    elif m.Contains "phi"                             then   4_000
+    else                                                   100_000
+
 /// Call once per streamed text chunk to update the cadence meter.
 let recordToken () =
     let now = Stopwatch.GetTimestamp()
@@ -132,9 +153,24 @@ let refresh () =
         | None -> "", "", ""
     let sshBadge = if isSSH then " · SSH" else ""
     let dimEsc2 = if activeTheme = "nocturne" then "\x1b[38;5;67m" else "\x1b[90m"
+    let ctxBadge =
+        match cfg with
+        | Some c ->
+            let model = match c.Provider with Anthropic(_, m) | OpenAI(_, m) | Ollama(_, m) -> m
+            let window = contextWindowFor model
+            let estTokens = int (float sessionWords / 0.75)
+            let pct = int (float estTokens / float window * 100.0)
+            if pct <= 0 then ""
+            else
+                let color =
+                    if pct >= 80 then "\x1b[31m"      // red
+                    elif pct >= 50 then "\x1b[33m"    // yellow
+                    else "\x1b[32m"                   // green
+                sprintf " · %sctx %d%%\x1b[0m%s" color pct dimEsc2
+        | None -> ""
     let line2 =
         match cfg with
-        | Some c -> dimEsc2 + spinnerPrefix + strings.StatusBarApp + " · " + (providerLabel c) + cadenceSuffix + elapsedSuffix + sshBadge + "\x1b[0m"
+        | Some c -> dimEsc2 + spinnerPrefix + strings.StatusBarApp + " · " + (providerLabel c) + cadenceSuffix + elapsedSuffix + ctxBadge + sshBadge + "\x1b[0m"
         | None   -> dimEsc2 + spinnerPrefix + strings.StatusBarApp + cadenceSuffix + elapsedSuffix + sshBadge + "\x1b[0m"
     // save cursor, jump to bottom-1, clear two lines, write, restore
     writeRaw "\x1b[s"

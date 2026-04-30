@@ -381,6 +381,7 @@ let private streamAndRender
                         AnsiConsole.Write(Render.assistantFinal text)
                         AnsiConsole.WriteLine()
                 let wordCount = text.Split([|' '; '\n'; '\r'; '\t'|], StringSplitOptions.RemoveEmptyEntries).Length
+                StatusBar.recordWords wordCount
                 if wordCount >= 20 then
                     let mins = max 1 (int (Math.Round(float wordCount / 220.0)))
                     let timeStr = if mins = 1 then "~1 min read" else sprintf "~%d min read" mins
@@ -1208,6 +1209,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 sessionNotes <- []
                 lastFile <- None
                 zenMode <- false
+                StatusBar.resetWords ()
                 snippetStore <- Map.empty
                 bookmarks <- []
                 activityStore <- Map.empty
@@ -1622,6 +1624,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 let expandedInput = expandAtFiles cwd strings userInput
                 let expandedInput = expandClipboard expandedInput strings
+                StatusBar.recordWords (expandedInput.Split([|' '; '\n'; '\r'; '\t'|], StringSplitOptions.RemoveEmptyEntries).Length)
                 turnNumber <- turnNumber + 1
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput turnNumber)
                 AnsiConsole.WriteLine()
