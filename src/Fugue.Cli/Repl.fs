@@ -9,6 +9,7 @@ open System.Threading
 open System.Threading.Tasks
 open Microsoft.Agents.AI
 open Spectre.Console
+open Fugue.Core
 open Fugue.Core.Config
 open Fugue.Core.Localization
 open Fugue.Agent
@@ -83,6 +84,12 @@ let private expandAtFiles (cwd: string) (strings: Fugue.Core.Localization.String
                 with _ ->
                     AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (System.String.Format(strings.AtFileNotFound, pathPart))))
         result
+
+let private providerInfo (p: ProviderConfig) : string * string =
+    match p with
+    | Anthropic(_, m) -> "anthropic", m
+    | OpenAI(_, m)    -> "openai", m
+    | Ollama(ep, m)   -> string ep, m
 
 /// Cheap heuristic — does the text contain markdown markers worth re-rendering?
 /// Avoids re-printing pure plain text twice. False positives (e.g. raw `**` in code)
@@ -231,6 +238,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     let handler = ConsoleCancelEventHandler(fun _ args -> cancelSrc.OnCtrlC args)
     Console.CancelKeyPress.AddHandler handler
     let! session = agent.CreateSessionAsync(CancellationToken.None)
+    let providerName, modelName = providerInfo cfg.Provider
+    DebugLog.sessionStart providerName modelName cwd
     StatusBar.start cwd cfg
 
     let strings = pick cfg.Ui.Locale
@@ -442,7 +451,10 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 let expandedInput = expandAtFiles cwd strings userInput
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
                 AnsiConsole.WriteLine()
+                let sw = System.Diagnostics.Stopwatch.StartNew()
                 do! streamAndRender agent session expandedInput cfg cancelSrc
+                sw.Stop()
+                DebugLog.turnCompleted userInput.Length 0 sw.ElapsedMilliseconds
                 StatusBar.refresh ()
     finally
         Console.CancelKeyPress.RemoveHandler handler

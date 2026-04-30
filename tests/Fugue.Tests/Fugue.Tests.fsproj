@@ -16,6 +16,7 @@
     <Compile Include="ToolRegistryTests.fs" />
     <Compile Include="ConfigTests.fs" />
     <Compile Include="ConfigDisplayNameTests.fs" />
+    <Compile Include="DebugLogTests.fs" />
     <Compile Include="LocalizationTests.fs" />
     <Compile Include="ReadLineTests.fs" />
     <Compile Include="InputSanitizeTests.fs" />
@@ -33,6 +34,11 @@
     <Compile Include="ConversationTests.fs" />
     <Compile Include="AtFileTests.fs" />
     <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FSharp.Control.TaskSeq" Version="1.1.1" />
