@@ -143,6 +143,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 AnsiConsole.WriteLine()
                 let helpItems = [ "/help",           strings.CmdHelpDesc
                                   "/clear",          strings.CmdClearDesc
+                                  "/model suggest",  strings.CmdModelDesc
                                   "/exit",           strings.CmdExitDesc
                                   "/review pr <N>",  strings.CmdReviewPrDesc ]
                 for (name, desc) in helpItems do
@@ -151,6 +152,11 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s = "/model suggest" || s = "/model" ->
+                AnsiConsole.Write(Markup("[dim]Asking for model recommendation…[/]"))
+                AnsiConsole.WriteLine()
+                do! streamAndRender agent session strings.ModelSuggestPrompt cfg cancelSrc
                 StatusBar.refresh ()
             | Some s when s = "/review pr" || s = "/review pr " ->
                 AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ReviewPrUsage + "[/]"))
