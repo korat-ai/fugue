@@ -280,6 +280,7 @@ let private streamAndRender
                         Console.Out.Write t
                         Console.Out.Flush()
                         responseText.Append t |> ignore
+                        StatusBar.recordToken ()
                         assistantStreaming <- true
                     | Conversation.ToolStarted(id, name, args) ->
                         toolMeta.[id] <- (name, args, Stopwatch.GetTimestamp())
