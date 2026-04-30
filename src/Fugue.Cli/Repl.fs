@@ -2,6 +2,7 @@ module Fugue.Cli.Repl
 
 open System
 open System.Collections.Generic
+open System.Diagnostics
 open System.Diagnostics.CodeAnalysis
 open System.Text
 open System.Threading
@@ -71,16 +72,15 @@ let private streamAndRender
                     Console.Out.Flush()
                     assistantStreaming <- true
                 | Conversation.ToolStarted(id, name, args) ->
-                    toolMeta.[id] <- (name, args, System.Diagnostics.Stopwatch.GetTimestamp())
+                    toolMeta.[id] <- (name, args, Stopwatch.GetTimestamp())
                     if assistantStreaming then
                         Console.Out.WriteLine ()
                         assistantStreaming <- false
                 | Conversation.ToolCompleted(id, output, isErr) ->
-                    let name, args, startTick =
+                    let name, args, elapsed =
                         match toolMeta.TryGetValue id with
-                        | true, v -> v
-                        | false, _ -> "?", "?", System.Diagnostics.Stopwatch.GetTimestamp()
-                    let elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(startTick)
+                        | true, (n, a, tick) -> n, a, Stopwatch.GetElapsedTime(tick)
+                        | false, _ -> "?", "?", TimeSpan.Zero
                     let state =
                         if isErr then Render.Failed(name, args, output, elapsed)
                         else Render.Completed(name, args, output, elapsed)
