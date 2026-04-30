@@ -49,6 +49,11 @@ These are **hard rules**. Don't ask, just follow.
   `dotnet build` / `dotnet test` run under JIT and will NOT catch AOT-specific failures (e.g. `MakeGenericMethod`, missing native code). Only the published native binary reveals them.
 - **`git status` stays clean.** No stray files, no half-finished `.bak`/`.tmp`. Tree is always merge-ready.
 - **No tests-on-mocks for things that hit the real boundary.** Tools tests run against `tmp/` directories; config tests isolate `HOME`.
+- **Semver release policy:**
+  - **New features → minor bump** (e.g. `0.1.0` → `0.2.0`). Default for any user-visible feature, command, UX change.
+  - **Bug fixes → patch bump** (e.g. `0.2.0` → `0.2.1`). Only when no new behavior, just fixing existing.
+  - **Breaking changes → major bump** (e.g. `0.x` → `1.0`). Config schema changes, removed flags, changed CLI defaults — require user migration.
+  - Don't retag the same version after fixes — push a new patch.
 - **🚨 NEW SLASH COMMANDS: PROMPT-FIRST, CODE-LAST. THIS IS NON-NEGOTIABLE.** When the user asks for a new `/some-command`, the **first question** is always: *"Can this be solved by sending a smart prompt to the LLM, with zero F# code?"* If yes — implement it as a **prompt template**, not as a hardcoded handler in `Repl.fs`. Hardcoded handlers cost compile time, bloat the binary, bloat `Repl.fs` (already 2800+ lines), and require a release for every prompt tweak. **Code is the last resort, not the default.** Only write F# code when the command genuinely needs side effects (reading files, running shell, mutating session state) that can't be expressed as a prompt. Examples: `/scaffold cqrs <Cmd>`, `/derive codec <Type>`, `/refactor pipeline` — these are pure prompts and **should not exist as code**. They should live in `~/.fugue/prompts/<name>.md` (with embedded defaults shipped in the binary). Past mistake: we burned tokens and code on commands that were just "send X prompt to agent" — never repeat. **When in doubt, write a `.md` template, not F# code.**
 
 ## Decision-making pattern (CEO escalation)
