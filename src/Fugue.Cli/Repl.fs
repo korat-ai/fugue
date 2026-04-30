@@ -354,7 +354,23 @@ let private streamAndRender
                 else hasNext <- false
             if assistantStreaming then
                 Console.Out.WriteLine ()
-                let wordCount = responseText.ToString().Split([|' '; '\n'; '\r'; '\t'|], StringSplitOptions.RemoveEmptyEntries).Length
+                let text = responseText.ToString()
+                if Render.isColorEnabled () then
+                    // Replace raw streamed text with formatted markdown.
+                    // Count how many terminal rows the raw output occupied, move cursor
+                    // back to the start of the response, clear to end, then re-render.
+                    let termW = max 20 Console.WindowWidth
+                    let rawLines =
+                        text.TrimEnd([|'\n'; '\r'|]).Split('\n')
+                        |> Array.sumBy (fun line ->
+                            let l = line.Length
+                            if l = 0 then 1 else (l + termW - 1) / termW)
+                    if rawLines > 0 then
+                        Console.Out.Write(sprintf "\x1b[%dA\x1b[J" rawLines)
+                        Console.Out.Flush()
+                    AnsiConsole.Write(Render.assistantFinal text)
+                    AnsiConsole.WriteLine()
+                let wordCount = text.Split([|' '; '\n'; '\r'; '\t'|], StringSplitOptions.RemoveEmptyEntries).Length
                 if wordCount >= 20 then
                     let mins = max 1 (int (Math.Round(float wordCount / 220.0)))
                     let timeStr = if mins = 1 then "~1 min read" else sprintf "~%d min read" mins
