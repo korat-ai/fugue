@@ -17,6 +17,8 @@ let private mkState (text: string) (cursor: int) : S =
       PromptText      = "> "
       PromptVisLen    = 2
       HintWhenArmed   = "Press Ctrl+C again to exit"
+      Placeholder     = ""
+      ColorEnabled    = false
       Width           = 80
       SlashHelp       = [] }
 
