@@ -90,6 +90,22 @@ let private renderToolBody (output: string) : IRenderable =
             else lines
         Padder(Rows(trimmed |> Array.map (fun l -> Text(l) :> IRenderable))).PadLeft(2) :> _
 
+/// Extract the first readable line from a raw error string, suppressing .NET stack frames.
+let private summarizeToolError (raw: string) : string =
+    let lines = raw.Split('\n')
+    let headline =
+        lines
+        |> Array.tryFind (fun l ->
+            let t = l.TrimStart()
+            t.Length > 0
+            && not (t.StartsWith("at "))
+            && not (t.StartsWith("--- End of"))
+            && not (t.StartsWith("System."))
+            && not (t.StartsWith("Microsoft.")))
+        |> Option.defaultWith (fun () ->
+            lines |> Array.tryFind (fun l -> l.TrimStart().Length > 0) |> Option.defaultValue raw)
+    if headline.Length > 120 then headline.[..116] + " …" else headline
+
 let toolBullet (s: Strings) (state: ToolState) : IRenderable =
     if colorEnabled then
         match state with
@@ -110,7 +126,7 @@ let toolBullet (s: Strings) (state: ToolState) : IRenderable =
                 sprintf "[red]●[/] [bold]%s[/]([dim]%s[/]) [dim]%s[/]"
                     (Markup.Escape name) (Markup.Escape args) (formatElapsed elapsed)
             let body =
-                Padder(Markup(sprintf "[red]%s[/]" (Markup.Escape err))).PadLeft(2)
+                Padder(Markup(sprintf "[red]%s[/]" (Markup.Escape (summarizeToolError err)))).PadLeft(2)
             Rows([ Markup(header) :> IRenderable; body :> _ ]) :> _
     else
         match state with
@@ -122,4 +138,4 @@ let toolBullet (s: Strings) (state: ToolState) : IRenderable =
                    renderToolBody output ]) :> _
         | Failed(name, args, err, elapsed) ->
             Rows([ Text(sprintf "* %s(%s) %s" name args (formatElapsed elapsed)) :> IRenderable
-                   Padder(Text(sprintf "Error: %s" err)).PadLeft(2) :> _ ]) :> _
+                   Padder(Text(sprintf "Error: %s" (summarizeToolError err))).PadLeft(2) :> _ ]) :> _
