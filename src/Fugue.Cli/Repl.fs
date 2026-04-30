@@ -788,7 +788,7 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                                   "/init",           liveStrings.CmdInitDesc
                                   "/git-log",        liveStrings.CmdGitLogDesc
                                   "/issue <N>",      liveStrings.CmdIssueDesc
-                                  "/model",          "show current model · /model set <name> to switch · /model suggest"
+                                  "/model",          "interactive model picker (or: /model set <name>, /model suggest)"
                                   "/onboard",        liveStrings.CmdOnboardDesc
                                   "/watch <p> <cmd>", liveStrings.CmdWatchDesc
                                   "/macro …",        liveStrings.CmdMacroDesc
@@ -1512,10 +1512,151 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                 do! streamAndRender agent session liveStrings.ModelSuggestPrompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s = "/model" || s = "/model list" ->
-                let prov, model = providerInfo cfg.Provider
-                AnsiConsole.MarkupLine($"[bold]/model[/] — current: [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape model}[/]")
-                AnsiConsole.MarkupLine "[dim]  /model set <name>     change model (resets conversation)[/]"
-                AnsiConsole.MarkupLine "[dim]  /model suggest        ask agent for a recommendation[/]"
+                let prov, currentModel = providerInfo cfg.Provider
+                AnsiConsole.MarkupLine($"[bold]Current:[/] [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape currentModel}[/]")
+                AnsiConsole.MarkupLine($"[dim]Fetching models from {Markup.Escape prov}…[/]")
+                let! models = ModelDiscovery.getModels cfg.Provider cfg.BaseUrl
+                if List.isEmpty models then
+                    AnsiConsole.MarkupLine "[yellow]No models discovered. Use /model set <name> to switch manually.[/]"
+                    StatusBar.refresh ()
+                else
+                    let pickModel (newModel: string) =
+                        task {
+                            let newProvider =
+                                match cfg.Provider with
+                                | Anthropic(k, _) -> Anthropic(k, newModel)
+                                | OpenAI(k, _)    -> OpenAI(k, newModel)
+                                | Ollama(ep, _)   -> Ollama(ep, newModel)
+                            let newCfg = { cfg with Provider = newProvider }
+                            try
+                                let newAgent = rebuildAgent newCfg
+                                agent <- newAgent
+                                cfg   <- newCfg
+                                let! freshSession = agent.CreateSessionAsync(CancellationToken.None)
+                                session <- freshSession
+                                let provName, _ = providerInfo cfg.Provider
+                                AnsiConsole.MarkupLine($"[green]✓[/] model → [cyan]{Markup.Escape provName}[/] / [green]{Markup.Escape newModel}[/] [dim](history reset)[/]")
+                                StatusBar.start cwd cfg
+                            with ex ->
+                                AnsiConsole.MarkupLine($"[red]✗ failed to switch model: {Markup.Escape ex.Message}[/]")
+                        }
+                    // Interactive arrow-key picker.
+                    // Indices: 0..models.Length-1 = models; models.Length = [s] suggest; models.Length+1 = [q] cancel.
+                    let modelsArr  = List.toArray models
+                    let suggestIdx = modelsArr.Length
+                    let cancelIdx  = modelsArr.Length + 1
+                    let totalRows  = modelsArr.Length + 2
+                    let colour     = Render.isColorEnabled ()
+
+                    // Pre-compute one row's text. `selected` switches highlight / arrow.
+                    let renderRow (idx: int) (selected: bool) : string =
+                        let arrow   = if selected then (if colour then "▸" else ">") else " "
+                        let prefix  = $"{arrow} "
+                        if idx < modelsArr.Length then
+                            let name    = modelsArr.[idx]
+                            let isCurr  = (name = currentModel)
+                            let suffix  =
+                                if isCurr then
+                                    if colour then "  [green]← current[/]" else "  ← current"
+                                else ""
+                            if colour then
+                                if selected then $"{prefix}[bold cyan]{Markup.Escape name}[/]{suffix}"
+                                else            $"{prefix}{Markup.Escape name}{suffix}"
+                            else
+                                $"{prefix}{name}{suffix}"
+                        elif idx = suggestIdx then
+                            if colour then
+                                if selected then $"{prefix}[bold cyan]\\[s\\] /model suggest[/]"
+                                else            $"{prefix}[dim]\\[s\\] /model suggest[/]"
+                            else
+                                $"{prefix}[s] /model suggest"
+                        else // cancelIdx
+                            if colour then
+                                if selected then $"{prefix}[bold cyan]\\[q\\] cancel[/]"
+                                else            $"{prefix}[dim]\\[q\\] cancel[/]"
+                            else
+                                $"{prefix}[q] cancel"
+
+                    let footer =
+                        if colour then "[dim]↑/↓ navigate · Enter select · Esc cancel[/]"
+                        else "↑/↓ navigate · Enter select · Esc cancel"
+
+                    AnsiConsole.WriteLine()
+                    // Initial render. Each row + blank line + footer.
+                    for i in 0 .. totalRows - 1 do
+                        if colour then AnsiConsole.MarkupLine(renderRow i (i = 0))
+                        else Console.Out.WriteLine(renderRow i (i = 0))
+                    AnsiConsole.WriteLine()
+                    if colour then AnsiConsole.MarkupLine footer
+                    else Console.Out.WriteLine footer
+
+                    let renderedLines = totalRows + 2  // rows + blank + footer
+
+                    let redraw (idx: int) =
+                        // Move cursor up to start of menu, clear each line, redraw.
+                        Console.Out.Write($"\x1b[{renderedLines}F")
+                        for i in 0 .. totalRows - 1 do
+                            Console.Out.Write "\x1b[K"
+                            if colour then AnsiConsole.MarkupLine(renderRow i (i = idx))
+                            else Console.Out.WriteLine(renderRow i (i = idx))
+                        Console.Out.Write "\x1b[K"
+                        Console.Out.WriteLine()
+                        Console.Out.Write "\x1b[K"
+                        if colour then AnsiConsole.MarkupLine footer
+                        else Console.Out.WriteLine footer
+
+                    let clearMenu () =
+                        // Wipe the menu before printing the result.
+                        Console.Out.Write($"\x1b[{renderedLines}F")
+                        for _ in 1 .. renderedLines do
+                            Console.Out.Write "\x1b[K"
+                            Console.Out.Write "\x1b[1B"
+                        Console.Out.Write($"\x1b[{renderedLines}F")
+
+                    let mutable currentIndex = 0
+                    let mutable picked       : int option = None
+                    let mutable cancelled    = false
+
+                    while picked.IsNone && not cancelled do
+                        let key = Console.ReadKey(intercept = true)
+                        match key.Key with
+                        | ConsoleKey.UpArrow ->
+                            currentIndex <- (currentIndex - 1 + totalRows) % totalRows
+                            redraw currentIndex
+                        | ConsoleKey.DownArrow ->
+                            currentIndex <- (currentIndex + 1) % totalRows
+                            redraw currentIndex
+                        | ConsoleKey.Enter ->
+                            picked <- Some currentIndex
+                        | ConsoleKey.Escape ->
+                            cancelled <- true
+                        | _ ->
+                            let ch = key.KeyChar
+                            if ch = 'q' || ch = 'Q' then
+                                cancelled <- true
+                            elif ch = 's' || ch = 'S' then
+                                picked <- Some suggestIdx
+                            elif key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key = ConsoleKey.C then
+                                cancelled <- true
+                            elif ch >= '1' && ch <= '9' then
+                                let n = int ch - int '0'
+                                if n >= 1 && n <= modelsArr.Length then
+                                    picked <- Some (n - 1)
+
+                    clearMenu ()
+
+                    match picked with
+                    | None ->
+                        AnsiConsole.MarkupLine "[dim]Cancelled[/]"
+                    | Some i when i = cancelIdx ->
+                        AnsiConsole.MarkupLine "[dim]Cancelled[/]"
+                    | Some i when i = suggestIdx ->
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AskingModelRecommendation + "[/]"))
+                        AnsiConsole.WriteLine()
+                        do! streamAndRender agent session liveStrings.ModelSuggestPrompt cfg cancelSrc zenMode
+                    | Some i ->
+                        do! pickModel modelsArr.[i]
+                    StatusBar.refresh ()
             | Some s when s.StartsWith "/model set " ->
                 let newModel = s.Substring("/model set ".Length).Trim()
                 if newModel = "" then

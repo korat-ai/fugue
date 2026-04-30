@@ -5,6 +5,7 @@
   <ItemGroup>
     <Compile Include="AgentFactory.fs" />
     <Compile Include="Discovery.fs" />
+    <Compile Include="ModelDiscovery.fs" />
     <Compile Include="Conversation.fs" />
   </ItemGroup>
   <ItemGroup>
