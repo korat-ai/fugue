@@ -297,13 +297,18 @@ let ``dollar sign before digit is treated as currency not math`` () =
 let ``dollar sign before letter is still treated as math delimiter`` () =
     MathRender.preprocess "$x$" |> should equal "x"
 
-// Bug #682 (known limitation): LaTeX inside code fences is preprocessed.
-// Correct behavior would leave code-fence content untouched; this test
-// documents the current behaviour so regressions are visible.
+// Bug #682 fix: LaTeX inside code fences must not be preprocessed.
 [<Fact>]
-let ``dollar signs inside code fences are processed (known limitation 682)`` () =
-    // A TeX tutorial in a fenced block should ideally be left verbatim,
-    // but currently preprocess runs on the raw string before Markdig parses.
+let ``dollar signs inside code fences are left verbatim`` () =
     let input = "```tex\n$\\alpha$\n```"
-    // Current (undesirable) behaviour: α is substituted even inside the fence.
-    MathRender.preprocess input |> should haveSubstring "α"
+    MathRender.preprocess input |> should equal input
+
+[<Fact>]
+let ``dollar signs in inline code span are left verbatim`` () =
+    let input = "Use `$\\alpha$` in your LaTeX source."
+    MathRender.preprocess input |> should equal input
+
+[<Fact>]
+let ``math outside code fence is still processed`` () =
+    let result = MathRender.preprocess "Before ```code block``` and $\\alpha$ after."
+    result |> should haveSubstring "α"
