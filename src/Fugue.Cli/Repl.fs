@@ -286,7 +286,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     let handler = ConsoleCancelEventHandler(fun _ args -> cancelSrc.OnCtrlC args)
     Console.CancelKeyPress.AddHandler handler
     let! initialSession = agent.CreateSessionAsync(CancellationToken.None)
-    let mutable session = initialSession
+    let mutable session : AgentSession | null = initialSession
     let providerName, modelName = providerInfo cfg.Provider
     DebugLog.sessionStart providerName modelName cwd
     StatusBar.start cwd cfg
@@ -294,7 +294,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     let strings = pick cfg.Ui.Locale
     try
         while not cancelSrc.QuitRequested do
-            let! lineOpt = ReadLine.readAsync (Render.prompt cwd) strings cancelSrc.Token
+            let callbacks : ReadLine.ReadLineCallbacks = { OnClearScreen = StatusBar.refresh }
+            let! lineOpt = ReadLine.readAsync (Render.prompt cwd) strings callbacks cancelSrc.Token
             match lineOpt with
             | None ->
                 cancelSrc.RequestQuit()
@@ -599,6 +600,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     let! newSession = agent.CreateSessionAsync(CancellationToken.None)
                     session <- newSession
                 with ex ->
+                    session <- null
                     AnsiConsole.Write(Render.errorLine strings ex.Message)
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
@@ -615,9 +617,11 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     psi.ArgumentList.Add "-c"
                     psi.ArgumentList.Add cmd
                     psi.UseShellExecute <- false
+                    psi.WorkingDirectory <- cwd
                     use proc = new System.Diagnostics.Process()
                     proc.StartInfo <- psi
                     cancelSrc.EnterChild ()
+                    StatusBar.stop ()
                     try
                         try
                             proc.Start() |> ignore
@@ -627,6 +631,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                             AnsiConsole.WriteLine()
                     finally
                         cancelSrc.ExitChild ()
+                        StatusBar.start cwd cfg
                 StatusBar.refresh ()
             | Some userInput ->
                 if ReadLine.hasZeroWidth userInput then

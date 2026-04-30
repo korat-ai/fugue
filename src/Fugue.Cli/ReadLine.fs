@@ -52,6 +52,9 @@ let private pushBounded (stack: ResizeArray<_>) item =
     stack.Add item
     if stack.Count > 100 then stack.RemoveAt 0
 
+type ReadLineCallbacks = { OnClearScreen: unit -> unit }
+let defaultCallbacks : ReadLineCallbacks = { OnClearScreen = ignore }
+
 /// Internal mutable line state. Public only because tests construct it directly.
 type S = {
     mutable Buffer:          ResizeArray<char>
@@ -332,7 +335,7 @@ let private redraw (st: S) =
     else writeRaw "\r"
     st.RowsBelowCursor <- upBy   // save for next redraw's erase pass
 
-let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task<string option> = task {
+let readAsync (prompt: string) (strings: Strings) (callbacks: ReadLineCallbacks) (ct: CancellationToken) : Task<string option> = task {
     // Strip ANSI escapes for visible-length calc (rough — assumes only \x1b[...m sequences).
     let visLen =
         let mutable n = 0
@@ -388,6 +391,7 @@ let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task
                 writeRaw "\x1b[2J\x1b[H"
                 st.LinesRendered <- 0
                 st.RowsBelowCursor <- 0
+                callbacks.OnClearScreen ()
                 redraw st
             | Submit s ->
                 eraseRendered ()
