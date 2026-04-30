@@ -57,9 +57,18 @@ let private streamAndRender
     let strings = pick cfg.Ui.Locale
     // id -> (name, args) bookkeeping so ToolCompleted can recover the tool's identity.
     let toolMeta = Dictionary<string, string * string>()
-    let mutable assistantStreaming = false  // true while we're emitting raw assistant text without a trailing newline
-    // Buffer the latest text segment (between the start / a tool / end). Used for the post-stream markdown re-render.
+    // Buffer the current text segment (between stream-start / tool boundary / stream-end).
+    // We render each segment once, as markdown if it contains markdown markers.
     let textBuf = StringBuilder()
+    let flushText () =
+        if textBuf.Length > 0 then
+            let text = textBuf.ToString()
+            if hasMarkdown text then
+                AnsiConsole.Write(Render.assistantFinal text)
+            else
+                AnsiConsole.Write(Spectre.Console.Text(text))
+            AnsiConsole.WriteLine ()
+            textBuf.Clear() |> ignore
 
     try
         let stream = Conversation.run agent session input streamCts.Token
@@ -70,18 +79,12 @@ let private streamAndRender
             if step then
                 match enumerator.Current with
                 | Conversation.TextChunk t ->
-                    // Stream raw text directly — scroll region handles wrapping.
-                    Console.Out.Write t
-                    Console.Out.Flush()
+                    // Buffer; rendered as a single block when the segment ends (next tool or stream end).
                     textBuf.Append t |> ignore
-                    assistantStreaming <- true
                 | Conversation.ToolStarted(id, name, args) ->
-                    // Don't render anything on Started — wait for Completed and render once.
-                    // Saves vertical space and avoids the duplicate-bullet visual.
+                    // Flush any preceding text segment, then nothing visual for Started — wait for Completed.
+                    flushText ()
                     toolMeta.[id] <- (name, args)
-                    if assistantStreaming then
-                        Console.Out.WriteLine ()
-                        assistantStreaming <- false
                 | Conversation.ToolCompleted(id, output, isErr) ->
                     let name, args =
                         match toolMeta.TryGetValue id with
@@ -95,19 +98,14 @@ let private streamAndRender
                 | Conversation.Finished -> ()
                 | Conversation.Failed ex -> raise ex
             else hasNext <- false
-        if assistantStreaming then Console.Out.WriteLine ()
-        // Post-stream: if the buffered text has markdown markers, re-render it formatted below.
-        let text = textBuf.ToString()
-        if text.Length > 0 && hasMarkdown text then
-            AnsiConsole.Write(Render.assistantFinal text)
-            AnsiConsole.WriteLine ()
+        flushText ()
     with
     | :? OperationCanceledException ->
-        if assistantStreaming then Console.Out.WriteLine ()
+        flushText ()
         AnsiConsole.Write(Render.cancelled strings)
         AnsiConsole.WriteLine()
     | ex ->
-        if assistantStreaming then Console.Out.WriteLine ()
+        flushText ()
         AnsiConsole.Write(Render.errorLine strings ex.Message)
         AnsiConsole.WriteLine()
 }
