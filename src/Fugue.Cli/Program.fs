@@ -358,6 +358,79 @@ SEE ALSO
             Console.WriteLine()
             Console.WriteLine "Run 'fugue aliases --install' to append these to ~/.zshrc automatically."
         0
+    elif argv.Length >= 2 && argv.[0] = "config" then
+        let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+        let cfgPath = Fugue.Core.Config.configFilePath ()
+        let readDoc () =
+            if System.IO.File.Exists cfgPath then
+                try Some (System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText cfgPath))
+                with _ -> None
+            else None
+        let getVal (doc: System.Text.Json.JsonDocument) (key: string) =
+            let parts = key.Split('.')
+            let mutable el = doc.RootElement
+            let mutable found = true
+            for p in parts do
+                match el.TryGetProperty p with
+                | true, v -> el <- v
+                | _ -> found <- false
+            if found then Some (el.ToString()) else None
+        match argv.[1] with
+        | "list" ->
+            match readDoc () with
+            | None -> Console.Error.WriteLine "No config file found."; 1
+            | Some doc ->
+                use _ = doc
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(doc.RootElement,
+                    System.Text.Json.JsonSerializerOptions(WriteIndented = true)))
+                0
+        | "get" when argv.Length >= 3 ->
+            match readDoc () with
+            | None -> Console.Error.WriteLine "No config file found."; 1
+            | Some doc ->
+                use _ = doc
+                match getVal doc argv.[2] with
+                | Some v -> Console.WriteLine v; 0
+                | None -> Console.Error.WriteLine(sprintf "Key not found: %s" argv.[2]); 1
+        | "set" when argv.Length >= 4 ->
+            let key   = argv.[2]
+            let value = argv.[3]
+            let json  =
+                if System.IO.File.Exists cfgPath then System.IO.File.ReadAllText cfgPath
+                else "{}"
+            // AOT-safe set: only supports top-level and one-level-nested keys (dot-separated).
+            // Rebuilds the JSON by loading into AppConfig, mutating, and re-saving.
+            // For arbitrary key paths, fall back to Config.load → cfg with → saveToFile.
+            try
+                let jsonVal =
+                    match System.Int32.TryParse value with
+                    | true, n -> sprintf "%d" n
+                    | _ ->
+                        match System.Boolean.TryParse value with
+                        | true, b -> (if b then "true" else "false")
+                        | _ -> sprintf "\"%s\"" (value.Replace("\"", "\\\""))
+                // Simple regex-style replacement: if key exists, replace; else append before closing brace.
+                let escapedKey = System.Text.RegularExpressions.Regex.Escape key
+                let pattern = sprintf "\"(%s)\"\\s*:\\s*(?:\"[^\"]*\"|[^,}\\s]+)" escapedKey
+                let newPair = sprintf "\"%s\": %s" key jsonVal
+                let newJson =
+                    if System.Text.RegularExpressions.Regex.IsMatch(json, pattern) then
+                        System.Text.RegularExpressions.Regex.Replace(json, pattern, newPair)
+                    else
+                        let trimmed = json.TrimEnd()
+                        if trimmed.EndsWith '}' then
+                            let body = trimmed.[..trimmed.Length - 2].TrimEnd()
+                            let sep = if body.TrimEnd().EndsWith ',' || body.TrimEnd() = "{" then "" else ","
+                            body + sep + sprintf "\n  %s\n}" newPair
+                        else json
+                System.IO.File.WriteAllText(cfgPath, newJson)
+                Console.WriteLine(sprintf "Set %s = %s" key value)
+                0
+            with ex ->
+                Console.Error.WriteLine(sprintf "Failed to set %s: %s" key ex.Message); 1
+        | sub ->
+            Console.Error.WriteLine(sprintf "Unknown config subcommand: %s. Use: fugue config list | get <key> | set <key> <value>" sub)
+            1
     else
     match Fugue.Core.Config.load argv with
     | Error (NoConfigFound help) ->

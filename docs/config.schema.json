@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/korat-ai/fugue/main/docs/config.schema.json",
+  "title": "Fugue configuration",
+  "description": "~/.fugue/config.json — Fugue AI coding agent configuration",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "provider": {
+      "type": "string",
+      "enum": ["anthropic", "openai", "ollama"],
+      "description": "AI provider to use"
+    },
+    "model": {
+      "type": "string",
+      "description": "Model ID (e.g. claude-opus-4-7, gpt-4o, llama3.1)"
+    },
+    "apiKey": {
+      "type": "string",
+      "description": "API key for Anthropic or OpenAI"
+    },
+    "ollamaEndpoint": {
+      "type": "string",
+      "format": "uri",
+      "default": "http://localhost:11434",
+      "description": "Ollama server endpoint"
+    },
+    "baseUrl": {
+      "type": "string",
+      "format": "uri",
+      "description": "Override the provider API base URL (OpenAI-compatible endpoints)"
+    },
+    "maxIterations": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 30,
+      "description": "Maximum tool-call iterations per turn"
+    },
+    "maxTokens": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum tokens per response (provider default if omitted)"
+    },
+    "ui": {
+      "type": "object",
+      "description": "Terminal UI settings",
+      "properties": {
+        "userAlignment": {
+          "type": "string",
+          "enum": ["left", "right"],
+          "default": "left"
+        },
+        "locale": {
+          "type": "string",
+          "enum": ["en", "ru"],
+          "default": "en",
+          "description": "UI language"
+        },
+        "promptTemplate": {
+          "type": "string",
+          "default": "♩ ",
+          "description": "Input prompt prefix character(s)"
+        },
+        "bell": {
+          "type": "boolean",
+          "default": false,
+          "description": "Ring terminal bell on assistant response"
+        },
+        "theme": {
+          "type": "string",
+          "enum": ["", "fugue-classic", "monochrome", "bubbles"],
+          "default": "",
+          "description": "Colour theme (empty = default ANSI colours)"
+        },
+        "emojiMode": {
+          "type": "string",
+          "enum": ["auto", "always", "never"],
+          "default": "auto"
+        },
+        "bubblesMode": {
+          "type": "boolean",
+          "default": false
+        },
+        "typewriterMode": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "profiles": {
+      "type": "object",
+      "description": "Named configuration overlays keyed by $FUGUE_PROFILE, $ENVIRONMENT, or hostname",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "provider": { "type": "string" },
+          "model":    { "type": "string" },
+          "apiKey":   { "type": "string" },
+          "ollamaEndpoint": { "type": "string" },
+          "baseUrl":        { "type": "string" },
+          "maxIterations":  { "type": "integer" },
+          "maxTokens":      { "type": "integer" }
+        }
+      }
+    }
+  },
+  "required": ["provider", "model"]
+}

@@ -336,7 +336,13 @@ let saveToFile (cfg: AppConfig) : unit =
         | OpenAI(k, m)    -> { provider = "openai";    model = m; apiKey = k; ollamaEndpoint = ""; baseUrl = baseUrlVal; maxIterations = cfg.MaxIterations; maxTokens = maxTokensVal; ui = uiDto }
         | Ollama(e, m)    -> { provider = "ollama";    model = m; apiKey = ""; ollamaEndpoint = string e; baseUrl = baseUrlVal; maxIterations = cfg.MaxIterations; maxTokens = maxTokensVal; ui = uiDto }
     let json = JsonSerializer.Serialize<AppConfigDto>(dto, appConfigOptions)
-    File.WriteAllText(path, json)
+    // Inject $schema as first key for editor auto-complete (JSON Schema draft-2020-12).
+    let schemaUrl = "https://raw.githubusercontent.com/korat-ai/fugue/main/docs/config.schema.json"
+    let withSchema =
+        if json.StartsWith '{' then
+            sprintf "{\"$schema\":\"%s\"," schemaUrl + json.[1..]
+        else json
+    File.WriteAllText(path, withSchema)
 
 /// Load model schedule from the "modelSchedule" key in config.json (AOT-safe, JsonDocument).
 let loadModelSchedule () : ModelSchedule.ModelScheduleConfig option =
