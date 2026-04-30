@@ -367,6 +367,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/clear-history",   strings.CmdClearHistoryDesc
                                   "/tools",           strings.CmdToolsDesc
                                   "/todo",            strings.CmdTodoDesc
+                                  "/find <query>",    strings.CmdFindDesc
                                   "/summarize <p>",   strings.CmdSummarizeDesc
                                   "/new",             strings.CmdNewDesc
                                   "/diff",           strings.CmdDiffDesc
@@ -837,6 +838,64 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         sprintf "Found %d TODO/FIXME/HACK items in workspace:\n\n%s%s\n\nPlease review these and suggest which ones are worth addressing now."
                             lines.Length body note
                     do! streamAndRender agent session summary cfg cancelSrc
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/find " ->
+                let query = s.Substring("/find ".Length).Trim()
+                if String.IsNullOrWhiteSpace query then
+                    AnsiConsole.Write(Markup("[dim]Usage: /find <query>[/]"))
+                    AnsiConsole.WriteLine()
+                else
+                    // Two-pass: filename fuzzy match + content grep for query terms
+                    let fuzzyScore (q: string) (candidate: string) =
+                        let q = q.ToLowerInvariant()
+                        let c = candidate.ToLowerInvariant()
+                        let mutable qi = 0
+                        let mutable score = 0
+                        for ci in 0 .. c.Length - 1 do
+                            if qi < q.Length && c.[ci] = q.[qi] then
+                                score <- score + 1
+                                qi <- qi + 1
+                        if qi = q.Length then score * 3 else 0
+                    let allFiles =
+                        try
+                            System.IO.Directory.EnumerateFiles(cwd, "*", SearchOption.AllDirectories)
+                            |> Seq.filter (fun f -> not (f.Contains(string System.IO.Path.DirectorySeparatorChar + ".git")))
+                            |> Seq.toList
+                        with _ -> []
+                    let results =
+                        allFiles
+                        |> List.choose (fun abs ->
+                            let rel = try System.IO.Path.GetRelativePath(cwd, abs) with _ -> abs
+                            let name = System.IO.Path.GetFileName abs |> Option.ofObj |> Option.defaultValue ""
+                            let ns = fuzzyScore query name
+                            let cs, snippet =
+                                try
+                                    let info = System.IO.FileInfo abs
+                                    if info.Length < 512L * 1024L then
+                                        let lines = System.IO.File.ReadAllLines abs
+                                        let hit = lines |> Array.tryFind (fun l -> l.Contains(query, StringComparison.OrdinalIgnoreCase))
+                                        let cnt = lines |> Array.sumBy (fun l -> if l.Contains(query, StringComparison.OrdinalIgnoreCase) then 1 else 0)
+                                        cnt, hit
+                                    else 0, None
+                                with _ -> 0, None
+                            let total = ns + cs
+                            if total > 0 then Some (total, rel, snippet) else None)
+                        |> List.sortByDescending (fun (score, _, _) -> score)
+                        |> List.truncate 10
+                    if results.IsEmpty then
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.FindNoResults))
+                    else
+                        for (_score, rel, snippet) in results do
+                            let snipStr =
+                                match snippet with
+                                | Some s -> sprintf "  → %s" (s.Trim())
+                                | None   -> ""
+                            if Render.isColorEnabled () then
+                                AnsiConsole.MarkupLine(sprintf "[cyan]%s[/]%s" (Markup.Escape rel) (Markup.Escape snipStr))
+                            else
+                                Console.Out.WriteLine(sprintf "%s%s" rel snipStr)
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.FindInjectHint))
+                    AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/summarize" ->
                 let rawArg = s.Substring("/summarize".Length).Trim()

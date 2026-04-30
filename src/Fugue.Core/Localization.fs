@@ -103,6 +103,11 @@ type Strings =
       // /summarize command
       CmdSummarizeDesc: string
 
+      // /find command
+      CmdFindDesc:    string
+      FindNoResults:  string
+      FindInjectHint: string
+
       // @path injection hints
       TestFileHint:  string
 
@@ -172,6 +177,9 @@ let en : Strings =
       CmdTodoDesc           = "scan workspace for TODO/FIXME/HACK comments"
       TodoNone              = "no TODO/FIXME/HACK comments found in workspace"
       CmdSummarizeDesc      = "summarize a file or directory"
+      CmdFindDesc           = "fuzzy-search workspace files by name or content"
+      FindNoResults         = "no matches"
+      FindInjectHint        = "type @<path> to inject a file into your next prompt"
       TestFileHint          = "[test file found: {0} — include it with @{1}]"
       InputPlaceholder      = "Type a message or /help"
       Thinking              = "thinking" }
@@ -236,6 +244,9 @@ let ru : Strings =
       CmdTodoDesc           = "найти TODO/FIXME/HACK комментарии в проекте"
       TodoNone              = "TODO/FIXME/HACK комментарии не найдены"
       CmdSummarizeDesc      = "резюме файла или директории"
+      CmdFindDesc           = "нечёткий поиск файлов по имени или содержимому"
+      FindNoResults         = "совпадений не найдено"
+      FindInjectHint        = "введите @<путь> чтобы добавить файл в следующее сообщение"
       TestFileHint          = "[найден тест-файл: {0} — подключите его через @{1}]"
       InputPlaceholder      = "Введите сообщение или /help"
       Thinking              = "думаю" }
