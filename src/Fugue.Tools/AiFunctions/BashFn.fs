@@ -6,7 +6,7 @@ open Fugue.Tools.AiFunctions
 let private schema = DelegatedFn.parseSchema """{
   "type":"object",
   "properties":{
-    "command":    {"type":"string","description":"Shell command to run (uses $SHELL, falls back to /bin/sh)"},
+    "command":    {"type":"string","description":"Shell command to run via /bin/sh -c"},
     "timeout_ms": {"type":"integer","description":"Timeout in milliseconds (default 60000 = 60s). Process killed after timeout."},
     "clean_env":  {"type":"boolean","description":"Strip secret env vars (keys, tokens, passwords) before running."}
   },
@@ -16,7 +16,7 @@ let private schema = DelegatedFn.parseSchema """{
 let create (cwd: string) : AIFunction =
     DelegatedFn.DelegatedAIFunction(
         name        = "Bash",
-        description = "Run a shell command using the user's $SHELL (login shell where supported).",
+        description = "Run a shell command via /bin/sh -c. Returns stdout, stderr, and exit code.",
         schema      = schema,
         invoke      = fun args ct -> task {
             ct.ThrowIfCancellationRequested()

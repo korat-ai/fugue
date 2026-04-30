@@ -34,33 +34,17 @@ let private isSafe (key: string) : bool =
     elif allowedPrefixes |> Array.exists (fun p -> up.StartsWith(p, StringComparison.Ordinal)) then true
     else false
 
-/// Resolve the user's login shell and appropriate flags.
-/// Most POSIX shells accept `-lc`; fish and nushell only accept `-c`.
-let private resolveShell () : string * string =
-    let shell =
-        Environment.GetEnvironmentVariable "SHELL"
-        |> Option.ofObj
-        |> Option.filter (fun s -> s.Length > 0)
-        |> Option.defaultValue "/bin/sh"
-    let name = IO.Path.GetFileName shell
-    let flags =
-        match name with
-        | "fish" | "nu" | "nush" | "xonsh" -> "-c"
-        | _                                  -> "-lc"
-    shell, flags
-
-[<Description("Run a shell command using the user's login shell and return combined stdout/stderr with exit code.")>]
+[<Description("Run a shell command via /bin/sh -c and return combined stdout/stderr with exit code.")>]
 let bash
     ([<Description("Working directory.")>] cwd: string)
-    ([<Description("Command line to execute (shell syntax allowed).")>] command: string)
+    ([<Description("Command line to execute (sh syntax).")>] command: string)
     ([<Description("Timeout in milliseconds (default 60000 = 60s).")>] timeoutMs: int option)
     ([<Description("Strip secret env vars before starting the process.")>] cleanEnv: bool option)
     ([<Description("CancellationToken to interrupt the process early.")>] ct: CancellationToken)
     : string =
     let timeout = timeoutMs |> Option.defaultValue 60_000
-    let shell, flags = resolveShell ()
 
-    let psi = ProcessStartInfo(shell, flags + " \"" + command.Replace("\"", "\\\"") + "\"")
+    let psi = ProcessStartInfo("/bin/sh", "-c \"" + command.Replace("\"", "\\\"") + "\"")
     psi.WorkingDirectory <- cwd
     psi.RedirectStandardOutput <- true
     psi.RedirectStandardError <- true
