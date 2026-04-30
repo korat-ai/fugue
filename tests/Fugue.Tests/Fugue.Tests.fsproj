@@ -28,6 +28,7 @@
     <Compile Include="GrepToolTests.fs" />
     <Compile Include="DiscoveryTests.fs" />
     <Compile Include="ConversationTests.fs" />
+    <Compile Include="PathSafetySymlinkTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
