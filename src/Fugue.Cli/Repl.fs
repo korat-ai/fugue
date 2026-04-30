@@ -423,6 +423,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     let providerName, modelName = providerInfo cfg.Provider
     DebugLog.sessionStart providerName modelName cwd
     StatusBar.start cwd cfg
+    Render.showBanner ()
     prelude cfg
     Console.Out.Write "\x1b[?2004h"   // enable bracketed paste
     Console.Out.Flush()

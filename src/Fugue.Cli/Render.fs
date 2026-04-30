@@ -45,6 +45,25 @@ let captureLines (r: IRenderable) : string[] =
     sw.ToString().TrimEnd([| '\n' |]).Split('\n')
 
 /// Build the input prompt from the UiConfig template.
+/// Interpolate each character of `text` between two RGB colours and return Spectre markup.
+let private gradientMarkup (r0: int, g0: int, b0: int) (r1: int, g1: int, b1: int) (text: string) : string =
+    let n = max 1 (text.Length - 1)
+    text
+    |> Seq.mapi (fun i c ->
+        let t = float i / float n
+        let r = r0 + int (t * float (r1 - r0))
+        let g = g0 + int (t * float (g1 - g0))
+        let b = b0 + int (t * float (b1 - b0))
+        sprintf "[#%02x%02x%02x]%s[/]" r g b (Markup.Escape (string c)))
+    |> String.concat ""
+
+/// One-line startup banner: "♩ Fugue" with blue-to-purple gradient. No-op when colour is off.
+let showBanner () : unit =
+    if not colorEnabled then () else
+    let title = gradientMarkup (59, 130, 246) (168, 85, 247) "Fugue"
+    AnsiConsole.MarkupLine(sprintf "[dim]♩[/] %s" title)
+    AnsiConsole.WriteLine()
+
 /// Supports {model} interpolation. Falls back to "› " if template is empty.
 let prompt (ui: Fugue.Core.Config.UiConfig) (modelShort: string) : string =
     let tmpl = if System.String.IsNullOrWhiteSpace ui.PromptTemplate then "♩ " else ui.PromptTemplate
