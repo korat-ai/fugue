@@ -239,49 +239,51 @@ let private streamAndRender
 
     StatusBar.startStreaming()
     try
-        let stream = Conversation.run agent session input streamCts.Token
-        let enumerator = stream.GetAsyncEnumerator(streamCts.Token)
-        let mutable hasNext = true
-        while hasNext do
-            let! step = enumerator.MoveNextAsync().AsTask()
-            if step then
-                match enumerator.Current with
-                | Conversation.TextChunk t ->
-                    Console.Out.Write t
-                    Console.Out.Flush()
-                    assistantStreaming <- true
-                | Conversation.ToolStarted(id, name, args) ->
-                    toolMeta.[id] <- (name, args)
-                    if assistantStreaming then
-                        Console.Out.WriteLine ()
-                        assistantStreaming <- false
-                    StatusBar.refresh()
-                | Conversation.ToolCompleted(id, output, isErr) ->
-                    let name, args =
-                        match toolMeta.TryGetValue id with
-                        | true, v -> v
-                        | false, _ -> "?", "?"
-                    let state =
-                        if isErr then Render.Failed(name, args, output)
-                        else Render.Completed(name, args, output)
-                    AnsiConsole.Write(Render.toolBullet strings state)
-                    AnsiConsole.WriteLine ()
-                    StatusBar.refresh()
-                | Conversation.Finished -> ()
-                | Conversation.Failed ex -> raise ex
-            else hasNext <- false
-        if assistantStreaming then Console.Out.WriteLine ()
-    with
-    | :? OperationCanceledException ->
-        if assistantStreaming then Console.Out.WriteLine ()
-        AnsiConsole.Write(Render.cancelled strings)
-        AnsiConsole.WriteLine()
-    | ex ->
-        if assistantStreaming then Console.Out.WriteLine ()
-        AnsiConsole.Write(Render.errorLine strings ex.Message)
-        AnsiConsole.WriteLine()
-    StatusBar.stopStreaming()
-    StatusBar.refresh()
+        try
+            let stream = Conversation.run agent session input streamCts.Token
+            let enumerator = stream.GetAsyncEnumerator(streamCts.Token)
+            let mutable hasNext = true
+            while hasNext do
+                let! step = enumerator.MoveNextAsync().AsTask()
+                if step then
+                    match enumerator.Current with
+                    | Conversation.TextChunk t ->
+                        Console.Out.Write t
+                        Console.Out.Flush()
+                        assistantStreaming <- true
+                    | Conversation.ToolStarted(id, name, args) ->
+                        toolMeta.[id] <- (name, args)
+                        if assistantStreaming then
+                            Console.Out.WriteLine ()
+                            assistantStreaming <- false
+                        StatusBar.refresh()
+                    | Conversation.ToolCompleted(id, output, isErr) ->
+                        let name, args =
+                            match toolMeta.TryGetValue id with
+                            | true, v -> v
+                            | false, _ -> "?", "?"
+                        let state =
+                            if isErr then Render.Failed(name, args, output)
+                            else Render.Completed(name, args, output)
+                        AnsiConsole.Write(Render.toolBullet strings state)
+                        AnsiConsole.WriteLine ()
+                        StatusBar.refresh()
+                    | Conversation.Finished -> ()
+                    | Conversation.Failed ex -> raise ex
+                else hasNext <- false
+            if assistantStreaming then Console.Out.WriteLine ()
+        with
+        | :? OperationCanceledException ->
+            if assistantStreaming then Console.Out.WriteLine ()
+            AnsiConsole.Write(Render.cancelled strings)
+            AnsiConsole.WriteLine()
+        | ex ->
+            if assistantStreaming then Console.Out.WriteLine ()
+            AnsiConsole.Write(Render.errorLine strings ex.Message)
+            AnsiConsole.WriteLine()
+    finally
+        StatusBar.stopStreaming()
+        StatusBar.refresh()
 }
 
 [<RequiresUnreferencedCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
