@@ -19,7 +19,20 @@ let create (cwd: string) : AIFunction =
         schema      = schema,
         invoke      = fun args ct -> task {
             ct.ThrowIfCancellationRequested()
-            let command   = Args.getStr     args "command"
-            let timeoutMs = Args.tryGetInt  args "timeout_ms"
-            return Fugue.Tools.BashTool.bash cwd command timeoutMs
+            let command   = Args.getStr    args "command"
+            let timeoutMs = Args.tryGetInt args "timeout_ms"
+            let findings  = Fugue.Tools.InjectionGuard.checkBash command
+            let blocks    = findings |> List.filter (fun f -> f.Severity = Fugue.Tools.InjectionGuard.Block)
+            let warns     = findings |> List.filter (fun f -> f.Severity = Fugue.Tools.InjectionGuard.Warn)
+            if not blocks.IsEmpty then
+                let details = blocks |> List.map (fun f -> "  • " + f.Detail) |> String.concat "\n"
+                return "[injection-guard] Blocked — dangerous pattern detected:\n" + details
+            else
+                let warnPrefix =
+                    if warns.IsEmpty then ""
+                    else
+                        let details = warns |> List.map (fun f -> "  • " + f.Detail) |> String.concat "\n"
+                        "[injection-guard] Warning — suspicious pattern:\n" + details + "\n\n"
+                let result = Fugue.Tools.BashTool.bash cwd command timeoutMs
+                return warnPrefix + result
         }) :> AIFunction

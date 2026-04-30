@@ -43,6 +43,7 @@
     <Compile Include="ConversationTests.fs" />
     <Compile Include="AtFileTests.fs" />
     <Compile Include="PathSafetyGuardTests.fs" />
+    <Compile Include="InjectionGuardTests.fs" />
     <Compile Include="PathSafetySymlinkTests.fs" />
     <Compile Include="MacrosTests.fs" />
     <Compile Include="ReplTests.fs" />
