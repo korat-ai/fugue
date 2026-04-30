@@ -17,8 +17,8 @@ let private findGitRoot (dir: string) : string option =
         | null -> None
         | p ->
             use _ = p
-            p.WaitForExit 500 |> ignore
-            if p.ExitCode = 0 then
+            let exited = p.WaitForExit 500
+            if exited && p.ExitCode = 0 then
                 let out = (p.StandardOutput.ReadToEnd()).Trim()
                 if String.IsNullOrEmpty out then None else Some out
             else None
