@@ -74,7 +74,11 @@ type Strings =
 
       // /init command
       CmdInitDesc: string
-      InitExists:  string }
+      InitExists:  string
+
+      // /tools command
+      CmdToolsDesc: string
+      ToolsHeader:  string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -120,7 +124,9 @@ let en : Strings =
       CmdDiffDesc           = "show unstaged git diff (use /diff --staged for staged changes)"
       NoDiff                = "no changes"
       CmdInitDesc           = "generate FUGUE.md for this project (creates if absent)"
-      InitExists            = "FUGUE.md already exists. Edit it directly or delete it first." }
+      InitExists            = "FUGUE.md already exists. Edit it directly or delete it first."
+      CmdToolsDesc          = "list all available tools with descriptions"
+      ToolsHeader           = "Available tools" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -166,7 +172,9 @@ let ru : Strings =
       CmdDiffDesc           = "показать unstaged git diff (используйте /diff --staged для staged изменений)"
       NoDiff                = "изменений нет"
       CmdInitDesc           = "создать FUGUE.md для проекта (если отсутствует)"
-      InitExists            = "FUGUE.md уже существует. Отредактируйте его напрямую или сначала удалите." }
+      InitExists            = "FUGUE.md уже существует. Отредактируйте его напрямую или сначала удалите."
+      CmdToolsDesc          = "показать список инструментов с описаниями"
+      ToolsHeader           = "Доступные инструменты" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =

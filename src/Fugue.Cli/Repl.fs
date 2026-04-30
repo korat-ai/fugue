@@ -315,6 +315,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 let helpItems = [ "/help",           strings.CmdHelpDesc
                                   "/ask <q>",        strings.CmdAskDesc
                                   "/clear",          strings.CmdClearDesc
+                                  "/tools",           strings.CmdToolsDesc
                                   "/new",             strings.CmdNewDesc
                                   "/diff",           strings.CmdDiffDesc
                                   "/init",           strings.CmdInitDesc
@@ -360,6 +361,13 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s = "/tools" ->
+                AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.ToolsHeader + "[/]"))
+                AnsiConsole.WriteLine()
+                for (name, desc) in Fugue.Tools.ToolRegistry.descriptions do
+                    AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
+                    AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/issue" || s.StartsWith "/issue " ->
                 let rawArg = if s = "/issue" then "" else s.Substring(7).TrimStart()

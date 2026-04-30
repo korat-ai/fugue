@@ -29,7 +29,7 @@ let hasZeroWidth (s: string) = InputSanitize.hasZeroWidth s
 let normalizeInput (s: string) = InputSanitize.normalize s
 
 // Hardcoded — small list, easier than passing through state.
-let slashCommands : string list = [ "/help"; "/clear"; "/new"; "/init"; "/exit"; "/diff"; "/diff --staged" ]
+let slashCommands : string list = [ "/help"; "/clear"; "/tools"; "/new"; "/init"; "/exit"; "/diff"; "/diff --staged" ]
 
 /// Session history (REPL is single-threaded). Not private so tests can seed entries directly.
 let historyStore = ResizeArray<string>()
@@ -351,6 +351,7 @@ let readAsync (prompt: string) (strings: Strings) (callbacks: ReadLineCallbacks)
     let slashHelp =
         [ "/help",         strings.CmdHelpDesc
           "/clear",        strings.CmdClearDesc
+          "/tools",        strings.CmdToolsDesc
           "/new",          strings.CmdNewDesc
           "/init",         strings.CmdInitDesc
           "/exit",         strings.CmdExitDesc
