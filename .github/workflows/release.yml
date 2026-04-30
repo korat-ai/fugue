@@ -127,6 +127,9 @@ jobs:
     name: Publish to NuGet
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # required for NuGet Trusted Publishing (OIDC)
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -144,11 +147,10 @@ jobs:
       - name: Pack
         run: dotnet pack src/Fugue.Cli -c Release -p:VersionPrefix=${{ env.VERSION }} --no-build
 
-      - name: Push to NuGet.org
+      - name: Push to NuGet.org (Trusted Publishing — no API key needed)
         run: >
           dotnet nuget push
           src/Fugue.Cli/bin/Release/fugue.${{ env.VERSION }}-jit.nupkg
-          --api-key ${{ secrets.NUGET_API_KEY }}
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
 
