@@ -15,6 +15,11 @@ let mutable private cfg: AppConfig option = None
 let mutable private active = false
 let mutable private branchCache : string * DateTime = "", DateTime.MinValue
 let mutable private streamingSince : DateTime option = None
+let mutable private spinnerFrame  = 0
+let mutable private spinnerTimer  : System.Threading.Timer option = None
+let mutable private onTick        : (unit -> unit) = fun () -> ()
+
+let private musicalFrames = [| "♩"; "♪"; "♫"; "♬"; "♭"; "♮"; "♯" |]
 
 let private branchOf (cwd: string) : string =
     let now = DateTime.UtcNow
@@ -62,8 +67,19 @@ let internal formatElapsed (t: TimeSpan) : string =
     if t.TotalSeconds < 60.0 then sprintf "%.1fs" t.TotalSeconds
     else sprintf "%dm %ds" (int t.TotalMinutes) t.Seconds
 
-let startStreaming () = streamingSince <- Some DateTime.UtcNow
-let stopStreaming ()  = streamingSince <- None
+let startStreaming () =
+    streamingSince <- Some DateTime.UtcNow
+    spinnerFrame <- 0
+    let t = new System.Threading.Timer(
+                System.Threading.TimerCallback(fun _ -> onTick ()),
+                null, 300, 300)
+    spinnerTimer <- Some t
+
+let stopStreaming () =
+    streamingSince <- None
+    match spinnerTimer with
+    | Some t -> t.Dispose(); spinnerTimer <- None
+    | None   -> ()
 
 let refresh () =
     if not active || not (Render.isColorEnabled ()) then () else
@@ -74,16 +90,19 @@ let refresh () =
         | None   -> Fugue.Core.Localization.en
     let line1 =
         "\x1b[90m" + (homeRel cwd) + " " + strings.StatusBarOn + " \x1b[1m" + (branchOf cwd) + "\x1b[0m"
-    let elapsedSuffix =
+    let elapsedSuffix, spinnerPrefix =
         match streamingSince with
         | Some since ->
             let elapsed = DateTime.UtcNow - since
-            " · " + formatElapsed elapsed
-        | None -> ""
+            let frame = musicalFrames.[spinnerFrame % musicalFrames.Length]
+            spinnerFrame <- spinnerFrame + 1
+            let dots = [| "·"; "··"; "···" |].[(spinnerFrame / 2) % 3]
+            " · " + formatElapsed elapsed, frame + " " + strings.Thinking + dots + " "
+        | None -> "", ""
     let line2 =
         match cfg with
-        | Some c -> "\x1b[90m" + strings.StatusBarApp + " · " + (providerLabel c) + elapsedSuffix + "\x1b[0m"
-        | None   -> "\x1b[90m" + strings.StatusBarApp + elapsedSuffix + "\x1b[0m"
+        | Some c -> "\x1b[90m" + spinnerPrefix + strings.StatusBarApp + " · " + (providerLabel c) + elapsedSuffix + "\x1b[0m"
+        | None   -> "\x1b[90m" + spinnerPrefix + strings.StatusBarApp + elapsedSuffix + "\x1b[0m"
     // save cursor, jump to bottom-1, clear two lines, write, restore
     writeRaw "\x1b[s"
     writeRaw ("\x1b[" + string (height - 1) + ";1H")
@@ -99,6 +118,7 @@ let start (initialCwd: string) (initialCfg: AppConfig) : unit =
     cwd <- initialCwd
     cfg <- Some initialCfg
     active <- true
+    onTick <- refresh
     // reserve two bottom lines: emit two newlines, then set scroll region 1..(h-2)
     let height = Console.WindowHeight
     Console.WriteLine()

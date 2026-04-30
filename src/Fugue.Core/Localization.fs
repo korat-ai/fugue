@@ -107,7 +107,10 @@ type Strings =
       TestFileHint:  string
 
       // Input prompt
-      InputPlaceholder: string }
+      InputPlaceholder: string
+
+      // Streaming waiting label
+      Thinking: string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -170,7 +173,8 @@ let en : Strings =
       TodoNone              = "no TODO/FIXME/HACK comments found in workspace"
       CmdSummarizeDesc      = "summarize a file or directory"
       TestFileHint          = "[test file found: {0} — include it with @{1}]"
-      InputPlaceholder      = "Type a message or /help" }
+      InputPlaceholder      = "Type a message or /help"
+      Thinking              = "thinking" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -233,7 +237,8 @@ let ru : Strings =
       TodoNone              = "TODO/FIXME/HACK комментарии не найдены"
       CmdSummarizeDesc      = "резюме файла или директории"
       TestFileHint          = "[найден тест-файл: {0} — подключите его через @{1}]"
-      InputPlaceholder      = "Введите сообщение или /help" }
+      InputPlaceholder      = "Введите сообщение или /help"
+      Thinking              = "думаю" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =
