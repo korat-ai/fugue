@@ -37,6 +37,7 @@
     <Compile Include="Render.fs" />
     <Compile Include="StatusBar.fs" />
     <Compile Include="FileWatcher.fs" />
+    <Compile Include="ClipRing.fs" />
     <Compile Include="Macros.fs" />
     <Compile Include="Repl.fs" />
     <Compile Include="Doctor.fs" />

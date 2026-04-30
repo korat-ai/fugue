@@ -251,6 +251,25 @@ let private expandClipboard (input: string) (strings: Strings) : string =
                 else content
             input.Replace("@clipboard", truncated)
 
+/// Expand @clip (most recent tool output), @clip1..@clip10 in user input.
+let private expandClipRing (input: string) : string =
+    if not (input.Contains "@clip") then input
+    else
+        let mutable result = input
+        // Numbered slots first to avoid partial replacement of @clip in @clip1..@clip10
+        for n in ClipRing.Capacity .. -1 .. 1 do
+            let token = sprintf "@clip%d" n
+            if result.Contains token then
+                let replacement = ClipRing.get n |> Option.defaultValue (sprintf "[clip%d empty]" n)
+                let truncated = if replacement.Length > 4000 then replacement.[..3999] + " …" else replacement
+                result <- result.Replace(token, truncated)
+        // Plain @clip = @clip1
+        if result.Contains "@clip" then
+            let replacement = ClipRing.get 1 |> Option.defaultValue "[clip empty]"
+            let truncated = if replacement.Length > 4000 then replacement.[..3999] + " …" else replacement
+            result <- result.Replace("@clip", truncated)
+        result
+
 /// Holder for the currently active stream's CancellationTokenSource.
 /// Console.CancelKeyPress handler uses this to cancel mid-stream Ctrl+C.
 type CancelSource() =
@@ -344,6 +363,8 @@ let private streamAndRender
                                         let p = rest.[1..endIdx-1]
                                         let count = activityStore |> Map.tryFind p |> Option.defaultValue 0
                                         activityStore <- activityStore |> Map.add p (count + 1)
+                        if not isErr && output.Length > 0 then
+                            ClipRing.push output
                         let state =
                             if isErr then Render.Failed(name, args, output, elapsed)
                             else Render.Completed(name, args, output, elapsed)
@@ -1285,6 +1306,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 lastFile <- None
                 zenMode <- false
                 StatusBar.resetWords ()
+                ClipRing.clear ()
                 snippetStore <- Map.empty
                 bookmarks <- []
                 activityStore <- Map.empty
@@ -1699,6 +1721,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 let expandedInput = expandAtFiles cwd strings userInput
                 let expandedInput = expandClipboard expandedInput strings
+                let expandedInput = expandClipRing expandedInput
                 StatusBar.recordWords (expandedInput.Split([|' '; '\n'; '\r'; '\t'|], StringSplitOptions.RemoveEmptyEntries).Length)
                 turnNumber <- turnNumber + 1
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput turnNumber)
