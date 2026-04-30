@@ -123,6 +123,11 @@ jobs:
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
 
+      - name: Ensure release is published (guard against retag draft regression)
+        run: gh release edit ${{ github.ref_name }} --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   nuget:
     name: Publish to NuGet
     needs: release
