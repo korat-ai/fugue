@@ -166,3 +166,34 @@ let ``expandAtFiles test hint uses locale string`` () =
         let result = expandAtFiles cwd ru "@src/Bar.fs"
         result |> should haveSubstring "найден тест-файл"
     finally cleanup cwd
+
+// ---------------------------------------------------------------------------
+// /gen generators
+// ---------------------------------------------------------------------------
+
+let private crockfordAlphabet = System.Collections.Generic.HashSet<char>("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
+let private nanoidAlphabet    = System.Collections.Generic.HashSet<char>("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
+
+[<Fact>]
+let ``generateUlid returns 26 chars in Crockford base32`` () =
+    let v = generateUlid ()
+    v |> should haveLength 26
+    v |> Seq.forall (fun c -> crockfordAlphabet.Contains c) |> should equal true
+
+[<Fact>]
+let ``generateUlid produces unique values`` () =
+    let a = generateUlid ()
+    let b = generateUlid ()
+    a |> should not' (equal b)
+
+[<Fact>]
+let ``generateNanoid returns 21 chars in URL-safe alphabet`` () =
+    let v = generateNanoid ()
+    v |> should haveLength 21
+    v |> Seq.forall (fun c -> nanoidAlphabet.Contains c) |> should equal true
+
+[<Fact>]
+let ``generateNanoid produces unique values`` () =
+    let a = generateNanoid ()
+    let b = generateNanoid ()
+    a |> should not' (equal b)

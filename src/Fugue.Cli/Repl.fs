@@ -38,6 +38,37 @@ let mutable private aliasStore : Map<string, string> = Map.empty
 // Scratch buffer: accumulated lines
 let mutable private scratchLines : string list = []
 
+let internal generateUlid () : string =
+    let alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+    let rng = System.Security.Cryptography.RandomNumberGenerator.Create()
+    let ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+    let sb = System.Text.StringBuilder(26)
+    let mutable t = ts
+    let tsChars = Array.zeroCreate 10
+    for i in 9 .. -1 .. 0 do
+        tsChars.[i] <- alphabet.[int (t % 32L)]
+        t <- t / 32L
+    for c in tsChars do sb.Append c |> ignore
+    let randBytes = Array.zeroCreate 10
+    rng.GetBytes randBytes
+    let mutable bits = 0UL
+    let mutable bitsAvail = 0
+    for b in randBytes do
+        bits <- (bits <<< 8) ||| uint64 b
+        bitsAvail <- bitsAvail + 8
+        while bitsAvail >= 5 do
+            bitsAvail <- bitsAvail - 5
+            let idx = int ((bits >>> bitsAvail) &&& 0x1FUL)
+            sb.Append alphabet.[idx] |> ignore
+    sb.ToString().[..25]
+
+let internal generateNanoid () : string =
+    let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+    let rng = System.Security.Cryptography.RandomNumberGenerator.Create()
+    let bytes = Array.zeroCreate 21
+    rng.GetBytes bytes
+    System.String(bytes |> Array.map (fun b -> alphabet.[int b &&& 63]))
+
 /// Try to find the git repository root starting from startDir.
 /// Runs `git rev-parse --show-toplevel` as a best-effort child process; returns None on any failure.
 /// Stderr is redirected and drained concurrently to suppress git's "not a git repository" message.
@@ -1061,43 +1092,11 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     AnsiConsole.MarkupLine(sprintf "[green]%s[/]" v)
                     ClipRing.push v
                 | "ulid" ->
-                    // ULID: 10-byte timestamp (ms) + 16 random bytes, Crockford base32
-                    let alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-                    let rng = System.Security.Cryptography.RandomNumberGenerator.Create()
-                    let ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                    let sb = System.Text.StringBuilder(26)
-                    // 10 chars timestamp (48 bits)
-                    let mutable t = ts
-                    let tsChars = Array.zeroCreate 10
-                    for i in 9 .. -1 .. 0 do
-                        tsChars.[i] <- alphabet.[int (t % 32L)]
-                        t <- t / 32L
-                    for c in tsChars do sb.Append c |> ignore
-                    // 16 chars random (80 bits)
-                    let randBytes = Array.zeroCreate 10
-                    rng.GetBytes randBytes
-                    let mutable bits = 0UL
-                    let mutable bitsAvail = 0
-                    for b in randBytes do
-                        bits <- (bits <<< 8) ||| uint64 b
-                        bitsAvail <- bitsAvail + 8
-                        while bitsAvail >= 5 do
-                            bitsAvail <- bitsAvail - 5
-                            let idx = int ((bits >>> bitsAvail) &&& 0x1FUL)
-                            sb.Append alphabet.[idx] |> ignore
-                    while sb.Length < 26 do
-                        let extra = Array.zeroCreate 1
-                        rng.GetBytes extra
-                        sb.Append alphabet.[int extra.[0] &&& 0x1F] |> ignore
-                    let v = sb.ToString().[..25]
+                    let v = generateUlid ()
                     AnsiConsole.MarkupLine(sprintf "[green]%s[/]" v)
                     ClipRing.push v
                 | "nanoid" ->
-                    let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
-                    let rng = System.Security.Cryptography.RandomNumberGenerator.Create()
-                    let bytes = Array.zeroCreate 21
-                    rng.GetBytes bytes
-                    let v = System.String(bytes |> Array.map (fun b -> alphabet.[int b &&& 63]))
+                    let v = generateNanoid ()
                     AnsiConsole.MarkupLine(sprintf "[green]%s[/]" v)
                     ClipRing.push v
                 | other ->
