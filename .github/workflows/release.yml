@@ -165,3 +165,20 @@ jobs:
           repository: korat-ai/homebrew-fugue
           event-type: new-release
           client-payload: '{"version": "${{ github.ref_name }}", "run_id": "${{ github.run_id }}"}'
+
+  verify-brew:
+    name: Verify Homebrew install
+    needs: update-homebrew
+    runs-on: macos-14
+    if: ${{ vars.HOMEBREW_TAP_ENABLED == 'true' }}
+    steps:
+      - name: Wait for tap update to propagate
+        run: sleep 30
+
+      - name: Install via tap
+        run: |
+          brew tap korat-ai/fugue
+          brew install fugue
+
+      - name: Smoke test
+        run: fugue --version
