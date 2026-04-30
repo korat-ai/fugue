@@ -106,7 +106,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     use cancelSrc = new CancelSource()
     let handler = ConsoleCancelEventHandler(fun _ args -> cancelSrc.OnCtrlC args)
     Console.CancelKeyPress.AddHandler handler
-    let! session = agent.CreateSessionAsync(CancellationToken.None)
+    let! initialSession = agent.CreateSessionAsync(CancellationToken.None)
+    let mutable session = initialSession
     StatusBar.start cwd cfg
 
     let strings = pick cfg.Ui.Locale
@@ -124,6 +125,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 AnsiConsole.WriteLine()
                 let helpItems = [ "/help",  strings.CmdHelpDesc
                                   "/clear", strings.CmdClearDesc
+                                  "/new",   strings.CmdNewDesc
                                   "/exit",  strings.CmdExitDesc ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
@@ -131,6 +133,23 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s = "/new" ->
+                AnsiConsole.Clear()
+                let! newSession = agent.CreateSessionAsync(CancellationToken.None)
+                session <- newSession
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "!" ->
+                let cmd = s.Substring(1).Trim()
+                if not (String.IsNullOrWhiteSpace cmd) then
+                    let psi = System.Diagnostics.ProcessStartInfo()
+                    psi.FileName <- "/bin/zsh"
+                    psi.Arguments <- "-lc " + cmd
+                    psi.UseShellExecute <- false
+                    use proc = new System.Diagnostics.Process()
+                    proc.StartInfo <- psi
+                    proc.Start() |> ignore
+                    proc.WaitForExit()
                 StatusBar.refresh ()
             | Some userInput ->
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)

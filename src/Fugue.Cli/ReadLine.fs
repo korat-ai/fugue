@@ -7,7 +7,7 @@ open System.Threading.Tasks
 open Fugue.Core.Localization
 
 // Hardcoded — small list, easier than passing through state.
-let slashCommands : string list = [ "/help"; "/clear"; "/exit" ]
+let slashCommands : string list = [ "/help"; "/clear"; "/new"; "/exit" ]
 
 /// Internal mutable line state. Public only because tests construct it directly.
 type S = {
@@ -29,6 +29,7 @@ type Action =
     | Submit of string
     | Quit
     | Wipe
+    | ClearScreen
 
 let private isCtrl (k: ConsoleKeyInfo) (key: ConsoleKey) : bool =
     k.Modifiers.HasFlag ConsoleModifiers.Control && k.Key = key
@@ -98,6 +99,9 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
         while i < s.Buffer.Count && s.Buffer.[i] <> '\n' do i <- i + 1
         s.Cursor <- i
         Continue
+    elif isCtrl k ConsoleKey.L then
+        s.ExitArmed <- false
+        ClearScreen
     elif not (Char.IsControl k.KeyChar) then
         s.ExitArmed <- false
         s.Buffer.Insert(s.Cursor, k.KeyChar)
@@ -189,6 +193,7 @@ let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task
     let slashHelp =
         [ "/help",  strings.CmdHelpDesc
           "/clear", strings.CmdClearDesc
+          "/new",   strings.CmdNewDesc
           "/exit",  strings.CmdExitDesc ]
     let st : S =
         { Buffer          = ResizeArray<char>()
@@ -218,6 +223,12 @@ let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task
             match applyKey k st with
             | Continue -> redraw st
             | Wipe     -> redraw st
+            | ClearScreen ->
+                eraseRendered ()
+                writeRaw "\x1b[2J\x1b[H"
+                st.LinesRendered <- 0
+                st.RowsBelowCursor <- 0
+                redraw st
             | Submit s ->
                 eraseRendered ()
                 result <- ValueSome (Some s)
