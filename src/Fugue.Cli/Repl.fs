@@ -347,6 +347,13 @@ let private streamAndRender
                                     if endIdx > 1 then lastFile <- Some rest.[1..endIdx-1]
                         StatusBar.refresh()
                     | Conversation.ToolCompleted(id, output, isErr) ->
+                        let output =
+                            if cfg.LowBandwidth && not isErr then
+                                let lines = output.Split('\n')
+                                if lines.Length > 500 then
+                                    String.concat "\n" lines.[..499] + sprintf "\n… [low-bandwidth: %d lines truncated]" (lines.Length - 500)
+                                else output
+                            else output
                         let name, args, elapsed =
                             match toolMeta.TryGetValue id with
                             | true, (n, a, tick) -> n, a, Stopwatch.GetElapsedTime(tick)

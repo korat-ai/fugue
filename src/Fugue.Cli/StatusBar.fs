@@ -23,6 +23,7 @@ let mutable private spinnerFrame  = 0
 let mutable private sessionWords  = 0   // cumulative word count for ctx% estimation
 let mutable private annotUpCount   = 0
 let mutable private annotDownCount = 0
+let mutable private lowBandwidthMode = false
 let mutable private spinnerTimer  : System.Threading.Timer option = None
 let mutable private onTick        : (unit -> unit) = fun () -> ()
 
@@ -87,6 +88,8 @@ let recordWords (n: int) = sessionWords <- sessionWords + n
 
 /// Reset session word counter (e.g. on /new).
 let resetWords () = sessionWords <- 0
+
+let setLowBandwidth (v: bool) = lowBandwidthMode <- v
 
 let recordAnnotation (rating: Fugue.Core.Annotation.Rating) =
     match rating with
@@ -182,10 +185,11 @@ let refresh () =
     let annotBadge =
         if annotUpCount = 0 && annotDownCount = 0 then ""
         else sprintf " · \x1b[32m↑%d\x1b[0m%s \x1b[31m↓%d\x1b[0m%s" annotUpCount dimEsc2 annotDownCount dimEsc2
+    let lowBwBadge = if lowBandwidthMode then " · \x1b[33mlow-bw\x1b[0m" + dimEsc2 else ""
     let line2 =
         match cfg with
-        | Some c -> dimEsc2 + spinnerPrefix + strings.StatusBarApp + " · " + (providerLabel c) + cadenceSuffix + elapsedSuffix + ctxBadge + annotBadge + sshBadge + "\x1b[0m"
-        | None   -> dimEsc2 + spinnerPrefix + strings.StatusBarApp + cadenceSuffix + elapsedSuffix + annotBadge + sshBadge + "\x1b[0m"
+        | Some c -> dimEsc2 + spinnerPrefix + strings.StatusBarApp + " · " + (providerLabel c) + cadenceSuffix + elapsedSuffix + ctxBadge + annotBadge + lowBwBadge + sshBadge + "\x1b[0m"
+        | None   -> dimEsc2 + spinnerPrefix + strings.StatusBarApp + cadenceSuffix + elapsedSuffix + annotBadge + lowBwBadge + sshBadge + "\x1b[0m"
     // save cursor, jump to bottom-1, clear two lines, write, restore
     writeRaw "\x1b[s"
     writeRaw ("\x1b[" + string (height - 1) + ";1H")

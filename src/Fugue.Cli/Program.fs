@@ -20,7 +20,7 @@ let private buildAgent (cfg: AppConfig) (lastSummary: string option) : AIAgent =
         match cfg.SystemPrompt with
         | Some s -> s
         | None ->
-            let ctx = Fugue.Core.SystemPrompt.loadFugueContext cwd
+            let ctx = if cfg.LowBandwidth then None else Fugue.Core.SystemPrompt.loadFugueContext cwd
             Fugue.Core.SystemPrompt.render cwd Fugue.Tools.ToolRegistry.names ctx
     let sysPrompt =
         match cfg.ProfileContent with
@@ -51,6 +51,7 @@ let private runWithCfg (cfg: AppConfig) : int =
     MarkdownRender.initTheme cfg.Ui.Theme
     Render.initTheme cfg.Ui.Theme
     StatusBar.initTheme cfg.Ui.Theme
+    StatusBar.setLowBandwidth cfg.LowBandwidth
     Render.initTypewriter cfg.Ui.TypewriterMode
     Render.initBubbles (cfg.Ui.BubblesMode || cfg.Ui.Theme = "bubbles")
     let cwd = Environment.CurrentDirectory
