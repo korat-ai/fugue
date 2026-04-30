@@ -27,6 +27,8 @@ type S = {
     PromptText:              string
     PromptVisLen:            int
     HintWhenArmed:           string
+    Placeholder:             string
+    ColorEnabled:            bool
     Width:                   int
     SlashHelp:               (string * string) list  // (name, dim description) pairs
 }
@@ -229,6 +231,11 @@ let private redraw (st: S) =
     writeRaw st.PromptText
     let bufStr = String(st.Buffer.ToArray())
     writeRaw bufStr
+    // 2b. if buffer is empty and color is on, write dim placeholder then move cursor back
+    if st.Buffer.Count = 0 && st.Placeholder <> "" && st.ColorEnabled then
+        writeRaw ("\x1b[2m" + st.Placeholder + "\x1b[0m")
+        // move cursor back to right after the prompt (col = PromptVisLen)
+        writeRaw ("\r\x1b[" + string st.PromptVisLen + "C")
     // 3. count rendered terminal lines (= 1 + number of '\n' in buffer)
     let newlines = bufStr |> Seq.filter (fun c -> c = '\n') |> Seq.length
     st.LinesRendered <- 1 + newlines
@@ -264,7 +271,7 @@ let private redraw (st: S) =
     else writeRaw "\r"
     st.RowsBelowCursor <- upBy   // save for next redraw's erase pass
 
-let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task<string option> = task {
+let readAsync (prompt: string) (strings: Strings) (colorEnabled: bool) (ct: CancellationToken) : Task<string option> = task {
     // Strip ANSI escapes for visible-length calc (rough — assumes only \x1b[...m sequences).
     let visLen =
         let mutable n = 0
@@ -292,6 +299,8 @@ let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task
           PromptText      = prompt
           PromptVisLen    = visLen
           HintWhenArmed   = strings.ExitHint
+          Placeholder     = strings.InputPlaceholder
+          ColorEnabled    = colorEnabled
           Width           = max 40 Console.WindowWidth
           SlashHelp       = slashHelp }
 

@@ -114,7 +114,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     let mutable turnNumber = 0
     try
         while not cancelSrc.QuitRequested do
-            let! lineOpt = ReadLine.readAsync (Render.prompt cwd) strings cancelSrc.Token
+            let! lineOpt = ReadLine.readAsync (Render.prompt cwd) strings (Render.isColorEnabled ()) cancelSrc.Token
             match lineOpt with
             | None ->
                 cancelSrc.RequestQuit()
