@@ -278,7 +278,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     use cancelSrc = new CancelSource()
     let handler = ConsoleCancelEventHandler(fun _ args -> cancelSrc.OnCtrlC args)
     Console.CancelKeyPress.AddHandler handler
-    let! session = agent.CreateSessionAsync(CancellationToken.None)
+    let! initialSession = agent.CreateSessionAsync(CancellationToken.None)
+    let mutable session = initialSession
     let providerName, modelName = providerInfo cfg.Provider
     DebugLog.sessionStart providerName modelName cwd
     StatusBar.start cwd cfg
@@ -299,6 +300,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 let helpItems = [ "/help",           strings.CmdHelpDesc
                                   "/ask <q>",        strings.CmdAskDesc
                                   "/clear",          strings.CmdClearDesc
+                                  "/new",             strings.CmdNewDesc
                                   "/diff",           strings.CmdDiffDesc
                                   "/init",           strings.CmdInitDesc
                                   "/git-log",        strings.CmdGitLogDesc
@@ -580,6 +582,23 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session initPrompt cfg cancelSrc
                     StatusBar.refresh ()
+            | Some s when s = "/new" ->
+                AnsiConsole.Clear()
+                let! newSession = agent.CreateSessionAsync(CancellationToken.None)
+                session <- newSession
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "!" ->
+                let cmd = s.Substring(1).Trim()
+                if not (String.IsNullOrWhiteSpace cmd) then
+                    let psi = System.Diagnostics.ProcessStartInfo()
+                    psi.FileName <- "/bin/zsh"
+                    psi.Arguments <- "-lc " + cmd
+                    psi.UseShellExecute <- false
+                    use proc = new System.Diagnostics.Process()
+                    proc.StartInfo <- psi
+                    proc.Start() |> ignore
+                    proc.WaitForExit()
+                StatusBar.refresh ()
             | Some userInput ->
                 if ReadLine.hasZeroWidth userInput then
                     AnsiConsole.Write(Markup("[dim yellow]" + Markup.Escape strings.ZeroWidthWarning + "[/]"))

@@ -154,6 +154,13 @@ let ``slash buffer prefix is recognized for hint rendering`` () =
     s.Buffer.Count |> should equal 1
     s.Buffer.[0] |> should equal '/'
 
+[<Fact>]
+let ``CtrlL_returns_ClearScreen`` () =
+    let s = mkState "hello" 3
+    let act = applyKey (special ConsoleKey.L ConsoleModifiers.Control) s
+    act |> should equal ClearScreen
+    s.ExitArmed |> should equal false
+
 // ── History tests ─────────────────────────────────────────────────────────────
 
 [<Fact>]

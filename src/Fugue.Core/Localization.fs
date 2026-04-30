@@ -27,6 +27,7 @@ type Strings =
       // Slash commands
       CmdHelpDesc:       string
       CmdClearDesc:      string
+      CmdNewDesc:        string
       CmdExitDesc:       string
       CmdModelDesc:      string
       CmdReviewPrDesc:   string
@@ -92,6 +93,7 @@ let en : Strings =
       DiscoveryPickProvider = "Pick a provider:"
       CmdHelpDesc           = "show this help"
       CmdClearDesc          = "clear the screen"
+      CmdNewDesc            = "start fresh conversation (new session)"
       CmdExitDesc           = "exit Fugue"
       CmdModelDesc          = "suggest best model for current task"
       CmdReviewPrDesc       = "fetch PR diff and generate AI review"
@@ -137,6 +139,7 @@ let ru : Strings =
       DiscoveryPickProvider = "Выберите провайдер:"
       CmdHelpDesc           = "показать эту справку"
       CmdClearDesc          = "очистить экран"
+      CmdNewDesc            = "начать новый разговор (новая сессия)"
       CmdExitDesc           = "выйти из Fugue"
       CmdModelDesc          = "рекомендовать лучшую модель для текущей задачи"
       CmdReviewPrDesc       = "получить diff PR и сгенерировать AI-ревью"
