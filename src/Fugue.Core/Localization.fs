@@ -94,7 +94,11 @@ type Strings =
       // /squash
       CmdSquashDesc: string
       SquashUsage:   string
-      SquashNoRepo:  string }
+      SquashNoRepo:  string
+
+      // /todo command
+      CmdTodoDesc: string
+      TodoNone:    string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -152,7 +156,9 @@ let en : Strings =
       CmdSummaryDesc        = "ask the agent to summarize the current session"
       CmdSquashDesc         = "generate squash commit message for last N commits"
       SquashUsage           = "usage: /squash <N>"
-      SquashNoRepo          = "not a git repository or git unavailable" }
+      SquashNoRepo          = "not a git repository or git unavailable"
+      CmdTodoDesc           = "scan workspace for TODO/FIXME/HACK comments"
+      TodoNone              = "no TODO/FIXME/HACK comments found in workspace" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -210,7 +216,9 @@ let ru : Strings =
       CmdSummaryDesc        = "попросить агента резюмировать текущую сессию"
       CmdSquashDesc         = "сгенерировать squash-сообщение для последних N коммитов"
       SquashUsage           = "использование: /squash <N>"
-      SquashNoRepo          = "не git-репозиторий или git недоступен" }
+      SquashNoRepo          = "не git-репозиторий или git недоступен"
+      CmdTodoDesc           = "найти TODO/FIXME/HACK комментарии в проекте"
+      TodoNone              = "TODO/FIXME/HACK комментарии не найдены" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =
