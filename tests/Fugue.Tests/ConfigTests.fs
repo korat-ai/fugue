@@ -213,7 +213,7 @@ let ``saveToFile round-trips emojiMode=never`` () =
     Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
     Environment.SetEnvironmentVariable("HOME", tmpHome)
     let cfg = { Provider = Anthropic("key", "model"); SystemPrompt = None; ProfileContent = None; TemplateContent = None; TemplateName = None
-                MaxIterations = 10; MaxTokens = None; BaseUrl = None; LowBandwidth = false; Offline = false
+                MaxIterations = 10; MaxTokens = None; BaseUrl = None; LowBandwidth = false; Offline = false; DryRun = false
                 Ui = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false; Theme = ""; EmojiMode = "never"; BubblesMode = false; TypewriterMode = false } }
     saveToFile cfg
     match load [||] with
@@ -229,7 +229,7 @@ let ``saveToFile omits emojiMode when auto (default)`` () =
     Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
     Environment.SetEnvironmentVariable("HOME", tmpHome)
     let cfg = { Provider = Anthropic("key", "model"); SystemPrompt = None; ProfileContent = None; TemplateContent = None; TemplateName = None
-                MaxIterations = 10; MaxTokens = None; BaseUrl = None; LowBandwidth = false; Offline = false
+                MaxIterations = 10; MaxTokens = None; BaseUrl = None; LowBandwidth = false; Offline = false; DryRun = false
                 Ui = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false; Theme = ""; EmojiMode = "auto"; BubblesMode = false; TypewriterMode = false } }
     saveToFile cfg
     let json = IO.File.ReadAllText(IO.Path.Combine(tmpHome, ".fugue", "config.json"))
@@ -298,7 +298,7 @@ let ``saveToFile round-trips bubblesMode=true`` () =
     Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
     Environment.SetEnvironmentVariable("HOME", tmpHome)
     let cfg = { Provider = Anthropic("key", "model"); SystemPrompt = None; ProfileContent = None; TemplateContent = None; TemplateName = None
-                MaxIterations = 10; MaxTokens = None; BaseUrl = None; LowBandwidth = false; Offline = false
+                MaxIterations = 10; MaxTokens = None; BaseUrl = None; LowBandwidth = false; Offline = false; DryRun = false
                 Ui = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false; Theme = ""; EmojiMode = "auto"; BubblesMode = true; TypewriterMode = false } }
     saveToFile cfg
     match load [||] with

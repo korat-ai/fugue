@@ -505,6 +505,12 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
     DebugLog.sessionStart providerName modelName cwd
     StatusBar.start cwd cfg
     Render.showBanner ()
+    if cfg.DryRun then
+        if Render.isColorEnabled () then
+            AnsiConsole.MarkupLine "[yellow bold]⚑ dry-run[/] [dim]— tools will log calls without executing[/]"
+        else
+            Console.Out.WriteLine "⚑ dry-run — tools will log calls without executing"
+        AnsiConsole.WriteLine()
     // Show last-session resuming hint if available
     let strings0 = pick cfg.Ui.Locale
     lastSummary |> Option.iter (fun s ->

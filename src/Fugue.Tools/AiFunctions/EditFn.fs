@@ -25,5 +25,6 @@ let create (cwd: string) : AIFunction =
             let oldStr     = Args.getStr     args "old_string"
             let newStr     = Args.getStr     args "new_string"
             let replaceAll = Args.tryGetBool args "replace_all"
-            return Fugue.Tools.EditTool.edit cwd path oldStr newStr replaceAll
+            return! Fugue.Tools.RetryPolicy.retryAsync ct (fun () ->
+                System.Threading.Tasks.Task.FromResult(Fugue.Tools.EditTool.edit cwd path oldStr newStr replaceAll))
         }) :> AIFunction

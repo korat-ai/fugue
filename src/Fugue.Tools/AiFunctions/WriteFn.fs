@@ -21,5 +21,6 @@ let create (cwd: string) : AIFunction =
             ct.ThrowIfCancellationRequested()
             let path    = Args.getStr args "path"
             let content = Args.getStr args "content"
-            return Fugue.Tools.WriteTool.write cwd path content
+            return! Fugue.Tools.RetryPolicy.retryAsync ct (fun () ->
+                System.Threading.Tasks.Task.FromResult(Fugue.Tools.WriteTool.write cwd path content))
         }) :> AIFunction

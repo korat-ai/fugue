@@ -23,5 +23,6 @@ let create (cwd: string) : AIFunction =
             let path   = Args.getStr     args "path"
             let offset = Args.tryGetInt  args "offset"
             let limit  = Args.tryGetInt  args "limit"
-            return Fugue.Tools.ReadTool.read cwd path offset limit
+            return! Fugue.Tools.RetryPolicy.retryAsync ct (fun () ->
+                System.Threading.Tasks.Task.FromResult(Fugue.Tools.ReadTool.read cwd path offset limit))
         }) :> AIFunction

@@ -58,6 +58,7 @@ type AppConfig =
       BaseUrl: string option
       LowBandwidth: bool   // --low-bandwidth: skip context injection, cap tool output
       Offline: bool        // --offline: refuse non-local providers
+      DryRun: bool         // --dry-run: log tool calls without executing
     }
 
 let loadProfile (name: string) : string option =
@@ -164,6 +165,36 @@ let private fromImplicitEnv () : ProviderConfig option =
     | _, Some k -> Some(OpenAI(k, "gpt-5"))
     | _ -> None
 
+/// Resolve which profile key to activate (FUGUE_PROFILE → ENVIRONMENT → hostname).
+let private resolveProfileKey () : string option =
+    let tryEnv name =
+        match Environment.GetEnvironmentVariable name with
+        | null | "" -> None
+        | v -> Some v
+    match tryEnv "FUGUE_PROFILE" with
+    | Some k -> Some k
+    | None ->
+        match tryEnv "ENVIRONMENT" with
+        | Some k -> Some k
+        | None ->
+            try Some (System.Net.Dns.GetHostName().ToLowerInvariant())
+            with _ -> None
+
+/// Extract a string property from a JsonElement, returning None if absent/null.
+let private jsonStr (el: JsonElement) (prop: string) : string option =
+    match el.TryGetProperty prop with
+    | true, v when v.ValueKind = JsonValueKind.String -> v.GetString() |> Option.ofObj
+    | _ -> None
+
+/// Extract an int property from a JsonElement, returning None if absent/zero.
+let private jsonInt (el: JsonElement) (prop: string) : int option =
+    match el.TryGetProperty prop with
+    | true, v when v.ValueKind = JsonValueKind.Number ->
+        match v.TryGetInt32() with
+        | true, n when n > 0 -> Some n
+        | _ -> None
+    | _ -> None
+
 [<RequiresUnreferencedCode("Uses STJ reflection; AppConfigDto is preserved via TrimmerRootDescriptor")>]
 [<RequiresDynamicCode("Uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 let private fromFile (path: string) : Result<ProviderConfig * int * int option * UiConfig * string option, string> =
@@ -174,15 +205,41 @@ let private fromFile (path: string) : Result<ProviderConfig * int * int option *
         match dtoOrNull |> Option.ofObj with
         | None -> Error "config file is empty or not a JSON object"
         | Some dto ->
+            // Load profile overrides (AOT-safe via JsonDocument).
+            let profileOverride =
+                match resolveProfileKey () with
+                | None -> None
+                | Some key ->
+                    try
+                        use doc = JsonDocument.Parse json
+                        match doc.RootElement.TryGetProperty "profiles" with
+                        | true, profilesEl ->
+                            match profilesEl.TryGetProperty key with
+                            | true, profileEl when profileEl.ValueKind = JsonValueKind.Object ->
+                                Some profileEl
+                            | _ -> None
+                        | _ -> None
+                    with _ -> None
+            // Helper: read string from profile override first, then fall back to base dto field.
+            let strOvr (baseVal: string) (prop: string) : string =
+                profileOverride
+                |> Option.bind (fun el -> jsonStr el prop)
+                |> Option.defaultValue baseVal
+            let intOvr (baseVal: int) (prop: string) : int =
+                profileOverride
+                |> Option.bind (fun el -> jsonInt el prop)
+                |> Option.defaultValue baseVal
             let provider =
-                match dto.provider with
-                | "anthropic" -> Ok(Anthropic(dto.apiKey, dto.model))
-                | "openai" -> Ok(OpenAI(dto.apiKey, dto.model))
+                let prov  = strOvr dto.provider "provider"
+                let mdl   = strOvr dto.model    "model"
+                let key   = strOvr dto.apiKey   "apiKey"
+                let ollEp = strOvr dto.ollamaEndpoint "ollamaEndpoint"
+                match prov with
+                | "anthropic" -> Ok(Anthropic(key, mdl))
+                | "openai" -> Ok(OpenAI(key, mdl))
                 | "ollama" ->
-                    let ep =
-                        if String.IsNullOrEmpty dto.ollamaEndpoint then "http://localhost:11434"
-                        else dto.ollamaEndpoint
-                    Ok(Ollama(Uri ep, dto.model))
+                    let ep = if String.IsNullOrEmpty ollEp then "http://localhost:11434" else ollEp
+                    Ok(Ollama(Uri ep, mdl))
                 | other -> Error $"unknown provider: {other}"
             provider |> Result.map (fun p ->
                 // dto.ui can be null when "ui" block is missing — STJ doesn't init nested CLIMutable records.
@@ -215,8 +272,9 @@ let private fromFile (path: string) : Result<ProviderConfig * int * int option *
                 let typewriterMode = uiDto |> Option.map (fun u -> u.typewriterMode) |> Option.defaultValue false
                 let ui = { UserAlignment = alignment; Locale = locale; PromptTemplate = promptTemplate; Bell = bell; Theme = theme; EmojiMode = emojiMode; BubblesMode = bubblesMode; TypewriterMode = typewriterMode }
                 let baseUrl = dto.baseUrl |> Option.ofObj |> Option.filter (fun s -> not (String.IsNullOrEmpty s))
+                let maxIterations = intOvr dto.maxIterations "maxIterations"
                 let maxTokens = if dto.maxTokens > 0 then Some dto.maxTokens else None
-                p, dto.maxIterations, maxTokens, ui, baseUrl)
+                p, maxIterations, maxTokens, ui, baseUrl)
     with ex -> Error ex.Message
 
 let private helpText () =
@@ -239,19 +297,19 @@ Set environment variables:
 let load (_argv: string[]) : Result<AppConfig, ConfigError> =
     match fromExplicitEnv () with
     | Some provider ->
-        Ok { Provider = provider; SystemPrompt = None; ProfileContent = None; TemplateContent = None; TemplateName = None; MaxIterations = 30; MaxTokens = None; Ui = defaultUi (); BaseUrl = None; LowBandwidth = false; Offline = false }
+        Ok { Provider = provider; SystemPrompt = None; ProfileContent = None; TemplateContent = None; TemplateName = None; MaxIterations = 30; MaxTokens = None; Ui = defaultUi (); BaseUrl = None; LowBandwidth = false; Offline = false; DryRun = false }
     | None ->
         let path = configPath ()
         if File.Exists path then
             match fromFile path with
             | Ok (p, mi, maxTokens, ui, baseUrl) ->
                 let mi = if mi <= 0 then 30 else mi
-                Ok { Provider = p; SystemPrompt = None; ProfileContent = None; TemplateContent = None; TemplateName = None; MaxIterations = mi; MaxTokens = maxTokens; Ui = ui; BaseUrl = baseUrl; LowBandwidth = false; Offline = false }
+                Ok { Provider = p; SystemPrompt = None; ProfileContent = None; TemplateContent = None; TemplateName = None; MaxIterations = mi; MaxTokens = maxTokens; Ui = ui; BaseUrl = baseUrl; LowBandwidth = false; Offline = false; DryRun = false }
             | Error e -> Error(InvalidConfig e)
         else
             match fromImplicitEnv () with
             | Some provider ->
-                Ok { Provider = provider; SystemPrompt = None; ProfileContent = None; TemplateContent = None; TemplateName = None; MaxIterations = 30; MaxTokens = None; Ui = defaultUi (); BaseUrl = None; LowBandwidth = false; Offline = false }
+                Ok { Provider = provider; SystemPrompt = None; ProfileContent = None; TemplateContent = None; TemplateName = None; MaxIterations = 30; MaxTokens = None; Ui = defaultUi (); BaseUrl = None; LowBandwidth = false; Offline = false; DryRun = false }
             | None ->
                 Error(NoConfigFound (helpText ()))
 

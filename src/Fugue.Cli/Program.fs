@@ -15,7 +15,8 @@ let private noColor () =
 
 let private buildAgent (cfg: AppConfig) (lastSummary: string option) : AIAgent =
     let cwd = Environment.CurrentDirectory
-    let tools = Fugue.Tools.ToolRegistry.buildAll cwd
+    let rawTools = Fugue.Tools.ToolRegistry.buildAll cwd
+    let tools = if cfg.DryRun then DryRun.wrapTools rawTools else rawTools
     let basePrompt =
         match cfg.SystemPrompt with
         | Some s -> s
@@ -119,6 +120,7 @@ let main argv =
     let templateContent = templateName |> Option.bind Fugue.Core.Config.loadTemplate
     let lowBandwidth = argv |> Array.contains "--low-bandwidth"
     let offline      = argv |> Array.contains "--offline"
+    let dryRun       = argv |> Array.contains "--dry-run"
     let printPrompt =
         argv
         |> Array.tryFindIndex ((=) "--print")
@@ -375,7 +377,7 @@ SEE ALSO
                     let m = if List.isEmpty models then "llama3.1" else List.head models
                     Ollama(ep, m)
                 | _ -> failwith "unsupported candidate"
-            let cfg = { Provider = provider; SystemPrompt = None; ProfileContent = profileContent; TemplateContent = templateContent; TemplateName = templateName; MaxIterations = 30; MaxTokens = None; Ui = Fugue.Core.Config.defaultUi (); BaseUrl = None; LowBandwidth = lowBandwidth; Offline = offline }
+            let cfg = { Provider = provider; SystemPrompt = None; ProfileContent = profileContent; TemplateContent = templateContent; TemplateName = templateName; MaxIterations = 30; MaxTokens = None; Ui = Fugue.Core.Config.defaultUi (); BaseUrl = None; LowBandwidth = lowBandwidth; Offline = offline; DryRun = dryRun }
             Fugue.Core.Config.saveToFile cfg
             match printPrompt with
             | Some p -> runWithPrint cfg p
@@ -387,7 +389,7 @@ SEE ALSO
         Console.Error.WriteLine("Invalid config: " + reason)
         1
     | Ok cfg ->
-        let fullCfg = { cfg with ProfileContent = profileContent; TemplateContent = templateContent; TemplateName = templateName; LowBandwidth = lowBandwidth; Offline = offline }
+        let fullCfg = { cfg with ProfileContent = profileContent; TemplateContent = templateContent; TemplateName = templateName; LowBandwidth = lowBandwidth; Offline = offline; DryRun = dryRun }
         match printPrompt with
         | Some p -> runWithPrint fullCfg p
         | None   -> runWithCfg fullCfg
