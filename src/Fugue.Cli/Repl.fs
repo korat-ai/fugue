@@ -58,6 +58,7 @@ let private streamAndRender
     let toolMeta = Dictionary<string, string * string>()
     let mutable assistantStreaming = false   // are we mid-line in the plain-text stream
 
+    StatusBar.startStreaming()
     try
         let stream = Conversation.run agent session input streamCts.Token
         let enumerator = stream.GetAsyncEnumerator(streamCts.Token)
@@ -75,6 +76,7 @@ let private streamAndRender
                     if assistantStreaming then
                         Console.Out.WriteLine ()
                         assistantStreaming <- false
+                    StatusBar.refresh()
                 | Conversation.ToolCompleted(id, output, isErr) ->
                     let name, args =
                         match toolMeta.TryGetValue id with
@@ -85,6 +87,7 @@ let private streamAndRender
                         else Render.Completed(name, args, output)
                     AnsiConsole.Write(Render.toolBullet strings state)
                     AnsiConsole.WriteLine ()
+                    StatusBar.refresh()
                 | Conversation.Finished -> ()
                 | Conversation.Failed ex -> raise ex
             else hasNext <- false
@@ -98,6 +101,8 @@ let private streamAndRender
         if assistantStreaming then Console.Out.WriteLine ()
         AnsiConsole.Write(Render.errorLine strings ex.Message)
         AnsiConsole.WriteLine()
+    StatusBar.stopStreaming()
+    StatusBar.refresh()
 }
 
 [<RequiresUnreferencedCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
