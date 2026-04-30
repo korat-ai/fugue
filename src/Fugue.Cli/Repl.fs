@@ -122,11 +122,42 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             | Some s when s = "/help" ->
                 AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.HelpHeader + "[/]"))
                 AnsiConsole.WriteLine()
-                let helpItems = [ "/help",  strings.CmdHelpDesc
-                                  "/clear", strings.CmdClearDesc
-                                  "/exit",  strings.CmdExitDesc ]
+                let helpItems = [ "/help",     strings.CmdHelpDesc
+                                  "/clear",    strings.CmdClearDesc
+                                  "/git-log",  strings.CmdGitLogDesc
+                                  "/exit",     strings.CmdExitDesc ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
+                    AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s = "/git-log" ->
+                let psi = System.Diagnostics.ProcessStartInfo()
+                psi.FileName <- "git"
+                psi.ArgumentList.Add "log"
+                psi.ArgumentList.Add "--oneline"
+                psi.ArgumentList.Add "--decorate"
+                psi.ArgumentList.Add "-20"
+                psi.UseShellExecute <- false
+                psi.RedirectStandardOutput <- true
+                psi.WorkingDirectory <- cwd
+                try
+                    use proc = new System.Diagnostics.Process()
+                    proc.StartInfo <- psi
+                    match proc.Start() with
+                    | false ->
+                        AnsiConsole.Write(Render.errorLine strings strings.GitLogNoRepo)
+                        AnsiConsole.WriteLine()
+                    | true ->
+                        let out = proc.StandardOutput.ReadToEnd()
+                        proc.WaitForExit()
+                        if proc.ExitCode <> 0 || String.IsNullOrWhiteSpace out then
+                            AnsiConsole.Write(Render.errorLine strings strings.GitLogNoRepo)
+                            AnsiConsole.WriteLine()
+                        else
+                            let prompt = sprintf "Here are the last 20 commits from git log:\n\n%s\n\nPlease explain this commit history in plain language. What was the team working on? What were the major changes? Are there any patterns or concerns?" out
+                            do! streamAndRender agent session prompt cfg cancelSrc
+                with ex ->
+                    AnsiConsole.Write(Render.errorLine strings ex.Message)
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
