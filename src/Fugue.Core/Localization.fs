@@ -28,6 +28,8 @@ type Strings =
       CmdHelpDesc:  string
       CmdClearDesc: string
       CmdExitDesc:  string
+      CmdDiffDesc:  string
+      NoDiff:       string
       HelpHeader:   string }
 
 let en : Strings =
@@ -48,6 +50,8 @@ let en : Strings =
       CmdHelpDesc           = "show this help"
       CmdClearDesc          = "clear the screen"
       CmdExitDesc           = "exit Fugue"
+      CmdDiffDesc           = "show unstaged git diff (use /diff --staged for staged changes)"
+      NoDiff                = "no changes"
       HelpHeader            = "Available slash commands:" }
 
 let ru : Strings =
@@ -68,6 +72,8 @@ let ru : Strings =
       CmdHelpDesc           = "показать эту справку"
       CmdClearDesc          = "очистить экран"
       CmdExitDesc           = "выйти из Fugue"
+      CmdDiffDesc           = "показать unstaged git diff (используйте /diff --staged для staged изменений)"
+      NoDiff                = "изменений нет"
       HelpHeader            = "Доступные команды:" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.

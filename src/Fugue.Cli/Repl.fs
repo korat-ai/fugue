@@ -122,15 +122,42 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             | Some s when s = "/help" ->
                 AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.HelpHeader + "[/]"))
                 AnsiConsole.WriteLine()
-                let helpItems = [ "/help",  strings.CmdHelpDesc
-                                  "/clear", strings.CmdClearDesc
-                                  "/exit",  strings.CmdExitDesc ]
+                let helpItems = [ "/help",         strings.CmdHelpDesc
+                                  "/clear",        strings.CmdClearDesc
+                                  "/exit",         strings.CmdExitDesc
+                                  "/diff",         strings.CmdDiffDesc
+                                  "/diff --staged", strings.CmdDiffDesc ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s = "/diff" || s = "/diff --staged" ->
+                let args = if s = "/diff --staged" then "--staged" else ""
+                let psi = System.Diagnostics.ProcessStartInfo()
+                psi.FileName <- "git"
+                psi.ArgumentList.Add "diff"
+                if args <> "" then psi.ArgumentList.Add args
+                psi.UseShellExecute <- false
+                psi.RedirectStandardOutput <- true
+                psi.WorkingDirectory <- cwd
+                use proc = new System.Diagnostics.Process()
+                proc.StartInfo <- psi
+                try
+                    proc.Start() |> ignore
+                    let output = proc.StandardOutput.ReadToEnd()
+                    proc.WaitForExit()
+                    if System.String.IsNullOrWhiteSpace output then
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.NoDiff + "[/]"))
+                        AnsiConsole.WriteLine()
+                    else
+                        AnsiConsole.Write(DiffRender.toRenderable output)
+                        AnsiConsole.WriteLine()
+                with ex ->
+                    AnsiConsole.Write(Render.errorLine strings ex.Message)
+                    AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some userInput ->
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
