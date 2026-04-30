@@ -341,6 +341,31 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     Console.Out.Write "\x1b[?2004h"   // enable bracketed paste
     Console.Out.Flush()
 
+    // Load .fugue/ignore patterns (lines starting with # are comments)
+    let ignorePatterns =
+        let p = System.IO.Path.Combine(cwd, ".fugue", "ignore")
+        if System.IO.File.Exists p then
+            System.IO.File.ReadAllLines p
+            |> Array.filter (fun l -> not (l.TrimStart().StartsWith '#') && l.Trim() <> "")
+            |> Array.toList
+        else []
+    let isIgnored (relativePath: string) =
+        let rel = relativePath.Replace('\\', '/')
+        ignorePatterns |> List.exists (fun pat ->
+            let pat = pat.TrimStart('!')
+            // Simple matching: pattern ending in / matches any path containing that segment
+            let pat = pat.Replace('\\', '/')
+            if pat.EndsWith '/' then rel.Contains(pat.TrimEnd('/') + "/")
+            elif pat.Contains '*' then
+                // Minimal glob: replace ** with .* and * with [^/]* for basic matching
+                // Since we can't use Regex (AOT), fall back to simple prefix/suffix
+                let norm = pat.Replace("**/", "").Replace("**", "")
+                if norm = "" then true
+                elif norm.StartsWith '*' then rel.EndsWith(norm.TrimStart '*')
+                elif norm.EndsWith '*' then rel.StartsWith(norm.TrimEnd '*')
+                else rel.Contains norm
+            else rel = pat || rel.StartsWith(pat + "/"))
+
     let strings = pick cfg.Ui.Locale
     let mutable verbosityPrefix : string option = None
     let mutable turnNumber = 0
@@ -876,7 +901,11 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     let allFiles =
                         try
                             System.IO.Directory.EnumerateFiles(cwd, "*", SearchOption.AllDirectories)
-                            |> Seq.filter (fun f -> not (f.Contains(string System.IO.Path.DirectorySeparatorChar + ".git")))
+                            |> Seq.filter (fun f ->
+                                let rel = try System.IO.Path.GetRelativePath(cwd, f) with _ -> f
+                                not (rel.Contains(string System.IO.Path.DirectorySeparatorChar + ".git"))
+                                && not (rel.StartsWith ".git")
+                                && not (isIgnored rel))
                             |> Seq.toList
                         with _ -> []
                     let results =
