@@ -29,6 +29,9 @@ let mutable private snippetStore : Map<string, string * string * string> = Map.e
 // Bookmark store: ordered list of (name, filePath, startLine, endLine)
 let mutable private bookmarks : (string * string * int * int) list = []
 
+// Activity store: file path → edit count
+let mutable private activityStore : Map<string, int> = Map.empty
+
 /// Try to find the git repository root starting from startDir.
 /// Runs `git rev-parse --show-toplevel` as a best-effort child process; returns None on any failure.
 /// Stderr is redirected and drained concurrently to suppress git's "not a git repository" message.
@@ -321,6 +324,18 @@ let private streamAndRender
                             match toolMeta.TryGetValue id with
                             | true, (n, a, tick) -> n, a, Stopwatch.GetElapsedTime(tick)
                             | false, _ -> "?", "?", TimeSpan.Zero
+                        // Track file edits for /activity heatmap
+                        if not isErr && (name = "Write" || name = "Edit") then
+                            let key = "\"path\":"
+                            let idx = args.IndexOf key
+                            if idx >= 0 then
+                                let rest = args.Substring(idx + key.Length).TrimStart()
+                                if rest.StartsWith '"' then
+                                    let endIdx = rest.IndexOf('"', 1)
+                                    if endIdx > 1 then
+                                        let p = rest.[1..endIdx-1]
+                                        let count = activityStore |> Map.tryFind p |> Option.defaultValue 0
+                                        activityStore <- activityStore |> Map.add p (count + 1)
                         let state =
                             if isErr then Render.Failed(name, args, output, elapsed)
                             else Render.Completed(name, args, output, elapsed)
@@ -434,6 +449,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/clear",          strings.CmdClearDesc
                                   "/summary",         strings.CmdSummaryDesc
                                   "/document [path]", strings.CmdDocumentDesc
+                                  "/activity",        strings.CmdActivityDesc
                                   "/squash <N>",      strings.CmdSquashDesc
                                   "/short",           strings.CmdShortDesc
                                   "/long",            strings.CmdLongDesc
@@ -992,6 +1008,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 zenMode <- false
                 snippetStore <- Map.empty
                 bookmarks <- []
+                activityStore <- Map.empty
                 Fugue.Core.Checkpoint.clear ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "!" ->
@@ -1045,6 +1062,28 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/document %s" docPath) 0)
                 AnsiConsole.WriteLine()
                 do! streamAndRender agent session docPrompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s = "/activity" ->
+                if activityStore.IsEmpty then
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ActivityNone + "[/]"))
+                    AnsiConsole.WriteLine()
+                else
+                    let maxCount = activityStore |> Map.toSeq |> Seq.map snd |> Seq.max
+                    let sorted = activityStore |> Map.toSeq |> Seq.sortByDescending snd |> Seq.truncate 20
+                    for (path, count) in sorted do
+                        let heat =
+                            if count >= 10 then "████"
+                            elif count >= 6  then "███░"
+                            elif count >= 3  then "██░░"
+                            else             "█░░░"
+                        let barLen = max 1 (count * 20 / maxCount)
+                        let bar = String.replicate barLen "█"
+                        let label = System.IO.Path.GetFileName(path) |> Option.ofObj |> Option.defaultValue path
+                        if Render.isColorEnabled () then
+                            AnsiConsole.MarkupLine(sprintf "  [cyan]%s[/] [dim]%s[/] [grey]%dx[/]" heat (Markup.Escape label) count)
+                        else
+                            printfn "  %s %s %dx" bar label count
+                    AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/note " ->
                 let text = s.Substring("/note ".Length).Trim()
