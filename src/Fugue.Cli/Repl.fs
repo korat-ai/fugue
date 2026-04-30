@@ -110,6 +110,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     StatusBar.start cwd cfg
 
     let strings = pick cfg.Ui.Locale
+    let mutable turnNumber = 0
     try
         while not cancelSrc.QuitRequested do
             let! lineOpt = ReadLine.readAsync (Render.prompt cwd) strings cancelSrc.Token
@@ -132,8 +133,12 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
                 StatusBar.refresh ()
+            | Some s when s = "/new" ->
+                turnNumber <- 0
+                StatusBar.refresh ()
             | Some userInput ->
-                AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
+                turnNumber <- turnNumber + 1
+                AnsiConsole.Write(Render.userMessage cfg.Ui userInput turnNumber)
                 AnsiConsole.WriteLine()
                 do! streamAndRender agent session userInput cfg cancelSrc
                 StatusBar.refresh ()

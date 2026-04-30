@@ -21,17 +21,19 @@ let isColorEnabled () = colorEnabled
 /// because Console.WriteLine inside ReadLine doesn't go through Spectre.
 let prompt (_cwd: string) : string = "› "
 
-let userMessage (ui: UiConfig) (text: string) : IRenderable =
+let userMessage (ui: UiConfig) (text: string) (turn: int) : IRenderable =
     if colorEnabled then
         let escaped = Markup.Escape text
+        let prefix = sprintf "[dim][[%d]][/] " turn
         match ui.UserAlignment with
         | Left ->
-            Markup(sprintf "[grey]›[/] %s" escaped) :> _
+            Markup(sprintf "[grey]›[/] %s%s" prefix escaped) :> _
         | Right ->
-            let bubble = Padder(Markup(escaped)).PadLeft(2).PadRight(2) :> IRenderable
+            let bubble = Padder(Markup(sprintf "%s%s" prefix escaped)).PadLeft(2).PadRight(2) :> IRenderable
             Align(bubble, HorizontalAlignment.Right) :> _
     else
-        Text(sprintf "> %s" text) :> _
+        let prefix = sprintf "[%d] " turn
+        Text(sprintf "> %s%s" prefix text) :> _
 
 /// Plain assistant text during streaming (no markdown parse — buffer is partial).
 let assistantLive (text: string) : IRenderable =
