@@ -93,6 +93,15 @@ type Strings =
       ZenOn:       string
       ZenOff:      string
 
+      // /snippet command
+      CmdSnippetDesc:    string
+      SnippetSaved:      string
+      SnippetNotFound:   string
+      SnippetInjected:   string
+      SnippetNone:       string
+      SnippetRemoved:    string
+      SnippetUsage:      string
+
       // /summary
       CmdSummaryDesc: string
 
@@ -190,6 +199,13 @@ let en : Strings =
       CmdZenDesc            = "toggle distraction-free mode (hides status bar and tool output)"
       ZenOn                 = "Zen mode on. Status bar and tool output hidden."
       ZenOff                = "Zen mode off."
+      CmdSnippetDesc        = "snippet save/list/inject/remove — named code pattern store"
+      SnippetSaved          = "snippet saved: {0}"
+      SnippetNotFound       = "snippet not found: {0}"
+      SnippetInjected       = "injecting snippet: {0}"
+      SnippetNone           = "no snippets saved"
+      SnippetRemoved        = "snippet removed: {0}"
+      SnippetUsage          = "usage: /snippet save <name> <file>:<start>-<end> | /snippet list | /snippet inject <name> | /snippet remove <name>"
       CmdSummaryDesc        = "ask the agent to summarize the current session"
       CmdSquashDesc         = "generate squash commit message for last N commits"
       SquashUsage           = "usage: /squash <N>"
@@ -268,6 +284,13 @@ let ru : Strings =
       CmdZenDesc            = "переключить режим дзен (скрывает статус-бар и вывод инструментов)"
       ZenOn                 = "Режим дзен включён. Статус-бар и вывод инструментов скрыты."
       ZenOff                = "Режим дзен выключен."
+      CmdSnippetDesc        = "сниппет save/list/inject/remove — хранилище именованных паттернов"
+      SnippetSaved          = "сниппет сохранён: {0}"
+      SnippetNotFound       = "сниппет не найден: {0}"
+      SnippetInjected       = "вставляю сниппет: {0}"
+      SnippetNone           = "сниппетов нет"
+      SnippetRemoved        = "сниппет удалён: {0}"
+      SnippetUsage          = "использование: /snippet save <имя> <файл>:<от>-<до> | /snippet list | /snippet inject <имя> | /snippet remove <имя>"
       CmdSummaryDesc        = "попросить агента резюмировать текущую сессию"
       CmdSquashDesc         = "сгенерировать squash-сообщение для последних N коммитов"
       SquashUsage           = "использование: /squash <N>"

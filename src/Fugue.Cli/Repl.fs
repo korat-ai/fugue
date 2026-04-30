@@ -23,6 +23,9 @@ let mutable private lastFile : string option = None
 // Zen mode: suppress status bar and tool output bullets.
 let mutable private zenMode = false
 
+// Snippet store: name → (language, code, source)
+let mutable private snippetStore : Map<string, string * string * string> = Map.empty
+
 /// Try to find the git repository root starting from startDir.
 /// Runs `git rev-parse --show-toplevel` as a best-effort child process; returns None on any failure.
 /// Stderr is redirected and drained concurrently to suppress git's "not a git repository" message.
@@ -431,6 +434,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/short",           strings.CmdShortDesc
                                   "/long",            strings.CmdLongDesc
                                   "/zen",             strings.CmdZenDesc
+                                  "/snippet …",       strings.CmdSnippetDesc
                                   "/clear-history",   strings.CmdClearHistoryDesc
                                   "/tools",           strings.CmdToolsDesc
                                   "/todo",            strings.CmdTodoDesc
@@ -540,6 +544,81 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                     AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ZenOff + "[/]"))
                 AnsiConsole.WriteLine()
                 if not zenMode then StatusBar.refresh ()
+            | Some s when s.StartsWith "/snippet" ->
+                let parts = s.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                let sub = if parts.Length > 1 then parts.[1] else ""
+                match sub with
+                | "list" ->
+                    if snippetStore.IsEmpty then
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.SnippetNone + "[/]"))
+                    else
+                        for KeyValue(name, (lang, code, src)) in snippetStore do
+                            let preview = code.Split('\n').[0].[..60].Trim()
+                            AnsiConsole.Write(Markup(sprintf "  [cyan]%s[/] [dim](%s · %s)[/]  %s" (Markup.Escape name) (Markup.Escape lang) (Markup.Escape src) (Markup.Escape preview)))
+                            AnsiConsole.WriteLine()
+                    AnsiConsole.WriteLine()
+                    StatusBar.refresh ()
+                | "save" when parts.Length >= 4 ->
+                    let name = parts.[2]
+                    let fileRef = parts.[3]
+                    // parse file:start-end
+                    let colonIdx = fileRef.LastIndexOf ':'
+                    if colonIdx < 1 then
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.SnippetUsage + "[/]"))
+                        AnsiConsole.WriteLine()
+                    else
+                        let filePart = fileRef.[..colonIdx-1]
+                        let rangePart = fileRef.[colonIdx+1..]
+                        let dashIdx = rangePart.IndexOf '-'
+                        match (if dashIdx > 0 then System.Int32.TryParse(rangePart.[..dashIdx-1]), System.Int32.TryParse(rangePart.[dashIdx+1..]) else (false, 0), (false, 0)) with
+                        | (true, startL), (true, endL) ->
+                            let fullPath = Fugue.Tools.PathSafety.resolve cwd filePart
+                            if not (System.IO.File.Exists fullPath) then
+                                AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.AtFileNotFound, filePart)) + "[/]"))
+                            else
+                                let lines = System.IO.File.ReadAllLines fullPath
+                                let s1 = max 1 startL
+                                let e1 = min lines.Length endL
+                                let code = lines.[s1-1..e1-1] |> String.concat "\n"
+                                let ext = (System.IO.Path.GetExtension filePart |> Option.ofObj |> Option.defaultValue "").TrimStart('.')
+                                let lang = if ext = "" then "text" else ext
+                                snippetStore <- snippetStore |> Map.add name (lang, code, fileRef)
+                                AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.SnippetSaved, name)) + "[/]"))
+                            AnsiConsole.WriteLine()
+                        | _ ->
+                            AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.SnippetUsage + "[/]"))
+                            AnsiConsole.WriteLine()
+                    StatusBar.refresh ()
+                | "inject" when parts.Length >= 3 ->
+                    let query = parts.[2..] |> String.concat " "
+                    let found =
+                        snippetStore |> Map.tryFind query
+                        |> Option.orElseWith (fun () ->
+                            snippetStore |> Map.tryFindKey (fun k _ -> k.Contains(query, StringComparison.OrdinalIgnoreCase))
+                            |> Option.map (fun k -> snippetStore.[k]))
+                    match found with
+                    | None ->
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.SnippetNotFound, query)) + "[/]"))
+                        AnsiConsole.WriteLine()
+                    | Some(lang, code, _) ->
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.SnippetInjected, query)) + "[/]"))
+                        AnsiConsole.WriteLine()
+                        let block = sprintf "```%s\n%s\n```" lang code
+                        do! streamAndRender agent session block cfg cancelSrc zenMode
+                    StatusBar.refresh ()
+                | "remove" when parts.Length >= 3 ->
+                    let name = parts.[2..] |> String.concat " "
+                    if snippetStore.ContainsKey name then
+                        snippetStore <- snippetStore |> Map.remove name
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.SnippetRemoved, name)) + "[/]"))
+                    else
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.SnippetNotFound, name)) + "[/]"))
+                    AnsiConsole.WriteLine()
+                    StatusBar.refresh ()
+                | _ ->
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.SnippetUsage + "[/]"))
+                    AnsiConsole.WriteLine()
+                    StatusBar.refresh ()
             | Some s when s = "/clear-history" ->
                 match box session with
                 | :? IAsyncDisposable as d ->
@@ -835,6 +914,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 sessionNotes <- []
                 lastFile <- None
                 zenMode <- false
+                snippetStore <- Map.empty
                 Fugue.Core.Checkpoint.clear ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "!" ->
