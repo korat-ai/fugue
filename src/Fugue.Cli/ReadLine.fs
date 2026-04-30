@@ -25,6 +25,8 @@ module private InputSanitize =
 
 /// True if the string contains any zero-width character (U+200B/C/D, U+FEFF, U+2060, U+00AD).
 let hasZeroWidth (s: string) = InputSanitize.hasZeroWidth s
+/// Normalize pasted input (CRLF→LF, standalone CR→LF, U+2028/2029→LF). For testing.
+let normalizeInput (s: string) = InputSanitize.normalize s
 
 // Hardcoded — small list, easier than passing through state.
 let slashCommands : string list = [ "/help"; "/clear"; "/exit" ]
