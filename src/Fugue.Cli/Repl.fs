@@ -590,14 +590,24 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
             | Some s when s.StartsWith "!" ->
                 let cmd = s.Substring(1).Trim()
                 if not (String.IsNullOrWhiteSpace cmd) then
+                    let shell =
+                        System.Environment.GetEnvironmentVariable "SHELL"
+                        |> Option.ofObj
+                        |> Option.filter (fun s -> s <> "")
+                        |> Option.defaultValue "/bin/sh"
                     let psi = System.Diagnostics.ProcessStartInfo()
-                    psi.FileName <- "/bin/zsh"
-                    psi.Arguments <- "-lc " + cmd
+                    psi.FileName <- shell
+                    psi.ArgumentList.Add "-c"
+                    psi.ArgumentList.Add cmd
                     psi.UseShellExecute <- false
                     use proc = new System.Diagnostics.Process()
                     proc.StartInfo <- psi
-                    proc.Start() |> ignore
-                    proc.WaitForExit()
+                    try
+                        proc.Start() |> ignore
+                        proc.WaitForExit()
+                    with ex ->
+                        AnsiConsole.Write(Render.errorLine strings ex.Message)
+                        AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some userInput ->
                 if ReadLine.hasZeroWidth userInput then
