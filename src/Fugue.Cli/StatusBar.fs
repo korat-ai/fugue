@@ -48,13 +48,14 @@ let private homeRel (path: string) : string =
     else path
 
 let private providerLabel (cfg: AppConfig) : string =
-    let shortModel (m: string) =
+    let friendlyModel (m: string) =
         let i = m.LastIndexOf '/'
-        if i >= 0 && i + 1 < m.Length then m.Substring(i + 1) else m
+        let id = if i >= 0 && i + 1 < m.Length then m.Substring(i + 1) else m
+        modelDisplayName id
     match cfg.Provider with
-    | Anthropic(_, m) -> "anthropic:" + shortModel m
-    | OpenAI(_, m)    -> "openai:" + shortModel m
-    | Ollama(_, m)    -> "ollama:" + shortModel m
+    | Anthropic(_, m) -> "anthropic:" + friendlyModel m
+    | OpenAI(_, m)    -> "openai:" + friendlyModel m
+    | Ollama(_, m)    -> "ollama:" + friendlyModel m
 
 let refresh () =
     if not active then () else
