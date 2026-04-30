@@ -290,7 +290,7 @@ SEE ALSO
         if verbose then
             let rid     = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier
             let rtVer   = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription
-            let asmPath = asm.Location
+            let asmPath = System.AppContext.BaseDirectory
             let cfgPath = Fugue.Core.Config.configFilePath ()
             let home    = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
             let profDir = System.IO.Path.Combine(home, ".fugue", "profiles")
