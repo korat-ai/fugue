@@ -3,6 +3,34 @@
 All notable changes to Fugue are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] — 2026-05-01
+
+### Added
+- `/model` interactive picker — arrow-key navigation (↑/↓), Enter to select, Esc to cancel, digits 1-9 for quick-pick (#898)
+- `/model set <name>` — runtime model switching with agent rebuild
+- `Fugue.Agent.ModelDiscovery` — per-provider model listing (OpenAI/LM Studio `/v1/models`, Ollama `/api/tags`, Anthropic hardcoded). HTTP timeout 1.5s, AOT-safe via `JsonNode.Parse`
+- `--help` flag — shows usage and exits cleanly without requiring config
+- `/engineering-fsharp-developer` agent role with AOT hard rules and known traps reference
+- CI: `verify-brew` job — smoke-tests `brew install fugue && fugue --version && fugue --help` after each release
+
+### Changed
+- Banner: `♩ Fugue` → `♩♪♫ Fugue` (rhythmic note sequence)
+- Turn numbers `[N]` now follow message alignment — right-aligned messages show `[N]` at end of bubble
+- Slash command suggestions only appear at ≥2 char prefix (bare `/` no longer overflows terminal)
+
+### Fixed
+- AOT crash on startup: `Render.gradientMarkup` and ~30 other `sprintf` call sites replaced with F# string interpolation `$"..."` — `PrintfImpl.MakeGenericMethod` is not AOT-compatible
+- NuGet Trusted Publishing — explicit OIDC token retrieval via GitHub Actions ID token endpoint
+- macOS release: `sha256sum` not available → portable fallback to `shasum -a 256`
+- Release pipeline: force-publish via `gh release edit --draft=false` after creation (guards against retag draft regression)
+
+### Documentation
+- CLAUDE.md: hard rule "new slash commands prompt-first, code-last"
+- CLAUDE.md: AOT smoke-test rule (`dotnet publish -r osx-arm64` and run native binary every 10 commits — `dotnet build` runs JIT and misses AOT failures)
+- CLAUDE.md: semver release policy (features → minor, fixes → patch, no retags)
+
+[0.2.0]: https://github.com/korat-ai/fugue/releases/tag/v0.2.0
+
 ## [0.1.0] — 2026-04-30
 
 ### Added
