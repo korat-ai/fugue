@@ -80,7 +80,13 @@ type Strings =
       CmdToolsDesc: string
       ToolsHeader:  string
       CmdClearHistoryDesc: string
-      ClearHistoryDone:    string }
+      ClearHistoryDone:    string
+
+      // /short /long verbosity
+      CmdShortDesc:      string
+      CmdLongDesc:       string
+      VerbosityShortSet: string
+      VerbosityLongSet:  string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -130,7 +136,11 @@ let en : Strings =
       CmdToolsDesc          = "list all available tools with descriptions"
       ToolsHeader           = "Available tools"
       CmdClearHistoryDesc   = "reset conversation history without clearing screen"
-      ClearHistoryDone      = "Conversation history cleared. Screen preserved." }
+      ClearHistoryDone      = "Conversation history cleared. Screen preserved."
+      CmdShortDesc          = "switch to brief responses"
+      CmdLongDesc           = "switch to detailed responses"
+      VerbosityShortSet     = "Brevity mode on. Responses will be concise."
+      VerbosityLongSet      = "Detail mode on. Responses will be thorough." }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -180,7 +190,11 @@ let ru : Strings =
       CmdToolsDesc          = "показать список инструментов с описаниями"
       ToolsHeader           = "Доступные инструменты"
       CmdClearHistoryDesc   = "сбросить историю разговора без очистки экрана"
-      ClearHistoryDone      = "История разговора сброшена. Экран сохранён." }
+      ClearHistoryDone      = "История разговора сброшена. Экран сохранён."
+      CmdShortDesc          = "перейти к кратким ответам"
+      CmdLongDesc           = "перейти к подробным ответам"
+      VerbosityShortSet     = "Режим краткости включён. Ответы будут краткими."
+      VerbosityLongSet      = "Режим подробности включён. Ответы будут развёрнутыми." }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =

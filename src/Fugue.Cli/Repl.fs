@@ -299,6 +299,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     StatusBar.start cwd cfg
 
     let strings = pick cfg.Ui.Locale
+    let mutable verbosityPrefix : string option = None
     try
         while not cancelSrc.QuitRequested do
             let callbacks : ReadLine.ReadLineCallbacks = { OnClearScreen = StatusBar.refresh }
@@ -315,6 +316,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 let helpItems = [ "/help",           strings.CmdHelpDesc
                                   "/ask <q>",        strings.CmdAskDesc
                                   "/clear",          strings.CmdClearDesc
+                                  "/short",           strings.CmdShortDesc
+                                  "/long",            strings.CmdLongDesc
                                   "/clear-history",   strings.CmdClearHistoryDesc
                                   "/tools",           strings.CmdToolsDesc
                                   "/new",             strings.CmdNewDesc
@@ -362,6 +365,16 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s = "/short" ->
+                verbosityPrefix <- Some "[VERBOSITY: respond briefly, 1-2 sentences per point, no elaboration unless asked]\n\n"
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.VerbosityShortSet + "[/]"))
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s = "/long" ->
+                verbosityPrefix <- Some "[VERBOSITY: respond in detail, include explanations, examples, and context]\n\n"
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.VerbosityLongSet + "[/]"))
+                AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/clear-history" ->
                 match box session with
@@ -672,10 +685,12 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 let expandedInput = expandClipboard expandedInput strings
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
                 AnsiConsole.WriteLine()
+                let effectiveInput =
+                    match verbosityPrefix with
+                    | Some prefix -> prefix + expandedInput
+                    | None -> expandedInput
                 let sw = System.Diagnostics.Stopwatch.StartNew()
-                do! streamAndRender agent session expandedInput cfg cancelSrc
-                sw.Stop()
-                DebugLog.turnCompleted userInput.Length 0 sw.ElapsedMilliseconds
+                do! streamAndRender agent session effectiveInput cfg cancelSrc
                 StatusBar.refresh ()
     finally
         Console.CancelKeyPress.RemoveHandler handler
