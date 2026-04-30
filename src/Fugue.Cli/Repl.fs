@@ -122,15 +122,61 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             | Some s when s = "/help" ->
                 AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.HelpHeader + "[/]"))
                 AnsiConsole.WriteLine()
-                let helpItems = [ "/help",  strings.CmdHelpDesc
-                                  "/clear", strings.CmdClearDesc
-                                  "/exit",  strings.CmdExitDesc ]
+                let helpItems = [ "/help",       strings.CmdHelpDesc
+                                  "/clear",      strings.CmdClearDesc
+                                  "/exit",       strings.CmdExitDesc
+                                  "/squash <N>", strings.CmdSquashDesc ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s = "/squash" || s.StartsWith "/squash " ->
+                let rawArg = if s = "/squash" then "" else s.Substring(8).TrimStart()
+                let n = if String.IsNullOrWhiteSpace rawArg then 0 else (try int rawArg with _ -> 0)
+                if n <= 0 then
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.SquashUsage + "[/]"))
+                    AnsiConsole.WriteLine()
+                else
+                    let psi = System.Diagnostics.ProcessStartInfo()
+                    psi.FileName <- "git"
+                    psi.ArgumentList.Add "log"
+                    psi.ArgumentList.Add "--oneline"
+                    psi.ArgumentList.Add (sprintf "-%d" n)
+                    psi.UseShellExecute <- false
+                    psi.RedirectStandardOutput <- true
+                    psi.WorkingDirectory <- cwd
+                    try
+                        use proc = new System.Diagnostics.Process()
+                        proc.StartInfo <- psi
+                        match proc.Start() with
+                        | false ->
+                            AnsiConsole.Write(Render.errorLine strings strings.SquashNoRepo)
+                            AnsiConsole.WriteLine()
+                        | true ->
+                            let out = proc.StandardOutput.ReadToEnd()
+                            proc.WaitForExit()
+                            if proc.ExitCode <> 0 || String.IsNullOrWhiteSpace out then
+                                AnsiConsole.Write(Render.errorLine strings strings.SquashNoRepo)
+                                AnsiConsole.WriteLine()
+                            else
+                                let prompt = sprintf """Here are the last %d commits to be squashed:
+
+%s
+
+Please generate a single conventional commit message that summarizes all these changes.
+Follow the format: type(scope): description
+
+Also show the git command to execute the squash:
+  git reset --soft HEAD~%d && git commit -m "<your message>"
+
+Do NOT run the command — just show it for the user to review and run manually.""" n out n
+                                do! streamAndRender agent session prompt cfg cancelSrc
+                    with ex ->
+                        AnsiConsole.Write(Render.errorLine strings ex.Message)
+                        AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some userInput ->
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
