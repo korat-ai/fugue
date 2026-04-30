@@ -16,6 +16,7 @@
     <Compile Include="ToolRegistryTests.fs" />
     <Compile Include="ConfigTests.fs" />
     <Compile Include="LocalizationTests.fs" />
+    <Compile Include="SystemPromptTests.fs" />
     <Compile Include="ReadLineTests.fs" />
     <Compile Include="MarkdownRenderTests.fs" />
     <Compile Include="DiffRenderTests.fs" />

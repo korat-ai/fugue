@@ -12,7 +12,9 @@ let private buildAgent (cfg: AppConfig) : AIAgent =
     let sysPrompt =
         match cfg.SystemPrompt with
         | Some s -> s
-        | None -> Fugue.Core.SystemPrompt.render cwd Fugue.Tools.ToolRegistry.names
+        | None ->
+            let ctx = Fugue.Core.SystemPrompt.loadFugueContext cwd
+            Fugue.Core.SystemPrompt.render cwd Fugue.Tools.ToolRegistry.names ctx
     AgentFactory.create cfg.Provider cfg.BaseUrl sysPrompt tools
 
 [<RequiresUnreferencedCode("Calls Repl.run and Config.saveToFile which use STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
