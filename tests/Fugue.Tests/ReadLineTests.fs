@@ -352,6 +352,36 @@ let ``word_CtrlW_atZero_isNoOp`` () =
     String(s.Buffer.ToArray()) |> should equal "hello"
     s.Cursor |> should equal 0
 
+// ── Bracketed paste tests ─────────────────────────────────────────────────────
+
+[<Fact>]
+let ``paste_applyPastedText_setsBufferAndCursor`` () =
+    let s = mkState "old" 3
+    applyPastedText "hello world" s
+    String(s.Buffer.ToArray()) |> should equal "hello world"
+    s.Cursor |> should equal 11
+
+[<Fact>]
+let ``paste_applyPastedText_replacesExistingContent`` () =
+    let s = mkState "existing text" 5
+    applyPastedText "new content" s
+    String(s.Buffer.ToArray()) |> should equal "new content"
+    s.Cursor |> should equal 11
+
+[<Fact>]
+let ``paste_applyPastedText_multiLinePreservesNewlines`` () =
+    let s = mkState "" 0
+    applyPastedText "line1\nline2\nline3" s
+    String(s.Buffer.ToArray()) |> should equal "line1\nline2\nline3"
+    s.Cursor |> should equal 17
+
+[<Fact>]
+let ``paste_applyPastedText_trims_trailing_newline`` () =
+    // Pasting a block that ends in \n should strip the trailing newline
+    // so the user can review before submitting.
+    let s = mkState "" 0
+    applyPastedText "hello\n" s
+
 // ── Tab-completion list tests ─────────────────────────────────────────────────
 
 [<Fact>]
@@ -410,6 +440,18 @@ let ``undo_CtrlZ_onEmptyStack_isNoOp`` () =
     s.Cursor |> should equal 5
 
 [<Fact>]
+let ``paste_applyPastedText_emptyString_clearsBuffer`` () =
+    let s = mkState "something" 3
+    applyPastedText "" s
+    String(s.Buffer.ToArray()) |> should equal ""
+    s.Cursor |> should equal 0
+
+[<Fact>]
+let ``paste_applyPastedText_cursorAtEnd_afterPaste`` () =
+    let s = mkState "" 0
+    applyPastedText "abc" s
+    s.Cursor |> should equal s.Buffer.Count
+
 let ``undo_typingChar_pushesSnapshotOntoUndoStack`` () =
     clearUndoRedo()
     let s = mkState "ab" 2

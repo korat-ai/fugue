@@ -297,6 +297,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     let providerName, modelName = providerInfo cfg.Provider
     DebugLog.sessionStart providerName modelName cwd
     StatusBar.start cwd cfg
+    Console.Out.Write "\x1b[?2004h"   // enable bracketed paste
+    Console.Out.Flush()
 
     let strings = pick cfg.Ui.Locale
     let mutable verbosityPrefix : string option = None
@@ -708,5 +710,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 StatusBar.refresh ()
     finally
         Console.CancelKeyPress.RemoveHandler handler
+        Console.Out.Write "\x1b[?2004l"   // disable bracketed paste
+        Console.Out.Flush()
         StatusBar.stop ()
 }
