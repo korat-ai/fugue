@@ -69,7 +69,11 @@ type Strings =
 
       // /diff command
       CmdDiffDesc: string
-      NoDiff:      string }
+      NoDiff:      string
+
+      // /init command
+      CmdInitDesc: string
+      InitExists:  string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -112,7 +116,9 @@ let en : Strings =
       AtFileTooBig          = "[file too large — truncated to 4000 chars]"
       ClipboardUnavailable  = "clipboard unavailable — pbpaste/xclip/wl-paste not found"
       CmdDiffDesc           = "show unstaged git diff (use /diff --staged for staged changes)"
-      NoDiff                = "no changes" }
+      NoDiff                = "no changes"
+      CmdInitDesc           = "generate FUGUE.md for this project (creates if absent)"
+      InitExists            = "FUGUE.md already exists. Edit it directly or delete it first." }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -155,7 +161,9 @@ let ru : Strings =
       AtFileTooBig          = "[файл слишком большой — обрезано до 4000 символов]"
       ClipboardUnavailable  = "буфер обмена недоступен — pbpaste/xclip/wl-paste не найдены"
       CmdDiffDesc           = "показать unstaged git diff (используйте /diff --staged для staged изменений)"
-      NoDiff                = "изменений нет" }
+      NoDiff                = "изменений нет"
+      CmdInitDesc           = "создать FUGUE.md для проекта (если отсутствует)"
+      InitExists            = "FUGUE.md уже существует. Отредактируйте его напрямую или сначала удалите." }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =

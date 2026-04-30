@@ -300,6 +300,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/ask <q>",        strings.CmdAskDesc
                                   "/clear",          strings.CmdClearDesc
                                   "/diff",           strings.CmdDiffDesc
+                                  "/init",           strings.CmdInitDesc
                                   "/git-log",        strings.CmdGitLogDesc
                                   "/issue <N>",      strings.CmdIssueDesc
                                   "/model suggest",  strings.CmdModelDesc
@@ -557,6 +558,28 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.Write(Render.errorLine strings ex.Message)
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
+            | Some s when s = "/init" ->
+                let fugueMdPath = System.IO.Path.Combine(cwd, "FUGUE.md")
+                if System.IO.File.Exists fugueMdPath then
+                    AnsiConsole.Write(Markup("[yellow]" + Markup.Escape strings.InitExists + "[/]"))
+                    AnsiConsole.WriteLine()
+                    StatusBar.refresh ()
+                else
+                    let initPrompt =
+                        "Please analyze this project and create a FUGUE.md file in the current directory.\n\n" +
+                        "FUGUE.md is a project context file for Fugue (an AI coding assistant). It should include:\n" +
+                        "- Project purpose and target audience\n" +
+                        "- Architecture overview (key directories, modules, patterns)\n" +
+                        "- Tech stack and dependencies\n" +
+                        "- Development conventions (naming, style, testing approach)\n" +
+                        "- Common commands (build, test, run, deploy)\n" +
+                        "- Any gotchas or non-obvious constraints\n\n" +
+                        "Keep it concise — aim for 50-150 lines. Use Markdown headers.\n" +
+                        "Write the file to ./FUGUE.md using the Write tool."
+                    AnsiConsole.Write(Render.userMessage cfg.Ui "/init")
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session initPrompt cfg cancelSrc
+                    StatusBar.refresh ()
             | Some userInput ->
                 if ReadLine.hasZeroWidth userInput then
                     AnsiConsole.Write(Markup("[dim yellow]" + Markup.Escape strings.ZeroWidthWarning + "[/]"))
