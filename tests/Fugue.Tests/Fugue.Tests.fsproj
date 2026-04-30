@@ -40,6 +40,7 @@
     <Compile Include="AtFileTests.fs" />
     <Compile Include="PathSafetyGuardTests.fs" />
     <Compile Include="PathSafetySymlinkTests.fs" />
+    <Compile Include="MacrosTests.fs" />
     <Compile Include="ReplTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

@@ -33,7 +33,12 @@ let private buildAgent (cfg: AppConfig) : AIAgent =
 let private runWithCfg (cfg: AppConfig) : int =
     let isClassic = cfg.Ui.Theme = "fugue-classic" || cfg.Ui.Theme = "monochrome"
     Render.initColor (not (noColor () || isClassic))
-    MarkdownRender.initEmoji (not (Fugue.Core.EmojiMap.terminalSupportsEmoji ()))
+    let emojiEnabled =
+        match cfg.Ui.EmojiMode with
+        | "always" -> true
+        | "never"  -> false
+        | _        -> not (Fugue.Core.EmojiMap.terminalSupportsEmoji ())
+    MarkdownRender.initEmoji emojiEnabled
     MarkdownRender.initTheme cfg.Ui.Theme
     Render.initBubbles (cfg.Ui.Theme = "bubbles")
     let agent = buildAgent cfg

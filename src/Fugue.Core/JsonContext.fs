@@ -13,6 +13,7 @@ type UiConfigDto = {
     promptTemplate: string | null
     bell          : bool
     theme         : string | null
+    emojiMode     : string | null
 }
 
 [<CLIMutable; DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)>]
