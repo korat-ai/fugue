@@ -193,10 +193,12 @@ type Strings =
       MacroUsage:     string
 
       // /theme command
-      CmdThemeDesc:    string
-      ThemeBubblesOn:  string
-      ThemeBubblesOff: string
-      ThemeUsage:      string }
+      CmdThemeDesc:       string
+      ThemeBubblesOn:     string
+      ThemeBubblesOff:    string
+      ThemeTypewriterOn:  string
+      ThemeTypewriterOff: string
+      ThemeUsage:         string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -317,10 +319,12 @@ let en : Strings =
       MacroNone             = "no macros saved"
       MacroRemoved          = "macro removed: {0}"
       MacroUsage            = "usage: /macro record <name> | /macro stop | /macro play <name> | /macro list | /macro remove <name>"
-      CmdThemeDesc          = "toggle display themes (/theme bubbles)"
+      CmdThemeDesc          = "toggle display themes (/theme bubbles|typewriter)"
       ThemeBubblesOn        = "bubble borders on — AI responses wrapped in panels"
       ThemeBubblesOff       = "bubble borders off"
-      ThemeUsage            = "usage: /theme bubbles" }
+      ThemeTypewriterOn     = "typewriter effect on — responses fade in line by line"
+      ThemeTypewriterOff    = "typewriter effect off"
+      ThemeUsage            = "usage: /theme bubbles|typewriter" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -441,10 +445,12 @@ let ru : Strings =
       MacroNone             = "макросов нет"
       MacroRemoved          = "макрос удалён: {0}"
       MacroUsage            = "использование: /macro record <имя> | /macro stop | /macro play <имя> | /macro list | /macro remove <имя>"
-      CmdThemeDesc          = "переключить визуальные темы (/theme bubbles)"
+      CmdThemeDesc          = "переключить визуальные темы (/theme bubbles|typewriter)"
       ThemeBubblesOn        = "рамки включены — ответы AI обёрнуты в панели"
       ThemeBubblesOff       = "рамки выключены"
-      ThemeUsage            = "использование: /theme bubbles" }
+      ThemeTypewriterOn     = "эффект машинки включён — ответы появляются построчно"
+      ThemeTypewriterOff    = "эффект машинки выключен"
+      ThemeUsage            = "использование: /theme bubbles|typewriter" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =

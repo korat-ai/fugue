@@ -42,6 +42,7 @@ let private runWithCfg (cfg: AppConfig) : int =
     MarkdownRender.initTheme cfg.Ui.Theme
     Render.initTheme cfg.Ui.Theme
     StatusBar.initTheme cfg.Ui.Theme
+    Render.initTypewriter cfg.Ui.TypewriterMode
     Render.initBubbles (cfg.Ui.BubblesMode || cfg.Ui.Theme = "bubbles")
     let agent = buildAgent cfg
     let cwd = Environment.CurrentDirectory

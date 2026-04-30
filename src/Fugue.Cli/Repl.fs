@@ -368,8 +368,16 @@ let private streamAndRender
                     if rawLines > 0 then
                         Console.Out.Write(sprintf "\x1b[%dA\x1b[J" rawLines)
                         Console.Out.Flush()
-                    AnsiConsole.Write(Render.assistantFinal text)
-                    AnsiConsole.WriteLine()
+                    if Render.isTypewriterMode () then
+                        // Render to ANSI string, then write line-by-line with delay.
+                        let lines = Render.captureLines (Render.assistantFinal text)
+                        for line in lines do
+                            Console.Out.WriteLine line
+                            Console.Out.Flush()
+                            System.Threading.Thread.Sleep 12
+                    else
+                        AnsiConsole.Write(Render.assistantFinal text)
+                        AnsiConsole.WriteLine()
                 let wordCount = text.Split([|' '; '\n'; '\r'; '\t'|], StringSplitOptions.RemoveEmptyEntries).Length
                 if wordCount >= 20 then
                     let mins = max 1 (int (Math.Round(float wordCount / 220.0)))
@@ -543,7 +551,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/onboard",        strings.CmdOnboardDesc
                                   "/watch <p> <cmd>", strings.CmdWatchDesc
                                   "/macro …",        strings.CmdMacroDesc
-                                  "/theme bubbles",  strings.CmdThemeDesc
+                                  "/theme …",        strings.CmdThemeDesc
                                   "/exit",           strings.CmdExitDesc
                                   "/review pr <N>",  strings.CmdReviewPrDesc ]
                 for (name, desc) in helpItems do
@@ -1213,6 +1221,15 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     else
                         AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.ThemeBubblesOff))
                     savedUi <- { savedUi with BubblesMode = on }
+                    try Config.saveToFile { cfg with Ui = savedUi } with _ -> ()
+                | "typewriter" ->
+                    Render.toggleTypewriter ()
+                    let on = Render.isTypewriterMode ()
+                    if on then
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.ThemeTypewriterOn))
+                    else
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.ThemeTypewriterOff))
+                    savedUi <- { savedUi with TypewriterMode = on }
                     try Config.saveToFile { cfg with Ui = savedUi } with _ -> ()
                 | _ ->
                     AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.ThemeUsage))

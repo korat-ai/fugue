@@ -24,10 +24,25 @@ let initBubbles (enabled: bool) = bubblesMode <- enabled
 let toggleBubbles () = bubblesMode <- not bubblesMode
 let isBubblesMode () = bubblesMode
 
+let mutable private typewriterMode = false
+
 let initTheme (theme: string) = activeTheme <- theme
+let initTypewriter (enabled: bool) = typewriterMode <- enabled
+let isTypewriterMode () = typewriterMode
+let toggleTypewriter () = typewriterMode <- not typewriterMode
 
 let private themeColor (normal: string) (nocturne: string) =
     if activeTheme = "nocturne" then nocturne else normal
+
+/// Render an IRenderable to ANSI string and split into lines for typewriter output.
+let captureLines (r: IRenderable) : string[] =
+    let sw = new System.IO.StringWriter()
+    let settings = AnsiConsoleSettings()
+    settings.Out <- AnsiConsoleOutput(sw)
+    let console = AnsiConsole.Create settings
+    console.Profile.Width <- max 20 Console.WindowWidth
+    console.Write r
+    sw.ToString().TrimEnd([| '\n' |]).Split('\n')
 
 /// Build the input prompt from the UiConfig template.
 /// Supports {model} interpolation. Falls back to "› " if template is empty.

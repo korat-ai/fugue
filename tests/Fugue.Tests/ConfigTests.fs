@@ -214,7 +214,7 @@ let ``saveToFile round-trips emojiMode=never`` () =
     Environment.SetEnvironmentVariable("HOME", tmpHome)
     let cfg = { Provider = Anthropic("key", "model"); SystemPrompt = None; ProfileContent = None
                 MaxIterations = 10; MaxTokens = None; BaseUrl = None
-                Ui = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false; Theme = ""; EmojiMode = "never"; BubblesMode = false } }
+                Ui = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false; Theme = ""; EmojiMode = "never"; BubblesMode = false; TypewriterMode = false } }
     saveToFile cfg
     match load [||] with
     | Ok loaded -> loaded.Ui.EmojiMode |> should equal "never"
@@ -230,7 +230,7 @@ let ``saveToFile omits emojiMode when auto (default)`` () =
     Environment.SetEnvironmentVariable("HOME", tmpHome)
     let cfg = { Provider = Anthropic("key", "model"); SystemPrompt = None; ProfileContent = None
                 MaxIterations = 10; MaxTokens = None; BaseUrl = None
-                Ui = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false; Theme = ""; EmojiMode = "auto"; BubblesMode = false } }
+                Ui = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false; Theme = ""; EmojiMode = "auto"; BubblesMode = false; TypewriterMode = false } }
     saveToFile cfg
     let json = IO.File.ReadAllText(IO.Path.Combine(tmpHome, ".fugue", "config.json"))
     json.Contains "emojiMode" |> should equal false
@@ -299,7 +299,7 @@ let ``saveToFile round-trips bubblesMode=true`` () =
     Environment.SetEnvironmentVariable("HOME", tmpHome)
     let cfg = { Provider = Anthropic("key", "model"); SystemPrompt = None; ProfileContent = None
                 MaxIterations = 10; MaxTokens = None; BaseUrl = None
-                Ui = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false; Theme = ""; EmojiMode = "auto"; BubblesMode = true } }
+                Ui = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false; Theme = ""; EmojiMode = "auto"; BubblesMode = true; TypewriterMode = false } }
     saveToFile cfg
     match load [||] with
     | Ok loaded -> loaded.Ui.BubblesMode |> should equal true

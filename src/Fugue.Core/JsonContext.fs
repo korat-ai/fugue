@@ -11,10 +11,11 @@ type UiConfigDto = {
     userAlignment : string | null
     locale        : string | null
     promptTemplate: string | null
-    bell          : bool
-    theme         : string | null
-    emojiMode     : string | null
-    bubblesMode   : bool
+    bell           : bool
+    theme          : string | null
+    emojiMode      : string | null
+    bubblesMode    : bool
+    typewriterMode : bool
 }
 
 [<CLIMutable; DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)>]
