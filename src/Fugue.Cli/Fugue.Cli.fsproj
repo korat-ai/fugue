@@ -9,7 +9,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>fugue</ToolCommandName>
     <PackageId>fugue</PackageId>
-    <Description>Fast F#/.NET terminal coding agent. Provider-agnostic (Anthropic / OpenAI-compat / Ollama). 40ms cold start.</Description>
+    <Description>Terminal coding agent. 40ms cold start · 46MB binary · low RSS. Works with Anthropic, OpenAI-compatible endpoints, and Ollama.</Description>
     <Authors>korat-ai</Authors>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/korat-ai/fugue</PackageProjectUrl>
