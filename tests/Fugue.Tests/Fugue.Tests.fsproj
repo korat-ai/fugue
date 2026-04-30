@@ -5,6 +5,7 @@
     <PublishAot>false</PublishAot>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="TestCollections.fs" />
     <Compile Include="ArgsTests.fs" />
     <Compile Include="DelegatedFnTests.fs" />
     <Compile Include="ReadFnTests.fs" />
