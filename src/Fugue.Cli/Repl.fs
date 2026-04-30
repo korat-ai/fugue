@@ -58,8 +58,9 @@ let private streamAndRender
     let toolMeta = Dictionary<string, string * string>()
     let textBuf = StringBuilder()
     // Progressive render state for the current text segment.
-    let mutable segmentSaved = false   // have we emitted ESC[s for this segment yet
-    let mutable segmentRows = 0        // rows the previous render of this segment occupied
+    // We use relative cursor moves (ESC[NA) instead of save/restore because save/restore
+    // preserves absolute screen coords that become stale after scroll-region scrolling.
+    let mutable segmentRows = 0   // rows the previous render of this segment occupied (cursor sits N rows below segment start)
 
     let renderSegment () =
         if textBuf.Length = 0 then () else
@@ -67,19 +68,19 @@ let private streamAndRender
         let renderable : Spectre.Console.Rendering.IRenderable =
             if hasMarkdown text then Render.assistantFinal text
             else Spectre.Console.Text(text) :> _
-        // Erase prior render or save initial cursor
-        if not segmentSaved then
-            Console.Out.Write "\x1b[s"
-            Console.Out.Flush()
-            segmentSaved <- true
-        else
-            Console.Out.Write "\x1b[u"
+        // Erase prior render: move cursor up to start of segment, walk down clearing each row.
+        if segmentRows > 0 then
+            Console.Out.Write ("\x1b[" + string segmentRows + "A")
+            Console.Out.Write "\r"
             for i in 0 .. segmentRows - 1 do
                 Console.Out.Write "\x1b[K"
                 if i < segmentRows - 1 then Console.Out.Write "\x1b[B"
-            Console.Out.Write "\x1b[u"
+            // walk back up to start
+            if segmentRows > 1 then
+                Console.Out.Write ("\x1b[" + string (segmentRows - 1) + "A")
+            Console.Out.Write "\r"
             Console.Out.Flush()
-        // Measure rows by rendering into a StringWriter-backed console, then write to real console.
+        // Measure rows by rendering into a StringWriter-backed console.
         let width = max 40 Console.WindowWidth
         let sw = new System.IO.StringWriter()
         let settings = new Spectre.Console.AnsiConsoleSettings(Out = new Spectre.Console.AnsiConsoleOutput(sw))
@@ -97,7 +98,6 @@ let private streamAndRender
     let endSegment () =
         if textBuf.Length > 0 then renderSegment ()
         textBuf.Clear() |> ignore
-        segmentSaved <- false
         segmentRows <- 0
 
     try
