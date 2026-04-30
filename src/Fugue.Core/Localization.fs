@@ -28,7 +28,11 @@ type Strings =
       CmdHelpDesc:  string
       CmdClearDesc: string
       CmdExitDesc:  string
-      HelpHeader:   string }
+      HelpHeader:   string
+
+      // @clipboard expansion
+      ClipboardUnavailable: string
+      AtFileTooBig:         string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -48,7 +52,9 @@ let en : Strings =
       CmdHelpDesc           = "show this help"
       CmdClearDesc          = "clear the screen"
       CmdExitDesc           = "exit Fugue"
-      HelpHeader            = "Available slash commands:" }
+      HelpHeader            = "Available slash commands:"
+      ClipboardUnavailable  = "clipboard unavailable — pbpaste/xclip/wl-paste not found"
+      AtFileTooBig          = "…(truncated)" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -68,7 +74,9 @@ let ru : Strings =
       CmdHelpDesc           = "показать эту справку"
       CmdClearDesc          = "очистить экран"
       CmdExitDesc           = "выйти из Fugue"
-      HelpHeader            = "Доступные команды:" }
+      HelpHeader            = "Доступные команды:"
+      ClipboardUnavailable  = "буфер обмена недоступен — pbpaste/xclip/wl-paste не найдены"
+      AtFileTooBig          = "…(обрезано)" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =

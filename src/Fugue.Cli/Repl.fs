@@ -23,6 +23,48 @@ let private hasMarkdown (s: string) : bool =
         t.StartsWith "# " || t.StartsWith "## " || t.StartsWith "### "
         || t.StartsWith "- " || t.StartsWith "* " || t.StartsWith "1. ")
 
+let private tryReadClipboard () : string option =
+    let tryCmd prog (args: string[]) =
+        try
+            let psi = System.Diagnostics.ProcessStartInfo()
+            psi.FileName <- prog
+            for a in args do psi.ArgumentList.Add a
+            psi.RedirectStandardOutput <- true
+            psi.UseShellExecute <- false
+            psi.CreateNoWindow <- true
+            use proc = new System.Diagnostics.Process()
+            proc.StartInfo <- psi
+            proc.Start() |> ignore
+            let out = proc.StandardOutput.ReadToEnd()
+            proc.WaitForExit()
+            if proc.ExitCode = 0 && not (System.String.IsNullOrEmpty out) then Some out
+            else None
+        with _ -> None
+    // macOS
+    match tryCmd "pbpaste" [||] with
+    | Some s -> Some s
+    | None ->
+    // Linux (X11)
+    match tryCmd "xclip" [| "-o"; "-sel"; "clipboard" |] with
+    | Some s -> Some s
+    | None ->
+    // Linux (Wayland)
+    match tryCmd "wl-paste" [||] with
+    | Some s -> Some s
+    | None -> None
+
+let private expandClipboard (input: string) (strings: Strings) : string =
+    if not (input.Contains "@clipboard") then input
+    else
+        match tryReadClipboard() with
+        | None ->
+            input.Replace("@clipboard", "[" + strings.ClipboardUnavailable + "]")
+        | Some content ->
+            let truncated =
+                if content.Length > 4000 then content.[..3999] + " " + strings.AtFileTooBig
+                else content
+            input.Replace("@clipboard", truncated)
+
 /// Holder for the currently active stream's CancellationTokenSource.
 /// Console.CancelKeyPress handler uses this to cancel mid-stream Ctrl+C.
 type CancelSource() =
@@ -133,9 +175,10 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 AnsiConsole.Clear()
                 StatusBar.refresh ()
             | Some userInput ->
+                let expanded = expandClipboard userInput strings
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
                 AnsiConsole.WriteLine()
-                do! streamAndRender agent session userInput cfg cancelSrc
+                do! streamAndRender agent session expanded cfg cancelSrc
                 StatusBar.refresh ()
     finally
         Console.CancelKeyPress.RemoveHandler handler
