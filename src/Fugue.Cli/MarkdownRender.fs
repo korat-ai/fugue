@@ -69,11 +69,14 @@ let rec private renderBlock (block: Block) : IRenderable =
         Markup(inlineToMarkupOpt p.Inline) :> IRenderable
     | :? FencedCodeBlock as f ->
         // Single Markup with \n separators avoids Spectre's per-row width-fill padding.
+        // Markdig sometimes returns null Lines.Lines for empty blocks; guard via Count.
         let lines =
-            f.Lines.Lines
-            |> Seq.truncate f.Lines.Count
-            |> Seq.map (fun l -> l.ToString())
-            |> Seq.toArray
+            if f.Lines.Count = 0 || isNull (box f.Lines.Lines) then [||]
+            else
+                f.Lines.Lines
+                |> Seq.truncate f.Lines.Count
+                |> Seq.map (fun l -> l.ToString())
+                |> Seq.toArray
         let body =
             lines
             |> Array.mapi (fun i ln ->
@@ -151,10 +154,12 @@ let rec private renderBlock (block: Block) : IRenderable =
     | :? Markdig.Syntax.HtmlBlock as hb ->
         // Render HTML block as plain dim text — Spectre can't display arbitrary HTML.
         let txt =
-            hb.Lines.Lines
-            |> Seq.truncate hb.Lines.Count
-            |> Seq.map (fun l -> l.ToString())
-            |> String.concat "\n"
+            if hb.Lines.Count = 0 || isNull (box hb.Lines.Lines) then ""
+            else
+                hb.Lines.Lines
+                |> Seq.truncate hb.Lines.Count
+                |> Seq.map (fun l -> l.ToString())
+                |> String.concat "\n"
         Markup("[dim]" + escape txt + "[/]") :> IRenderable
     | :? ThematicBreakBlock ->
         Rule() :> IRenderable
