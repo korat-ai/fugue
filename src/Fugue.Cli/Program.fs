@@ -36,6 +36,21 @@ let private buildAgent (cfg: AppConfig) (lastSummary: string option) : AIAgent =
         | None   -> sysPrompt
     AgentFactory.create cfg.Provider cfg.BaseUrl cfg.MaxTokens sysPromptFull tools
 
+[<RequiresUnreferencedCode("Calls Repl.runPrint which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
+[<RequiresDynamicCode("Calls Repl.runPrint which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
+let private runWithPrint (cfg: AppConfig) (prompt: string) : int =
+    let lastSummary = if cfg.LowBandwidth then None else Fugue.Core.SessionSummary.loadLast (Environment.CurrentDirectory)
+    let agent = buildAgent cfg lastSummary
+    let t = Repl.runPrint agent prompt
+    try
+        t.Wait()
+        t.Result
+    with
+    | :? AggregateException as agg ->
+        match agg.InnerException with
+        | :? OperationCanceledException -> 0
+        | _ -> raise agg
+
 [<RequiresUnreferencedCode("Calls Repl.run and Config.saveToFile which use STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 [<RequiresDynamicCode("Calls Repl.run and Config.saveToFile which use STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 let private runWithCfg (cfg: AppConfig) : int =
@@ -103,6 +118,10 @@ let main argv =
     let templateContent = templateName |> Option.bind Fugue.Core.Config.loadTemplate
     let lowBandwidth = argv |> Array.contains "--low-bandwidth"
     let offline      = argv |> Array.contains "--offline"
+    let printPrompt =
+        argv
+        |> Array.tryFindIndex ((=) "--print")
+        |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
     if argv |> Array.contains "doctor" then
         let cwd = Environment.CurrentDirectory
         let passed = Doctor.run cwd
@@ -128,7 +147,9 @@ let main argv =
                 | _ -> failwith "unsupported candidate"
             let cfg = { Provider = provider; SystemPrompt = None; ProfileContent = profileContent; TemplateContent = templateContent; TemplateName = templateName; MaxIterations = 30; MaxTokens = None; Ui = Fugue.Core.Config.defaultUi (); BaseUrl = None; LowBandwidth = lowBandwidth; Offline = offline }
             Fugue.Core.Config.saveToFile cfg
-            runWithCfg cfg
+            match printPrompt with
+            | Some p -> runWithPrint cfg p
+            | None   -> runWithCfg cfg
         | None ->
             Console.Error.WriteLine(help)
             1
@@ -136,4 +157,7 @@ let main argv =
         Console.Error.WriteLine("Invalid config: " + reason)
         1
     | Ok cfg ->
-        runWithCfg { cfg with ProfileContent = profileContent; TemplateContent = templateContent; TemplateName = templateName; LowBandwidth = lowBandwidth; Offline = offline }
+        let fullCfg = { cfg with ProfileContent = profileContent; TemplateContent = templateContent; TemplateName = templateName; LowBandwidth = lowBandwidth; Offline = offline }
+        match printPrompt with
+        | Some p -> runWithPrint fullCfg p
+        | None   -> runWithCfg fullCfg

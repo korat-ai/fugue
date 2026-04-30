@@ -626,6 +626,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/compat",         strings.CmdCompatDesc
                                   "/history [n]",    strings.CmdHistoryDesc
                                   "/templates",      "list available session templates"
+                                  "/gen uuid|ulid|nanoid", "generate a unique identifier"
                                   "/rate up|down [n]", strings.CmdRateDesc
                                   "/annotate [n] [up|down] <note>", strings.CmdAnnotateDesc
                                   "/theme …",        strings.CmdThemeDesc
@@ -1051,6 +1052,56 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                             let name = System.IO.Path.GetFileNameWithoutExtension f |> Option.ofObj |> Option.defaultValue ""
                             if name <> "" then
                                 AnsiConsole.MarkupLine(sprintf "  [cyan]%s[/]" (Markup.Escape name))
+                StatusBar.refresh ()
+            | Some s when s = "/gen" || s.StartsWith "/gen " ->
+                let kind = (if s = "/gen" then "" else s.Substring(4)).Trim().ToLowerInvariant()
+                match kind with
+                | "uuid" | "" ->
+                    let v = System.Guid.NewGuid().ToString()
+                    AnsiConsole.MarkupLine(sprintf "[green]%s[/]" v)
+                    ClipRing.push v
+                | "ulid" ->
+                    // ULID: 10-byte timestamp (ms) + 16 random bytes, Crockford base32
+                    let alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+                    let rng = System.Security.Cryptography.RandomNumberGenerator.Create()
+                    let ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    let sb = System.Text.StringBuilder(26)
+                    // 10 chars timestamp (48 bits)
+                    let mutable t = ts
+                    let tsChars = Array.zeroCreate 10
+                    for i in 9 .. -1 .. 0 do
+                        tsChars.[i] <- alphabet.[int (t % 32L)]
+                        t <- t / 32L
+                    for c in tsChars do sb.Append c |> ignore
+                    // 16 chars random (80 bits)
+                    let randBytes = Array.zeroCreate 10
+                    rng.GetBytes randBytes
+                    let mutable bits = 0UL
+                    let mutable bitsAvail = 0
+                    for b in randBytes do
+                        bits <- (bits <<< 8) ||| uint64 b
+                        bitsAvail <- bitsAvail + 8
+                        while bitsAvail >= 5 do
+                            bitsAvail <- bitsAvail - 5
+                            let idx = int ((bits >>> bitsAvail) &&& 0x1FUL)
+                            sb.Append alphabet.[idx] |> ignore
+                    while sb.Length < 26 do
+                        let extra = Array.zeroCreate 1
+                        rng.GetBytes extra
+                        sb.Append alphabet.[int extra.[0] &&& 0x1F] |> ignore
+                    let v = sb.ToString().[..25]
+                    AnsiConsole.MarkupLine(sprintf "[green]%s[/]" v)
+                    ClipRing.push v
+                | "nanoid" ->
+                    let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+                    let rng = System.Security.Cryptography.RandomNumberGenerator.Create()
+                    let bytes = Array.zeroCreate 21
+                    rng.GetBytes bytes
+                    let v = System.String(bytes |> Array.map (fun b -> alphabet.[int b &&& 63]))
+                    AnsiConsole.MarkupLine(sprintf "[green]%s[/]" v)
+                    ClipRing.push v
+                | other ->
+                    AnsiConsole.MarkupLine(sprintf "[red]Unknown generator '[/][bold red]%s[/][red]'. Use: /gen uuid|ulid|nanoid[/]" (Markup.Escape other))
                 StatusBar.refresh ()
             | Some s when s = "/rate" || s.StartsWith "/rate " ->
                 let parts = (if s = "/rate" then "" else s.Substring(6)).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)
@@ -1879,4 +1930,44 @@ let runHeadless (agent: AIAgent) (cfg: AppConfig) (_cwd: string) : Task<unit> = 
                 | Conversation.Failed ex -> raise ex
             else hasNext <- false
         Console.Out.WriteLine()
+}
+
+[<RequiresUnreferencedCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
+[<RequiresDynamicCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
+let runPrint (agent: AIAgent) (prompt: string) : Task<int> = task {
+    // Append stdin if piped — lets "git diff | fugue --print 'review this'" work.
+    let stdinSuffix =
+        if Console.IsInputRedirected then
+            let s = Console.In.ReadToEnd().Trim()
+            if String.IsNullOrWhiteSpace s then "" else "\n\n" + s
+        else ""
+    let fullPrompt = (prompt.Trim() + stdinSuffix).Trim()
+    if String.IsNullOrWhiteSpace fullPrompt then
+        Console.Error.WriteLine "fugue --print: prompt is empty"
+        return 1
+    else
+        let! session = agent.CreateSessionAsync(CancellationToken.None)
+        let stream = Conversation.run agent session fullPrompt CancellationToken.None
+        let enumerator = stream.GetAsyncEnumerator(CancellationToken.None)
+        let mutable hasNext = true
+        let mutable exitCode = 0
+        while hasNext do
+            let! step = enumerator.MoveNextAsync().AsTask()
+            if step then
+                match enumerator.Current with
+                | Conversation.TextChunk t ->
+                    Console.Out.Write t
+                    Console.Out.Flush()
+                | Conversation.ToolStarted(_, name, args) ->
+                    Console.Error.WriteLine(sprintf "[tool: %s(%s)]" name args)
+                | Conversation.ToolCompleted(id, output, isErr) ->
+                    ignore id
+                    if isErr then Console.Error.WriteLine(sprintf "[tool error: %s]" output)
+                | Conversation.Finished -> ()
+                | Conversation.Failed ex ->
+                    Console.Error.WriteLine(sprintf "error: %s" ex.Message)
+                    exitCode <- 1
+            else hasNext <- false
+        Console.Out.WriteLine()
+        return exitCode
 }
