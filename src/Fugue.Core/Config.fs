@@ -128,6 +128,9 @@ let private configPath () =
         | p -> p
     Path.Combine(home, ".fugue", "config.json")
 
+/// Public accessor for the config file path (used by hot-reload watcher).
+let configFilePath () = configPath ()
+
 let private readEnv (name: string) =
     match Environment.GetEnvironmentVariable(name) with
     | null | "" -> None

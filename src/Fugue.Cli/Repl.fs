@@ -545,13 +545,43 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                 else rel.Contains norm
             else rel = pat || rel.StartsWith(pat + "/"))
 
-    let strings = pick cfg.Ui.Locale
+    let mutable liveStrings = pick cfg.Ui.Locale
     let mutable savedUi = cfg.Ui   // mutable copy for persisting runtime UI toggles
     let mutable verbosityPrefix : string option = None
     let mutable turnNumber = 0
     let mutable sessionNotes : (int * string) list = []  // (turnNumber, text)
+
+    // Hot-reload: watch ~/.fugue/config.json for changes.
+    // On each turn check the sentinel channel; if fired, reload UI settings.
+    let configWatchSentinel = "__config_reload__"
+    let cfgPath = Fugue.Core.Config.configFilePath ()
+    if System.IO.File.Exists cfgPath then
+        FileWatcher.add cfgPath configWatchSentinel
+
     try
         while not cancelSrc.QuitRequested do
+            // Apply any pending hot-reloads before reading input.
+            for cmd in FileWatcher.drain () do
+                if cmd = configWatchSentinel then
+                    match Fugue.Core.Config.load [||] with
+                    | Ok newCfg ->
+                        MarkdownRender.initTheme newCfg.Ui.Theme
+                        Render.initTheme newCfg.Ui.Theme
+                        StatusBar.initTheme newCfg.Ui.Theme
+                        StatusBar.setLowBandwidth newCfg.LowBandwidth
+                        Render.initTypewriter newCfg.Ui.TypewriterMode
+                        Render.initBubbles (newCfg.Ui.BubblesMode || newCfg.Ui.Theme = "bubbles")
+                        let emojiEnabled =
+                            match newCfg.Ui.EmojiMode with
+                            | "always" -> true
+                            | "never"  -> false
+                            | _        -> not (Fugue.Core.EmojiMap.terminalSupportsEmoji ())
+                        MarkdownRender.initEmoji emojiEnabled
+                        savedUi <- newCfg.Ui
+                        liveStrings <- pick newCfg.Ui.Locale
+                        AnsiConsole.MarkupLine "[dim]Config reloaded.[/]"
+                        StatusBar.refresh ()
+                    | Error _ -> ()   // ignore malformed config
             let doAnnotate (rating: Fugue.Core.Annotation.Rating) =
                 let idx = max 1 turnNumber
                 let ann : Fugue.Core.Annotation.TurnAnnotation =
@@ -592,7 +622,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     AnsiConsole.WriteLine()
                     System.Threading.Tasks.Task.FromResult(Some step)
                 | None ->
-                    ReadLine.readAsync (Render.prompt cfg.Ui modelShort) strings callbacks (Render.isColorEnabled ()) cancelSrc.Token
+                    ReadLine.readAsync (Render.prompt cfg.Ui modelShort) liveStrings callbacks (Render.isColorEnabled ()) cancelSrc.Token
             // Colon command expansion: :q → /exit, :n → /new, :h → /help, :s → /scratch send
             let colonExpand (s: string) =
                 if not (s.StartsWith ':') || s.Length < 2 then s
@@ -625,54 +655,54 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
             | Some s when s = "/exit" || s = "/quit" ->
                 cancelSrc.RequestQuit()
             | Some s when s = "/help" ->
-                AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.HelpHeader + "[/]"))
+                AnsiConsole.Write(Markup("[bold]" + Markup.Escape liveStrings.HelpHeader + "[/]"))
                 AnsiConsole.WriteLine()
-                let helpItems = [ "/help",           strings.CmdHelpDesc
-                                  "/ask <q>",        strings.CmdAskDesc
-                                  "/clear",          strings.CmdClearDesc
-                                  "/summary",         strings.CmdSummaryDesc
-                                  "/document [path]", strings.CmdDocumentDesc
-                                  "/activity",        strings.CmdActivityDesc
-                                  "/alias <n>=<exp>", strings.CmdAliasDesc
-                                  "/scratch <text>",  strings.CmdScratchDesc
-                                  "/squash <N>",      strings.CmdSquashDesc
-                                  "/short",           strings.CmdShortDesc
-                                  "/long",            strings.CmdLongDesc
-                                  "/zen",             strings.CmdZenDesc
-                                  "/snippet …",       strings.CmdSnippetDesc
-                                  "/bookmark <name>", strings.CmdBookmarkDesc
-                                  "/bookmarks",       strings.CmdBookmarksDesc
-                                  "/clear-history",   strings.CmdClearHistoryDesc
-                                  "/tools",           strings.CmdToolsDesc
-                                  "/todo",            strings.CmdTodoDesc
-                                  "/note <text>",     strings.CmdNoteDesc
-                                  "/notes",           strings.CmdNotesDesc
-                                  "/undo",            strings.CmdUndoDesc
-                                  "/find <query>",    strings.CmdFindDesc
-                                  "/summarize <p>",   strings.CmdSummarizeDesc
-                                  "/new",             strings.CmdNewDesc
-                                  "/diff",           strings.CmdDiffDesc
-                                  "/init",           strings.CmdInitDesc
-                                  "/git-log",        strings.CmdGitLogDesc
-                                  "/issue <N>",      strings.CmdIssueDesc
-                                  "/model suggest",  strings.CmdModelDesc
-                                  "/onboard",        strings.CmdOnboardDesc
-                                  "/watch <p> <cmd>", strings.CmdWatchDesc
-                                  "/macro …",        strings.CmdMacroDesc
-                                  "/bench [n]",      strings.CmdBenchDesc
-                                  "/compat",         strings.CmdCompatDesc
-                                  "/history [n]",    strings.CmdHistoryDesc
+                let helpItems = [ "/help",           liveStrings.CmdHelpDesc
+                                  "/ask <q>",        liveStrings.CmdAskDesc
+                                  "/clear",          liveStrings.CmdClearDesc
+                                  "/summary",         liveStrings.CmdSummaryDesc
+                                  "/document [path]", liveStrings.CmdDocumentDesc
+                                  "/activity",        liveStrings.CmdActivityDesc
+                                  "/alias <n>=<exp>", liveStrings.CmdAliasDesc
+                                  "/scratch <text>",  liveStrings.CmdScratchDesc
+                                  "/squash <N>",      liveStrings.CmdSquashDesc
+                                  "/short",           liveStrings.CmdShortDesc
+                                  "/long",            liveStrings.CmdLongDesc
+                                  "/zen",             liveStrings.CmdZenDesc
+                                  "/snippet …",       liveStrings.CmdSnippetDesc
+                                  "/bookmark <name>", liveStrings.CmdBookmarkDesc
+                                  "/bookmarks",       liveStrings.CmdBookmarksDesc
+                                  "/clear-history",   liveStrings.CmdClearHistoryDesc
+                                  "/tools",           liveStrings.CmdToolsDesc
+                                  "/todo",            liveStrings.CmdTodoDesc
+                                  "/note <text>",     liveStrings.CmdNoteDesc
+                                  "/notes",           liveStrings.CmdNotesDesc
+                                  "/undo",            liveStrings.CmdUndoDesc
+                                  "/find <query>",    liveStrings.CmdFindDesc
+                                  "/summarize <p>",   liveStrings.CmdSummarizeDesc
+                                  "/new",             liveStrings.CmdNewDesc
+                                  "/diff",           liveStrings.CmdDiffDesc
+                                  "/init",           liveStrings.CmdInitDesc
+                                  "/git-log",        liveStrings.CmdGitLogDesc
+                                  "/issue <N>",      liveStrings.CmdIssueDesc
+                                  "/model suggest",  liveStrings.CmdModelDesc
+                                  "/onboard",        liveStrings.CmdOnboardDesc
+                                  "/watch <p> <cmd>", liveStrings.CmdWatchDesc
+                                  "/macro …",        liveStrings.CmdMacroDesc
+                                  "/bench [n]",      liveStrings.CmdBenchDesc
+                                  "/compat",         liveStrings.CmdCompatDesc
+                                  "/history [n]",    liveStrings.CmdHistoryDesc
                                   "/templates",      "list available session templates"
                                   "/gen uuid|ulid|nanoid", "generate a unique identifier"
                                   "/rename <title>",     "set a human-readable title for this session"
                                   "/env set|unset|list", "manage session-scoped environment variables"
                                   "/cron \"description\"", "convert NL schedule to cron + next 5 fire times"
                                   "/regex \"pat\" \"in\"", "test a regex pattern against sample input"
-                                  "/rate up|down [n]", strings.CmdRateDesc
-                                  "/annotate [n] [up|down] <note>", strings.CmdAnnotateDesc
-                                  "/theme …",        strings.CmdThemeDesc
-                                  "/exit",           strings.CmdExitDesc
-                                  "/review pr <N>",  strings.CmdReviewPrDesc ]
+                                  "/rate up|down [n]", liveStrings.CmdRateDesc
+                                  "/annotate [n] [up|down] <note>", liveStrings.CmdAnnotateDesc
+                                  "/theme …",        liveStrings.CmdThemeDesc
+                                  "/exit",           liveStrings.CmdExitDesc
+                                  "/review pr <N>",  liveStrings.CmdReviewPrDesc ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
@@ -692,19 +722,19 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     proc.StartInfo <- psi
                     match proc.Start() with
                     | false ->
-                        AnsiConsole.Write(Render.errorLine strings strings.GitLogNoRepo)
+                        AnsiConsole.Write(Render.errorLine liveStrings liveStrings.GitLogNoRepo)
                         AnsiConsole.WriteLine()
                     | true ->
                         let out = proc.StandardOutput.ReadToEnd()
                         proc.WaitForExit()
                         if proc.ExitCode <> 0 || String.IsNullOrWhiteSpace out then
-                            AnsiConsole.Write(Render.errorLine strings strings.GitLogNoRepo)
+                            AnsiConsole.Write(Render.errorLine liveStrings liveStrings.GitLogNoRepo)
                             AnsiConsole.WriteLine()
                         else
-                            let prompt = strings.GitLogPrompt.Replace("%s", out)
+                            let prompt = liveStrings.GitLogPrompt.Replace("%s", out)
                             do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 with ex ->
-                    AnsiConsole.Write(Render.errorLine strings ex.Message)
+                    AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
@@ -714,7 +744,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                 let rawArg = if s = "/squash" then "" else s.Substring(8).TrimStart()
                 let n = if String.IsNullOrWhiteSpace rawArg then 0 else (try int rawArg with _ -> 0)
                 if n <= 0 then
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.SquashUsage + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.SquashUsage + "[/]"))
                     AnsiConsole.WriteLine()
                 else
                     let psi = System.Diagnostics.ProcessStartInfo()
@@ -730,39 +760,39 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                         proc.StartInfo <- psi
                         match proc.Start() with
                         | false ->
-                            AnsiConsole.Write(Render.errorLine strings strings.SquashNoRepo)
+                            AnsiConsole.Write(Render.errorLine liveStrings liveStrings.SquashNoRepo)
                             AnsiConsole.WriteLine()
                         | true ->
                             let out = proc.StandardOutput.ReadToEnd()
                             proc.WaitForExit()
                             if proc.ExitCode <> 0 || String.IsNullOrWhiteSpace out then
-                                AnsiConsole.Write(Render.errorLine strings strings.SquashNoRepo)
+                                AnsiConsole.Write(Render.errorLine liveStrings liveStrings.SquashNoRepo)
                                 AnsiConsole.WriteLine()
                             else
                                 let prompt = sprintf """Here are the last %d commits to be squashed:\n\n%s\n\nPlease generate a single conventional commit message that summarizes all these changes.\nFollow the format: type(scope): description\n\nAlso show the git command to execute the squash:\n  git reset --soft HEAD~%d && git commit -m "<your message>"\n\nDo NOT run the command — just show it for the user to review and run manually.""" n out n
                                 do! streamAndRender agent session prompt cfg cancelSrc zenMode
                     with ex ->
-                        AnsiConsole.Write(Render.errorLine strings ex.Message)
+                        AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                         AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/short" ->
                 verbosityPrefix <- Some "[VERBOSITY: respond briefly, 1-2 sentences per point, no elaboration unless asked]\n\n"
-                AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.VerbosityShortSet + "[/]"))
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.VerbosityShortSet + "[/]"))
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/long" ->
                 verbosityPrefix <- Some "[VERBOSITY: respond in detail, include explanations, examples, and context]\n\n"
-                AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.VerbosityLongSet + "[/]"))
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.VerbosityLongSet + "[/]"))
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/zen" ->
                 zenMode <- not zenMode
                 if zenMode then
                     StatusBar.stop ()
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ZenOn + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ZenOn + "[/]"))
                 else
                     StatusBar.start cwd cfg
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ZenOff + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ZenOff + "[/]"))
                 AnsiConsole.WriteLine()
                 if not zenMode then StatusBar.refresh ()
             | Some s when s.StartsWith "/snippet" ->
@@ -771,7 +801,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                 match sub with
                 | "list" ->
                     if snippetStore.IsEmpty then
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.SnippetNone + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.SnippetNone + "[/]"))
                     else
                         for KeyValue(name, (lang, code, src)) in snippetStore do
                             let preview = code.Split('\n').[0].[..60].Trim()
@@ -785,7 +815,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     // parse file:start-end
                     let colonIdx = fileRef.LastIndexOf ':'
                     if colonIdx < 1 then
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.SnippetUsage + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.SnippetUsage + "[/]"))
                         AnsiConsole.WriteLine()
                     else
                         let filePart = fileRef.[..colonIdx-1]
@@ -795,7 +825,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                         | (true, startL), (true, endL) ->
                             let fullPath = Fugue.Tools.PathSafety.resolve cwd filePart
                             if not (System.IO.File.Exists fullPath) then
-                                AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.AtFileNotFound, filePart)) + "[/]"))
+                                AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.AtFileNotFound, filePart)) + "[/]"))
                             else
                                 let lines = System.IO.File.ReadAllLines fullPath
                                 let s1 = max 1 startL
@@ -804,10 +834,10 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                 let ext = (System.IO.Path.GetExtension filePart |> Option.ofObj |> Option.defaultValue "").TrimStart('.')
                                 let lang = if ext = "" then "text" else ext
                                 snippetStore <- snippetStore |> Map.add name (lang, code, fileRef)
-                                AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.SnippetSaved, name)) + "[/]"))
+                                AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetSaved, name)) + "[/]"))
                             AnsiConsole.WriteLine()
                         | _ ->
-                            AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.SnippetUsage + "[/]"))
+                            AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.SnippetUsage + "[/]"))
                             AnsiConsole.WriteLine()
                     StatusBar.refresh ()
                 | "inject" when parts.Length >= 3 ->
@@ -819,10 +849,10 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                             |> Option.map (fun k -> snippetStore.[k]))
                     match found with
                     | None ->
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.SnippetNotFound, query)) + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetNotFound, query)) + "[/]"))
                         AnsiConsole.WriteLine()
                     | Some(lang, code, _) ->
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.SnippetInjected, query)) + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetInjected, query)) + "[/]"))
                         AnsiConsole.WriteLine()
                         let block = sprintf "```%s\n%s\n```" lang code
                         do! streamAndRender agent session block cfg cancelSrc zenMode
@@ -831,13 +861,13 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     let name = parts.[2..] |> String.concat " "
                     if snippetStore.ContainsKey name then
                         snippetStore <- snippetStore |> Map.remove name
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.SnippetRemoved, name)) + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetRemoved, name)) + "[/]"))
                     else
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.SnippetNotFound, name)) + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetNotFound, name)) + "[/]"))
                     AnsiConsole.WriteLine()
                     StatusBar.refresh ()
                 | _ ->
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.SnippetUsage + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.SnippetUsage + "[/]"))
                     AnsiConsole.WriteLine()
                     StatusBar.refresh ()
             | Some s when s = "/bookmarks" || (s.StartsWith "/bookmark " && s.Contains " remove ") || s.StartsWith "/bookmark" ->
@@ -846,7 +876,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                 let isRemove = parts.Length >= 3 && parts.[1] = "remove"
                 if isBookmarks then
                     if bookmarks.IsEmpty then
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.BookmarkNone + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.BookmarkNone + "[/]"))
                         AnsiConsole.WriteLine()
                     else
                         for (i, (name, file, s1, e1)) in bookmarks |> List.indexed do
@@ -858,9 +888,9 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     let before = bookmarks.Length
                     bookmarks <- bookmarks |> List.filter (fun (n, _, _, _) -> n <> name)
                     if bookmarks.Length < before then
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.BookmarkRemoved, name)) + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.BookmarkRemoved, name)) + "[/]"))
                     else
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.BookmarkNotFound, name)) + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.BookmarkNotFound, name)) + "[/]"))
                     AnsiConsole.WriteLine()
                     StatusBar.refresh ()
                 elif parts.Length >= 2 then
@@ -900,14 +930,14 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                             | None -> None
                     match resolved with
                     | None ->
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.BookmarkUsage + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.BookmarkUsage + "[/]"))
                     | Some(fullPath, s1, e1) ->
                         bookmarks <- bookmarks @ [(name, fullPath, s1, e1)]
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.BookmarkSaved, name)) + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.BookmarkSaved, name)) + "[/]"))
                     AnsiConsole.WriteLine()
                     StatusBar.refresh ()
                 else
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.BookmarkUsage + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.BookmarkUsage + "[/]"))
                     AnsiConsole.WriteLine()
                     StatusBar.refresh ()
             | Some s when s = "/clear-history" ->
@@ -918,15 +948,15 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                 try
                     let! newSession = agent.CreateSessionAsync(CancellationToken.None)
                     session <- newSession
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ClearHistoryDone + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ClearHistoryDone + "[/]"))
                     AnsiConsole.WriteLine()
                 with ex ->
                     session <- null
-                    AnsiConsole.Write(Render.errorLine strings ex.Message)
+                    AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/tools" ->
-                AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.ToolsHeader + "[/]"))
+                AnsiConsole.Write(Markup("[bold]" + Markup.Escape liveStrings.ToolsHeader + "[/]"))
                 AnsiConsole.WriteLine()
                 for (name, desc) in Fugue.Tools.ToolRegistry.descriptions do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
@@ -999,9 +1029,9 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                 for attempt in 1..nArg do
                     if not benchAborted then
                         if Render.isColorEnabled () then
-                            AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.BenchRunning, string attempt, string nArg))))
+                            AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.BenchRunning, string attempt, string nArg))))
                         else
-                            Console.Out.WriteLine(String.Format(strings.BenchRunning, string attempt, string nArg))
+                            Console.Out.WriteLine(String.Format(liveStrings.BenchRunning, string attempt, string nArg))
                         try
                             use benchCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds 30.0)
                             let! probeSession = agent.CreateSessionAsync(benchCts.Token)
@@ -1027,7 +1057,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                         with _ ->
                             benchAborted <- true
                 if benchAborted then
-                    AnsiConsole.Write(Render.errorLine strings strings.BenchAborted)
+                    AnsiConsole.Write(Render.errorLine liveStrings liveStrings.BenchAborted)
                     AnsiConsole.WriteLine()
                 elif ttfts.Count > 0 then
                     let pct (data: System.Collections.Generic.List<int64>) (p: int) =
@@ -1130,15 +1160,15 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                           AnnotatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }
                     Fugue.Core.Annotation.save cwd ann
                     StatusBar.recordAnnotation rating
-                    let msg = String.Format(strings.RateSaved, string targetTurn, ratingArg)
+                    let msg = String.Format(liveStrings.RateSaved, string targetTurn, ratingArg)
                     if Render.isColorEnabled () then
                         let color = if ratingArg = "up" then "green" else "red"
                         AnsiConsole.MarkupLine(sprintf "[%s]%s[/]" color (Markup.Escape msg))
                     else Console.Out.WriteLine msg
                 | _ ->
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.RateUsage))
-                    else Console.Out.WriteLine strings.RateUsage
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.RateUsage))
+                    else Console.Out.WriteLine liveStrings.RateUsage
                 StatusBar.refresh ()
             | Some s when s = "/annotate" || s.StartsWith "/annotate " ->
                 // /annotate [N] [up|down] <note text>
@@ -1163,7 +1193,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     if idx < tokens.Length then Some (String.concat " " tokens.[idx..])
                     else None
                 if rating = None && note = None then
-                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.AnnotateUsage))
+                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.AnnotateUsage))
                 else
                     let ann : Fugue.Core.Annotation.TurnAnnotation =
                         { TurnIndex   = targetTurn
@@ -1182,7 +1212,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
             | Some s when s = "/issue" || s.StartsWith "/issue " ->
                 let rawArg = if s = "/issue" then "" else s.Substring(7).TrimStart()
                 if String.IsNullOrWhiteSpace rawArg then
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.IssueUsage + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.IssueUsage + "[/]"))
                     AnsiConsole.WriteLine()
                 else
                     let psi = System.Diagnostics.ProcessStartInfo()
@@ -1201,14 +1231,14 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                         proc.StartInfo <- psi
                         match proc.Start() with
                         | false ->
-                            AnsiConsole.Write(Render.errorLine strings (String.Format(strings.IssueNotFound, rawArg)))
+                            AnsiConsole.Write(Render.errorLine liveStrings (String.Format(liveStrings.IssueNotFound, rawArg)))
                             AnsiConsole.WriteLine()
                         | true ->
                             let output = proc.StandardOutput.ReadToEnd()
                             proc.WaitForExit()
                             if proc.ExitCode <> 0 then
                                 let err = proc.StandardError.ReadToEnd().Trim()
-                                AnsiConsole.Write(Render.errorLine strings (String.Format(strings.IssueNotFound, err)))
+                                AnsiConsole.Write(Render.errorLine liveStrings (String.Format(liveStrings.IssueNotFound, err)))
                                 AnsiConsole.WriteLine()
                             else
                                 // Extract a string field from compact gh JSON output (AOT-safe, no JsonSerializer)
@@ -1238,7 +1268,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                 let title = extractField "title" output
                                 let body  = extractField "body"  output
                                 let issueContext = sprintf "Issue #%s: %s\n\n%s" rawArg title body
-                                AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.IssueFetched, rawArg, title))))
+                                AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.IssueFetched, rawArg, title))))
                                 AnsiConsole.WriteLine()
                                 // Best-effort branch creation
                                 let slugify (src: string) =
@@ -1271,13 +1301,13 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                 // Inject issue context into conversation
                                 do! streamAndRender agent session issueContext cfg cancelSrc zenMode
                     with ex ->
-                        AnsiConsole.Write(Render.errorLine strings ex.Message)
+                        AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                         AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/model suggest" ->
-                AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AskingModelRecommendation + "[/]"))
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AskingModelRecommendation + "[/]"))
                 AnsiConsole.WriteLine()
-                do! streamAndRender agent session strings.ModelSuggestPrompt cfg cancelSrc zenMode
+                do! streamAndRender agent session liveStrings.ModelSuggestPrompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s = "/onboard" ->
                 let tryRead (p: string) =
@@ -1321,24 +1351,24 @@ Include: setup steps, key files to read, how to build/test, coding conventions, 
 Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\n" contextParts)
                 do! streamAndRender agent session onboardPrompt cfg cancelSrc zenMode
             | Some s when s = "/review pr" || s = "/review pr " ->
-                AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ReviewPrUsage + "[/]"))
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrUsage + "[/]"))
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/review pr " ->
                 let arg = s.Substring(11).Trim()
                 match System.Int32.TryParse arg with
                 | false, _ ->
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ReviewPrUsage + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrUsage + "[/]"))
                     AnsiConsole.WriteLine()
                 | true, prNum when prNum < 1 ->
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ReviewPrUsage + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrUsage + "[/]"))
                     AnsiConsole.WriteLine()
                 | true, prNum ->
                     let meta = runCmd "gh" [| "pr"; "view"; string prNum; "--json"; "title,body" |] cwd
                     let diff = runCmd "gh" [| "pr"; "diff"; string prNum |] cwd
                     match diff with
                     | None ->
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ReviewPrNotFound + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrNotFound + "[/]"))
                         AnsiConsole.WriteLine()
                     | Some diffText ->
                         let truncatedDiff =
@@ -1346,7 +1376,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                             else diffText
                         let titleBody = meta |> Option.defaultValue ""
                         let prompt =
-                            strings.ReviewPrPrompt
+                            liveStrings.ReviewPrPrompt
                                 .Replace("{0}", string prNum)
                                 .Replace("{1}", titleBody)
                                 .Replace("{2}", truncatedDiff)
@@ -1357,7 +1387,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
             | Some s when s.StartsWith "/ask " ->
                 let question = s.Substring(5).Trim()
                 if String.IsNullOrWhiteSpace question then
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AskUsage + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AskUsage + "[/]"))
                     AnsiConsole.WriteLine()
                 else
                     let augmented = sprintf "[System: answer from your training knowledge only — do not invoke any tools, do not read files, do not run commands]\n\nUser: %s" question
@@ -1366,7 +1396,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     do! streamAndRender agent session augmented cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s = "/ask" ->
-                AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AskUsage + "[/]"))
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AskUsage + "[/]"))
                 AnsiConsole.WriteLine()
             | Some s when s = "/diff" || s = "/diff --staged" ||
                           (s.StartsWith("/diff ") && s <> "/diff --staged") ->
@@ -1401,22 +1431,22 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     let isTwoFile = match parts with [| _; _ |] -> true | _ -> false
                     if proc.ExitCode <> 0 && not (isTwoFile && proc.ExitCode = 1) then
                         let msg = if errOut <> "" then errOut else sprintf "git diff exited %d" proc.ExitCode
-                        AnsiConsole.Write(Render.errorLine strings msg)
+                        AnsiConsole.Write(Render.errorLine liveStrings msg)
                         AnsiConsole.WriteLine()
                     elif System.String.IsNullOrWhiteSpace output then
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.NoDiff + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.NoDiff + "[/]"))
                         AnsiConsole.WriteLine()
                     else
                         AnsiConsole.Write(DiffRender.toRenderable output)
                         AnsiConsole.WriteLine()
                 with ex ->
-                    AnsiConsole.Write(Render.errorLine strings ex.Message)
+                    AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/init" ->
                 let fugueMdPath = System.IO.Path.Combine(cwd, "FUGUE.md")
                 if System.IO.File.Exists fugueMdPath then
-                    AnsiConsole.Write(Markup("[yellow]" + Markup.Escape strings.InitExists + "[/]"))
+                    AnsiConsole.Write(Markup("[yellow]" + Markup.Escape liveStrings.InitExists + "[/]"))
                     AnsiConsole.WriteLine()
                     StatusBar.refresh ()
                 else
@@ -1446,7 +1476,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     session <- newSession
                 with ex ->
                     session <- null
-                    AnsiConsole.Write(Render.errorLine strings ex.Message)
+                    AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                     AnsiConsole.WriteLine()
                 turnNumber <- 0
                 sessionNotes <- []
@@ -1491,7 +1521,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                             proc.Start() |> ignore
                             proc.WaitForExit()
                         with ex ->
-                            AnsiConsole.Write(Render.errorLine strings ex.Message)
+                            AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                             AnsiConsole.WriteLine()
                     finally
                         cancelSrc.ExitChild ()
@@ -1515,14 +1545,14 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     else
                         let clean = arg.TrimStart('/')
                         if clean.StartsWith "docs/" then clean else "docs/" + clean
-                let docPrompt = System.String.Format(strings.DocumentPrompt, docPath)
+                let docPrompt = System.String.Format(liveStrings.DocumentPrompt, docPath)
                 AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/document %s" docPath) 0)
                 AnsiConsole.WriteLine()
                 do! streamAndRender agent session docPrompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s = "/activity" ->
                 if activityStore.IsEmpty then
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ActivityNone + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ActivityNone + "[/]"))
                     AnsiConsole.WriteLine()
                 else
                     let maxCount = activityStore |> Map.toSeq |> Seq.map snd |> Seq.max
@@ -1550,37 +1580,37 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 | "record" when not (String.IsNullOrWhiteSpace arg) ->
                     if Macros.isRecording() then Macros.stopRecording() |> ignore
                     Macros.startRecording arg
-                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.MacroRecording, arg))))
+                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.MacroRecording, arg))))
                 | "stop" ->
                     match Macros.stopRecording() with
                     | Some name ->
                         let cnt = Macros.list() |> List.tryFind (fun (n, _) -> n = name) |> Option.map snd |> Option.defaultValue 0
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.MacroSaved, name, cnt))))
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.MacroSaved, name, cnt))))
                     | None ->
                         AnsiConsole.MarkupLine("[dim]no recording in progress[/]")
                 | "play" when not (String.IsNullOrWhiteSpace arg) ->
                     match Macros.list() |> List.tryFind (fun (n, _) -> n = arg) with
                     | Some (_, cnt) ->
                         if Macros.enqueuePlay arg then
-                            AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.MacroPlaying, arg, cnt))))
+                            AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.MacroPlaying, arg, cnt))))
                         else
-                            AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.MacroNotFound, arg))))
+                            AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.MacroNotFound, arg))))
                     | None ->
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.MacroNotFound, arg))))
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.MacroNotFound, arg))))
                 | "list" | "" ->
                     let macros = Macros.list()
                     if macros.IsEmpty then
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.MacroNone))
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.MacroNone))
                     else
                         for (name, cnt) in macros do
                             AnsiConsole.MarkupLine(sprintf "  [cyan]%s[/] [dim](%d steps)[/]" (Markup.Escape name) cnt)
                 | "remove" when not (String.IsNullOrWhiteSpace arg) ->
                     if Macros.remove arg then
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.MacroRemoved, arg))))
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.MacroRemoved, arg))))
                     else
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.MacroNotFound, arg))))
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.MacroNotFound, arg))))
                 | _ ->
-                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.MacroUsage))
+                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.MacroUsage))
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/theme" ->
@@ -1590,22 +1620,22 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     Render.toggleBubbles ()
                     let on = Render.isBubblesMode ()
                     if on then
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.ThemeBubblesOn))
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.ThemeBubblesOn))
                     else
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.ThemeBubblesOff))
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.ThemeBubblesOff))
                     savedUi <- { savedUi with BubblesMode = on }
                     try Config.saveToFile { cfg with Ui = savedUi } with _ -> ()
                 | "typewriter" ->
                     Render.toggleTypewriter ()
                     let on = Render.isTypewriterMode ()
                     if on then
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.ThemeTypewriterOn))
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.ThemeTypewriterOn))
                     else
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.ThemeTypewriterOff))
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.ThemeTypewriterOff))
                     savedUi <- { savedUi with TypewriterMode = on }
                     try Config.saveToFile { cfg with Ui = savedUi } with _ -> ()
                 | _ ->
-                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.ThemeUsage))
+                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.ThemeUsage))
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/alias" ->
@@ -1614,7 +1644,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 match sub with
                 | "list" | "" when s = "/alias" || s = "/alias list" ->
                     if aliasStore.IsEmpty then
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AliasNone + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AliasNone + "[/]"))
                     else
                         for KeyValue(name, expansion) in aliasStore do
                             AnsiConsole.Write(Markup(sprintf "  [cyan]/%s[/] [dim]→ %s[/]" (Markup.Escape name) (Markup.Escape expansion)))
@@ -1623,22 +1653,22 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 | "remove" when parts.Length >= 3 ->
                     let name = parts.[2]
                     aliasStore <- aliasStore |> Map.remove name
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.AliasRemoved, name)) + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.AliasRemoved, name)) + "[/]"))
                     AnsiConsole.WriteLine()
                 | _ ->
                     // Parse: /alias <name> = <expansion>
                     let rest = s.Substring("/alias ".Length)
                     let eqIdx = rest.IndexOf '='
                     if eqIdx < 1 then
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AliasUsage + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AliasUsage + "[/]"))
                     else
                         let name = rest.[..eqIdx-1].Trim().TrimStart('/')
                         let expansion = rest.[eqIdx+1..].Trim()
                         if not (String.IsNullOrWhiteSpace name) && not (String.IsNullOrWhiteSpace expansion) then
                             aliasStore <- aliasStore |> Map.add name expansion
-                            AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.AliasSet, name, expansion)) + "[/]"))
+                            AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.AliasSet, name, expansion)) + "[/]"))
                         else
-                            AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AliasUsage + "[/]"))
+                            AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AliasUsage + "[/]"))
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/cron" || s.StartsWith "/cron " ->
@@ -1817,21 +1847,21 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 | "send" when not scratchLines.IsEmpty ->
                     let text = scratchLines |> String.concat "\n"
                     scratchLines <- []
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ScratchSent + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ScratchSent + "[/]"))
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session text cfg cancelSrc zenMode
                 | "send" ->
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ScratchEmpty + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ScratchEmpty + "[/]"))
                     AnsiConsole.WriteLine()
                 | "clear" ->
                     scratchLines <- []
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ScratchCleared + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ScratchCleared + "[/]"))
                     AnsiConsole.WriteLine()
                 | "show" ->
                     if scratchLines.IsEmpty then
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ScratchEmpty + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ScratchEmpty + "[/]"))
                     else
-                        AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.ScratchShowHeader + "[/]"))
+                        AnsiConsole.Write(Markup("[bold]" + Markup.Escape liveStrings.ScratchShowHeader + "[/]"))
                         AnsiConsole.WriteLine()
                         for line in scratchLines do
                             AnsiConsole.Write(Markup("[dim]  " + Markup.Escape line + "[/]"))
@@ -1839,7 +1869,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 | text when not (String.IsNullOrWhiteSpace text) ->
                     scratchLines <- scratchLines @ [text]
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.ScratchAppended, scratchLines.Length)) + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.ScratchAppended, scratchLines.Length)) + "[/]"))
                     AnsiConsole.WriteLine()
                 | _ ->
                     // /scratch alone with no subcommand: show usage
@@ -1849,7 +1879,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
             | Some s when s = "/watches" ->
                 let ws = FileWatcher.list ()
                 if ws.IsEmpty then
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.WatchNone + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.WatchNone + "[/]"))
                     AnsiConsole.WriteLine()
                 else
                     for (path, cmd) in ws do
@@ -1860,37 +1890,37 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 let path = s.Substring("/unwatch ".Length).Trim()
                 let absPath = System.IO.Path.GetFullPath(path)
                 FileWatcher.remove absPath
-                AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.WatchRemoved, path)) + "[/]"))
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.WatchRemoved, path)) + "[/]"))
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/watch " ->
                 let rest = s.Substring("/watch ".Length).Trim()
                 let spaceIdx = rest.IndexOf ' '
                 if spaceIdx <= 0 then
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.WatchUsage + "[/]"))
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.WatchUsage + "[/]"))
                     AnsiConsole.WriteLine()
                 else
                     let path = rest.Substring(0, spaceIdx).Trim()
                     let cmd  = rest.Substring(spaceIdx + 1).Trim()
                     let absPath = System.IO.Path.GetFullPath(path)
                     if not (System.IO.File.Exists absPath) then
-                        AnsiConsole.Write(Markup(sprintf "[dim]%s[/]" (Markup.Escape (System.String.Format(strings.AtFileNotFound, path)))))
+                        AnsiConsole.Write(Markup(sprintf "[dim]%s[/]" (Markup.Escape (System.String.Format(liveStrings.AtFileNotFound, path)))))
                         AnsiConsole.WriteLine()
                     else
                         FileWatcher.add absPath cmd
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.WatchAdded, path, cmd)) + "[/]"))
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.WatchAdded, path, cmd)) + "[/]"))
                         AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/note " ->
                 let text = s.Substring("/note ".Length).Trim()
                 if not (String.IsNullOrWhiteSpace text) then
                     sessionNotes <- sessionNotes @ [(turnNumber, text)]
-                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.NoteAdded))
+                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.NoteAdded))
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/notes" ->
                 if sessionNotes.IsEmpty then
-                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.NoteNone))
+                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.NoteNone))
                 else
                     for (turn, text) in sessionNotes do
                         if Render.isColorEnabled () then
@@ -1902,11 +1932,11 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
             | Some s when s = "/undo" ->
                 match Fugue.Core.Checkpoint.undo () with
                 | Fugue.Core.Checkpoint.NothingToUndo ->
-                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.UndoNothingToUndo))
+                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.UndoNothingToUndo))
                 | Fugue.Core.Checkpoint.Restored path ->
-                    AnsiConsole.MarkupLine(sprintf "[green]✓[/] %s: [dim]%s[/]" (Markup.Escape strings.UndoRestored) (Markup.Escape path))
+                    AnsiConsole.MarkupLine(sprintf "[green]✓[/] %s: [dim]%s[/]" (Markup.Escape liveStrings.UndoRestored) (Markup.Escape path))
                 | Fugue.Core.Checkpoint.Deleted path ->
-                    AnsiConsole.MarkupLine(sprintf "[yellow]✓[/] %s: [dim]%s[/]" (Markup.Escape strings.UndoDeleted) (Markup.Escape path))
+                    AnsiConsole.MarkupLine(sprintf "[yellow]✓[/] %s: [dim]%s[/]" (Markup.Escape liveStrings.UndoDeleted) (Markup.Escape path))
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/todo" ->
@@ -1938,10 +1968,10 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         tryRun "grep" [| "-rn"; "-E"; "TODO|FIXME|HACK"; "." |]
                 match results with
                 | None ->
-                    AnsiConsole.Write(Render.errorLine strings "rg and grep unavailable")
+                    AnsiConsole.Write(Render.errorLine liveStrings "rg and grep unavailable")
                     AnsiConsole.WriteLine()
                 | Some "" ->
-                    AnsiConsole.MarkupLine("[dim]" + Markup.Escape strings.TodoNone + "[/]")
+                    AnsiConsole.MarkupLine("[dim]" + Markup.Escape liveStrings.TodoNone + "[/]")
                     AnsiConsole.WriteLine()
                 | Some output ->
                     let lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
@@ -2003,7 +2033,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         |> List.sortByDescending (fun (score, _, _) -> score)
                         |> List.truncate 10
                     if results.IsEmpty then
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.FindNoResults))
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.FindNoResults))
                     else
                         for (_score, rel, snippet) in results do
                             let snipStr =
@@ -2014,7 +2044,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                                 AnsiConsole.MarkupLine(sprintf "[cyan]%s[/]%s" (Markup.Escape rel) (Markup.Escape snipStr))
                             else
                                 Console.Out.WriteLine(sprintf "%s%s" rel snipStr)
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.FindInjectHint))
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.FindInjectHint))
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/summarize" ->
@@ -2039,10 +2069,10 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 StatusBar.refresh ()
             | Some userInput ->
                 if ReadLine.hasZeroWidth userInput then
-                    AnsiConsole.Write(Markup("[dim yellow]" + Markup.Escape strings.ZeroWidthWarning + "[/]"))
+                    AnsiConsole.Write(Markup("[dim yellow]" + Markup.Escape liveStrings.ZeroWidthWarning + "[/]"))
                     AnsiConsole.WriteLine()
-                let expandedInput = expandAtFiles cwd strings userInput
-                let expandedInput = expandClipboard expandedInput strings
+                let expandedInput = expandAtFiles cwd liveStrings userInput
+                let expandedInput = expandClipboard expandedInput liveStrings
                 let expandedInput = expandClipRing expandedInput
                 StatusBar.recordWords (expandedInput.Split([|' '; '\n'; '\r'; '\t'|], StringSplitOptions.RemoveEmptyEntries).Length)
                 turnNumber <- turnNumber + 1
