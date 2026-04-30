@@ -6,6 +6,11 @@ open Microsoft.Agents.AI
 open Fugue.Core.Config
 open Fugue.Agent
 
+let private noColor () =
+    let isSet name = Environment.GetEnvironmentVariable name |> isNull |> not
+    isSet "NO_COLOR" || isSet "FUGUE_NO_COLOR"
+    || Environment.GetEnvironmentVariable "TERM" = "dumb"
+
 let private buildAgent (cfg: AppConfig) : AIAgent =
     let cwd = Environment.CurrentDirectory
     let tools = Fugue.Tools.ToolRegistry.buildAll cwd
@@ -24,6 +29,7 @@ let private buildAgent (cfg: AppConfig) : AIAgent =
 [<RequiresUnreferencedCode("Calls Repl.run and Config.saveToFile which use STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 [<RequiresDynamicCode("Calls Repl.run and Config.saveToFile which use STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 let private runWithCfg (cfg: AppConfig) : int =
+    Render.initColor (not (noColor ()))
     let agent = buildAgent cfg
     let cwd = Environment.CurrentDirectory
     let t = Repl.run agent cfg cwd
