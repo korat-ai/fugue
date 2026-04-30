@@ -72,16 +72,15 @@ let prompt (ui: Fugue.Core.Config.UiConfig) (modelShort: string) : string =
 let userMessage (ui: UiConfig) (text: string) (turn: int) : IRenderable =
     if colorEnabled then
         let escaped = Markup.Escape text
-        let prefix = $"[dim][[{turn}]][/] "
+        let turnTag = $"[dim][[{turn}]][/]"
         match ui.UserAlignment with
         | Left ->
-            Markup($"[grey]›[/] {prefix}{escaped}") :> _
+            Markup($"[grey]›[/] {turnTag} {escaped}") :> _
         | Right ->
-            let bubble = Padder(Markup($"{prefix}{escaped}")).PadLeft(2).PadRight(2) :> IRenderable
+            let bubble = Padder(Markup($"{escaped} {turnTag}")).PadLeft(2).PadRight(2) :> IRenderable
             Align(bubble, HorizontalAlignment.Right) :> _
     else
-        let prefix = $"[{turn}] "
-        Text($"> {prefix}{text}") :> _
+        Text($"> {text} [{turn}]") :> _
 
 /// Plain assistant text during streaming (no markdown parse — buffer is partial).
 let assistantLive (text: string) : IRenderable =
