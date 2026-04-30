@@ -786,7 +786,10 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/scaffold actor <Name>",    "generate typed actor with command DU and supervision"
                                   "/check tail-rec <file>",    "detect non-tail-recursive functions and offer rewrites"
                                   "/check effects <file>",     "verify ZIO/Cats Effect/Async type consistency"
-                                  "/translate comments <file>","translate code comments to English" ]
+                                  "/translate comments <file>","translate code comments to English"
+                                  "/port <file> [lang]",       "idiomatic cross-language code translation"
+                                  "/scaffold <type> <name>",   "language-aware project scaffolding"
+                                  "/complexity [file/dir]",    "cyclomatic complexity analysis and refactoring hints" ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
@@ -2266,6 +2269,49 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.Write(Render.userMessage cfg.Ui ("/summarize " + rawArg) 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session summarizePrompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/port " || s = "/port" ->
+                // /port <file> [target-lang] — idiomatic cross-language code translation
+                let arg = if s = "/port" then "" else s.Substring("/port ".Length).Trim()
+                if arg = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /port <file> [target-language][/]")
+                    AnsiConsole.WriteLine()
+                else
+                    let parts  = arg.Split(' ') |> Array.toList
+                    let file   = parts.Head
+                    let target = if parts.Length > 1 then String.concat " " parts.Tail else ""
+                    let fullPath = if IO.Path.IsPathRooted file then file else IO.Path.GetFullPath(IO.Path.Combine(cwd, file))
+                    let (code, targetLang) =
+                        if IO.File.Exists fullPath then IO.File.ReadAllText fullPath, (if target = "" then "F#" else target)
+                        else file, (if target = "" then "F#" else target)
+                    let prompt =
+                        sprintf "Port the following code to idiomatic %s:\n\n```\n%s\n```\n\nRequirements:\n1. Use the target language's idiomatic patterns — not a literal transliteration.\n2. For OOP→FP: use DUs/sealed traits, immutable records, pattern matching.\n3. For FP→OOP: map to classes, interfaces, exception handling.\n4. Annotate each non-obvious translation decision with a brief inline comment.\n5. Return the full translated file ready to use." targetLang code
+                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/port %s → %s" file targetLang) 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/scaffold " && not (s.StartsWith "/scaffold du") && not (s.StartsWith "/scaffold cqrs") && not (s.StartsWith "/scaffold actor") ->
+                // /scaffold [type] <name> — language-aware project bootstrapping
+                let arg = s.Substring("/scaffold ".Length).Trim()
+                if arg = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /scaffold <type> <name>  (e.g. /scaffold service UserService)[/]")
+                    AnsiConsole.WriteLine()
+                else
+                    let prompt =
+                        sprintf "Generate a project scaffold for \"%s\".\n\nInspect the project structure first (use Glob/Read tools) to understand:\n1. Language and framework in use.\n2. Naming conventions, folder layout, and existing patterns.\n3. Test framework and tooling.\n\nThen generate the scaffold files following project conventions. Include:\n- Main implementation file(s)\n- Unit test skeleton\n- Any registration/wiring needed in existing entry points\n\nWrite each file using the Write tool." arg
+                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/scaffold %s" arg) 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s = "/complexity" || s.StartsWith "/complexity " ->
+                // /complexity [file] — cyclomatic complexity analysis
+                let arg = if s = "/complexity" then "" else s.Substring("/complexity ".Length).Trim()
+                let target = if arg = "" then "." else arg
+                let prompt =
+                    sprintf "Analyse cyclomatic complexity of the code in \"%s\".\n\nFor each function/method:\n1. Compute approximate cyclomatic complexity (count decision points: if/match/loop/exception handlers).\n2. Flag functions with complexity > 10 as high-risk.\n3. Suggest refactorings for the top 3 most complex functions (extract method, simplify conditions, etc.).\n\nPresent results as a table: Function | Complexity | Risk | Refactoring suggestion.\n\nUse Glob and Read tools to discover and examine the source files." target
+                AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/complexity %s" target) 0)
+                AnsiConsole.WriteLine()
+                do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/check tail-rec " || s = "/check tail-rec" ->
                 // /check tail-rec [file] — detect non-tail-recursive functions and offer rewrites
