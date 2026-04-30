@@ -223,11 +223,14 @@ let private stripDelimiters (s: string) : string =
             result.Append(s.[i]) |> ignore
             i <- i + 1
     let s2 = result.ToString()
-    // Strip $...$
+    // Strip $...$  but skip $digit (likely currency like $5, $10 — not math).
     let result2 = System.Text.StringBuilder()
     let mutable j = 0
     while j < s2.Length do
-        if s2.[j] = '$' then
+        let isMathStart =
+            s2.[j] = '$'
+            && not (j + 1 < s2.Length && System.Char.IsDigit s2.[j + 1])
+        if isMathStart then
             let start = j + 1
             let close = s2.IndexOf('$', start)
             if close >= 0 then
