@@ -124,6 +124,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 AnsiConsole.WriteLine()
                 let helpItems = [ "/help",  strings.CmdHelpDesc
                                   "/clear", strings.CmdClearDesc
+                                  "/init",  strings.CmdInitDesc
                                   "/exit",  strings.CmdExitDesc ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
@@ -132,6 +133,28 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
                 StatusBar.refresh ()
+            | Some s when s = "/init" ->
+                let fugueMdPath = System.IO.Path.Combine(cwd, "FUGUE.md")
+                if System.IO.File.Exists fugueMdPath then
+                    AnsiConsole.Write(Markup("[yellow]" + Markup.Escape strings.InitExists + "[/]"))
+                    AnsiConsole.WriteLine()
+                    StatusBar.refresh ()
+                else
+                    let initPrompt =
+                        "Please analyze this project and create a FUGUE.md file in the current directory.\n\n" +
+                        "FUGUE.md is a project context file for Fugue (an AI coding assistant). It should include:\n" +
+                        "- Project purpose and target audience\n" +
+                        "- Architecture overview (key directories, modules, patterns)\n" +
+                        "- Tech stack and dependencies\n" +
+                        "- Development conventions (naming, style, testing approach)\n" +
+                        "- Common commands (build, test, run, deploy)\n" +
+                        "- Any gotchas or non-obvious constraints\n\n" +
+                        "Keep it concise — aim for 50-150 lines. Use Markdown headers.\n" +
+                        "Write the file to ./FUGUE.md using the Write tool."
+                    AnsiConsole.Write(Render.userMessage cfg.Ui "/init")
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session initPrompt cfg cancelSrc
+                    StatusBar.refresh ()
             | Some userInput ->
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
                 AnsiConsole.WriteLine()
