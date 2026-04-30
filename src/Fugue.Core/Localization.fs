@@ -88,6 +88,11 @@ type Strings =
       VerbosityShortSet: string
       VerbosityLongSet:  string
 
+      // /zen mode
+      CmdZenDesc:  string
+      ZenOn:       string
+      ZenOff:      string
+
       // /summary
       CmdSummaryDesc: string
 
@@ -182,6 +187,9 @@ let en : Strings =
       CmdLongDesc           = "switch to detailed responses"
       VerbosityShortSet     = "Brevity mode on. Responses will be concise."
       VerbosityLongSet      = "Detail mode on. Responses will be thorough."
+      CmdZenDesc            = "toggle distraction-free mode (hides status bar and tool output)"
+      ZenOn                 = "Zen mode on. Status bar and tool output hidden."
+      ZenOff                = "Zen mode off."
       CmdSummaryDesc        = "ask the agent to summarize the current session"
       CmdSquashDesc         = "generate squash commit message for last N commits"
       SquashUsage           = "usage: /squash <N>"
@@ -257,6 +265,9 @@ let ru : Strings =
       CmdLongDesc           = "перейти к подробным ответам"
       VerbosityShortSet     = "Режим краткости включён. Ответы будут краткими."
       VerbosityLongSet      = "Режим подробности включён. Ответы будут развёрнутыми."
+      CmdZenDesc            = "переключить режим дзен (скрывает статус-бар и вывод инструментов)"
+      ZenOn                 = "Режим дзен включён. Статус-бар и вывод инструментов скрыты."
+      ZenOff                = "Режим дзен выключен."
       CmdSummaryDesc        = "попросить агента резюмировать текущую сессию"
       CmdSquashDesc         = "сгенерировать squash-сообщение для последних N коммитов"
       SquashUsage           = "использование: /squash <N>"

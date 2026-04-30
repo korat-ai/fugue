@@ -20,6 +20,9 @@ open Fugue.Tools.PathSafety
 // Session-scoped state: most recently accessed file path for @last expansion.
 let mutable private lastFile : string option = None
 
+// Zen mode: suppress status bar and tool output bullets.
+let mutable private zenMode = false
+
 /// Try to find the git repository root starting from startDir.
 /// Runs `git rev-parse --show-toplevel` as a best-effort child process; returns None on any failure.
 /// Stderr is redirected and drained concurrently to suppress git's "not a git repository" message.
@@ -269,7 +272,7 @@ type CancelSource() =
 
 let private streamAndRender
         (agent: AIAgent) (session: AgentSession | null) (input: string)
-        (cfg: AppConfig) (cancelSrc: CancelSource) : Task<unit> = task {
+        (cfg: AppConfig) (cancelSrc: CancelSource) (zen: bool) : Task<unit> = task {
     use streamCts = cancelSrc.NewStreamCts()
     let strings = pick cfg.Ui.Locale
     let toolMeta = Dictionary<string, string * string * int64>()
@@ -315,8 +318,9 @@ let private streamAndRender
                         let state =
                             if isErr then Render.Failed(name, args, output, elapsed)
                             else Render.Completed(name, args, output, elapsed)
-                        AnsiConsole.Write(Render.toolBullet strings state)
-                        AnsiConsole.WriteLine ()
+                        if not zen then
+                            AnsiConsole.Write(Render.toolBullet strings state)
+                            AnsiConsole.WriteLine ()
                         StatusBar.refresh()
                     | Conversation.Finished -> ()
                     | Conversation.Failed ex -> raise ex
@@ -426,6 +430,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/squash <N>",      strings.CmdSquashDesc
                                   "/short",           strings.CmdShortDesc
                                   "/long",            strings.CmdLongDesc
+                                  "/zen",             strings.CmdZenDesc
                                   "/clear-history",   strings.CmdClearHistoryDesc
                                   "/tools",           strings.CmdToolsDesc
                                   "/todo",            strings.CmdTodoDesc
@@ -472,7 +477,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                             AnsiConsole.WriteLine()
                         else
                             let prompt = strings.GitLogPrompt.Replace("%s", out)
-                            do! streamAndRender agent session prompt cfg cancelSrc
+                            do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 with ex ->
                     AnsiConsole.Write(Render.errorLine strings ex.Message)
                     AnsiConsole.WriteLine()
@@ -510,7 +515,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                 AnsiConsole.WriteLine()
                             else
                                 let prompt = sprintf """Here are the last %d commits to be squashed:\n\n%s\n\nPlease generate a single conventional commit message that summarizes all these changes.\nFollow the format: type(scope): description\n\nAlso show the git command to execute the squash:\n  git reset --soft HEAD~%d && git commit -m "<your message>"\n\nDo NOT run the command — just show it for the user to review and run manually.""" n out n
-                                do! streamAndRender agent session prompt cfg cancelSrc
+                                do! streamAndRender agent session prompt cfg cancelSrc zenMode
                     with ex ->
                         AnsiConsole.Write(Render.errorLine strings ex.Message)
                         AnsiConsole.WriteLine()
@@ -525,6 +530,16 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.VerbosityLongSet + "[/]"))
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
+            | Some s when s = "/zen" ->
+                zenMode <- not zenMode
+                if zenMode then
+                    StatusBar.stop ()
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ZenOn + "[/]"))
+                else
+                    StatusBar.start cwd cfg
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ZenOff + "[/]"))
+                AnsiConsole.WriteLine()
+                if not zenMode then StatusBar.refresh ()
             | Some s when s = "/clear-history" ->
                 match box session with
                 | :? IAsyncDisposable as d ->
@@ -637,7 +652,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                             AnsiConsole.WriteLine()
                                 with _ -> ()   // git unavailable or not a repo — silent
                                 // Inject issue context into conversation
-                                do! streamAndRender agent session issueContext cfg cancelSrc
+                                do! streamAndRender agent session issueContext cfg cancelSrc zenMode
                     with ex ->
                         AnsiConsole.Write(Render.errorLine strings ex.Message)
                         AnsiConsole.WriteLine()
@@ -645,7 +660,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             | Some s when s = "/model suggest" ->
                 AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AskingModelRecommendation + "[/]"))
                 AnsiConsole.WriteLine()
-                do! streamAndRender agent session strings.ModelSuggestPrompt cfg cancelSrc
+                do! streamAndRender agent session strings.ModelSuggestPrompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s = "/onboard" ->
                 let tryRead (p: string) =
@@ -687,7 +702,7 @@ Include: setup steps, key files to read, how to build/test, coding conventions, 
 %s
 
 Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\n" contextParts)
-                do! streamAndRender agent session onboardPrompt cfg cancelSrc
+                do! streamAndRender agent session onboardPrompt cfg cancelSrc zenMode
             | Some s when s = "/review pr" || s = "/review pr " ->
                 AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.ReviewPrUsage + "[/]"))
                 AnsiConsole.WriteLine()
@@ -720,7 +735,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                                 .Replace("{2}", truncatedDiff)
                         AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "Reviewing PR #%d…" prNum) 0)
                         AnsiConsole.WriteLine()
-                        do! streamAndRender agent session prompt cfg cancelSrc
+                        do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/ask " ->
                 let question = s.Substring(5).Trim()
@@ -731,7 +746,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     let augmented = sprintf "[System: answer from your training knowledge only — do not invoke any tools, do not read files, do not run commands]\n\nUser: %s" question
                     AnsiConsole.Write(Render.userMessage cfg.Ui question 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session augmented cfg cancelSrc
+                    do! streamAndRender agent session augmented cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s = "/ask" ->
                 AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AskUsage + "[/]"))
@@ -801,7 +816,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         "Write the file to ./FUGUE.md using the Write tool."
                     AnsiConsole.Write(Render.userMessage cfg.Ui "/init" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session initPrompt cfg cancelSrc
+                    do! streamAndRender agent session initPrompt cfg cancelSrc zenMode
                     StatusBar.refresh ()
             | Some s when s = "/new" ->
                 AnsiConsole.Clear()
@@ -819,6 +834,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 turnNumber <- 0
                 sessionNotes <- []
                 lastFile <- None
+                zenMode <- false
                 Fugue.Core.Checkpoint.clear ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "!" ->
@@ -859,7 +875,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     "Be concise but complete."
                 AnsiConsole.Write(Render.userMessage cfg.Ui "/summary" 0)
                 AnsiConsole.WriteLine()
-                do! streamAndRender agent session summaryPrompt cfg cancelSrc
+                do! streamAndRender agent session summaryPrompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/note " ->
                 let text = s.Substring("/note ".Length).Trim()
@@ -933,7 +949,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     let summary =
                         sprintf "Found %d TODO/FIXME/HACK items in workspace:\n\n%s%s\n\nPlease review these and suggest which ones are worth addressing now."
                             lines.Length body note
-                    do! streamAndRender agent session summary cfg cancelSrc
+                    do! streamAndRender agent session summary cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/find " ->
                 let query = s.Substring("/find ".Length).Trim()
@@ -1015,7 +1031,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                             sprintf "The path '%s' does not exist. Please let me know." rawArg
                     AnsiConsole.Write(Render.userMessage cfg.Ui ("/summarize " + rawArg) 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session summarizePrompt cfg cancelSrc
+                    do! streamAndRender agent session summarizePrompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some userInput ->
                 if ReadLine.hasZeroWidth userInput then
@@ -1031,7 +1047,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     | Some prefix -> prefix + expandedInput
                     | None -> expandedInput
                 let sw = System.Diagnostics.Stopwatch.StartNew()
-                do! streamAndRender agent session effectiveInput cfg cancelSrc
+                do! streamAndRender agent session effectiveInput cfg cancelSrc zenMode
                 StatusBar.refresh ()
     finally
         Console.CancelKeyPress.RemoveHandler handler
