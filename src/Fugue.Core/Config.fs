@@ -276,3 +276,64 @@ let saveToFile (cfg: AppConfig) : unit =
         | Ollama(e, m)    -> { provider = "ollama";    model = m; apiKey = ""; ollamaEndpoint = string e; baseUrl = baseUrlVal; maxIterations = cfg.MaxIterations; maxTokens = maxTokensVal; ui = uiDto }
     let json = JsonSerializer.Serialize<AppConfigDto>(dto, appConfigOptions)
     File.WriteAllText(path, json)
+
+/// Load model schedule from the "modelSchedule" key in config.json (AOT-safe, JsonDocument).
+let loadModelSchedule () : ModelSchedule.ModelScheduleConfig option =
+    let path = configPath ()
+    if not (File.Exists path) then None
+    else
+        try
+            use doc  = JsonDocument.Parse(File.ReadAllText path)
+            let root = doc.RootElement
+            let mutable ms = Unchecked.defaultof<JsonElement>
+            if not (root.TryGetProperty("modelSchedule", &ms)) then None
+            else
+                let getStr (el: JsonElement) (k: string) def =
+                    let mutable p = Unchecked.defaultof<JsonElement>
+                    if el.TryGetProperty(k, &p) then p.GetString() |> Option.ofObj |> Option.defaultValue def
+                    else def
+                let getInt (el: JsonElement) (k: string) def =
+                    let mutable p = Unchecked.defaultof<JsonElement>
+                    if el.TryGetProperty(k, &p) then
+                        try p.GetInt32() with _ -> def
+                    else def
+                let fallback = getStr ms "fallback" ""
+                let schedule =
+                    let mutable sched = Unchecked.defaultof<JsonElement>
+                    if ms.TryGetProperty("schedule", &sched) && sched.ValueKind = JsonValueKind.Array then
+                        [ for el in sched.EnumerateArray() do
+                            let model    = getStr el "model" ""
+                            let startStr = getStr el "start" "00:00"
+                            let endStr   = getStr el "end"   "23:59"
+                            let tz       = getStr el "timezone" ""
+                            let priority = getInt el "priority" 0
+                            let days =
+                                let mutable dp = Unchecked.defaultof<JsonElement>
+                                if el.TryGetProperty("days", &dp) && dp.ValueKind = JsonValueKind.Array then
+                                    [ for d in dp.EnumerateArray() do
+                                        match d.GetString() |> Option.ofObj with
+                                        | None -> ()
+                                        | Some s ->
+                                            match s.ToLowerInvariant() with
+                                            | "mon" | "monday"    -> yield DayOfWeek.Monday
+                                            | "tue" | "tuesday"   -> yield DayOfWeek.Tuesday
+                                            | "wed" | "wednesday" -> yield DayOfWeek.Wednesday
+                                            | "thu" | "thursday"  -> yield DayOfWeek.Thursday
+                                            | "fri" | "friday"    -> yield DayOfWeek.Friday
+                                            | "sat" | "saturday"  -> yield DayOfWeek.Saturday
+                                            | "sun" | "sunday"    -> yield DayOfWeek.Sunday
+                                            | _ -> () ]
+                                    |> Set.ofList
+                                else Set.empty
+                            if model <> "" then
+                                let tw = { ModelSchedule.Start    = TimeOnly.Parse startStr
+                                           ModelSchedule.End      = TimeOnly.Parse endStr
+                                           ModelSchedule.Days     = days
+                                           ModelSchedule.TimeZone = tz }
+                                yield { ModelSchedule.Window = tw
+                                        ModelSchedule.ModelId = model
+                                        ModelSchedule.Priority = priority } ]
+                    else []
+                if fallback = "" && schedule.IsEmpty then None
+                else Some { ModelSchedule.Schedule = schedule; ModelSchedule.Fallback = fallback }
+        with _ -> None

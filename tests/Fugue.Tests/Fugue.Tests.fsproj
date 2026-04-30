@@ -34,6 +34,7 @@
     <Compile Include="SessionSummaryTests.fs" />
     <Compile Include="AnnotationTests.fs" />
     <Compile Include="ClipRingTests.fs" />
+    <Compile Include="ModelScheduleTests.fs" />
     <Compile Include="BashToolTests.fs" />
     <Compile Include="GlobToolTests.fs" />
     <Compile Include="GrepToolTests.fs" />

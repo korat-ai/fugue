@@ -11,6 +11,7 @@
     <Compile Include="SystemPrompt.fs" />
     <Compile Include="JsonContext.fs" />
     <Compile Include="DebugLog.fs" />
+    <Compile Include="ModelSchedule.fs" />
     <Compile Include="Config.fs" />
     <Compile Include="SessionSummary.fs" />
     <Compile Include="Annotation.fs" />

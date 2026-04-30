@@ -59,6 +59,20 @@ let private runWithCfg (cfg: AppConfig) : int =
     StatusBar.setTemplateName cfg.TemplateName
     Render.initTypewriter cfg.Ui.TypewriterMode
     Render.initBubbles (cfg.Ui.BubblesMode || cfg.Ui.Theme = "bubbles")
+    // Apply model schedule override if configured
+    let cfg, scheduleActive =
+        match Fugue.Core.Config.loadModelSchedule () with
+        | None -> cfg, false
+        | Some sched ->
+            let scheduledModel = Fugue.Core.ModelSchedule.resolveModel sched DateTimeOffset.Now
+            let overriddenProvider =
+                match cfg.Provider with
+                | Anthropic(k, m) when scheduledModel <> m -> Anthropic(k, scheduledModel)
+                | OpenAI(k, m)    when scheduledModel <> m -> OpenAI(k, scheduledModel)
+                | Ollama(ep, m)   when scheduledModel <> m -> Ollama(ep, scheduledModel)
+                | p -> p
+            { cfg with Provider = overriddenProvider }, (overriddenProvider <> cfg.Provider)
+    StatusBar.setScheduleActive scheduleActive
     let cwd = Environment.CurrentDirectory
     let lastSummary = if cfg.LowBandwidth then None else Fugue.Core.SessionSummary.loadLast cwd
     let agent = buildAgent cfg lastSummary
