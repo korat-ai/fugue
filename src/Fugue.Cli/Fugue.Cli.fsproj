@@ -17,6 +17,9 @@
     <RepositoryType>git</RepositoryType>
     <PackageTags>cli;tool;ai;agent;fsharp;dotnet;coding-assistant;llm</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- AOT native publish → no suffix (RID is set by -r flag).
+         dotnet pack / managed JIT tool → append -jit so users can tell distributions apart. -->
+    <VersionSuffix Condition="'$(RuntimeIdentifier)' == ''">jit</VersionSuffix>
     <!-- AOT publish settings (only applied on dotnet publish, not dotnet pack) -->
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
