@@ -21,7 +21,7 @@ src/
   Fugue.Tools/   — Read / Write / Edit / Bash / Glob / Grep as no-reflection AIFunction subclasses
   Fugue.Cli/     — REPL: ReadLine (own ANSI), MarkdownRender (Markdig), DiffRender, Render, StatusBar (scroll-region), Repl, Program
 tests/
-  Fugue.Tests/   — xUnit + FsUnit, 88 unit tests
+  Fugue.Tests/   — xUnit + FsUnit, 120+ unit tests
 docs/
   process.md, role-capabilities.md, workflows/  — orchestrator skill operational manual
   superpowers/specs/, superpowers/plans/        — design docs, implementation plans
@@ -78,9 +78,16 @@ Verified metrics:
 - Binary: **44 MB** osx-arm64 single-file AOT
 - Cold start: **40 ms**
 - Peak RSS: **47 MB**
-- Tests: **88/88** pass
+- Tests: **120+/120+** pass
 - E2E smoke: passed against LM Studio (OpenAI-compat); not yet against real Anthropic / OpenAI cloud / Ollama
-- PR #221 open: `!cmd` shell shortcut, `/new` session reset, Ctrl+L, 8 UX/bug fixes
+- Multiple PRs in review (batch shipped 2026-04-30):
+  - PR #221: `!cmd` shell shortcut, `/new` session reset, Ctrl+L, 8 UX/bug fixes
+  - PR #321: elapsed time display in status bar (#253)
+  - PR #335: `/tools` command + `/clear-history` (#258, #240)
+  - PR #350: hierarchical FUGUE.md loading cwd→git root + `~/.fugue/FUGUE.md` (#217)
+  - PR #356: `/short` and `/long` verbosity commands (#236)
+  - PR #357: `/summary` session summary command (#209)
+  - PR #166: input history (Up/Down) + word cursor (pending)
 
 Live binary: `src/Fugue.Cli/bin/Release/net10.0/osx-arm64/publish/fugue`
 
