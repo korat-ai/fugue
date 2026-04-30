@@ -2,6 +2,7 @@ module Fugue.Cli.Repl
 
 open System
 open System.Collections.Generic
+open System.Diagnostics
 open System.Diagnostics.CodeAnalysis
 open System.Text
 open System.Threading
@@ -55,7 +56,7 @@ let private streamAndRender
         (cfg: AppConfig) (cancelSrc: CancelSource) : Task<unit> = task {
     use streamCts = cancelSrc.NewStreamCts()
     let strings = pick cfg.Ui.Locale
-    let toolMeta = Dictionary<string, string * string>()
+    let toolMeta = Dictionary<string, string * string * int64>()
     let mutable assistantStreaming = false   // are we mid-line in the plain-text stream
 
     try
@@ -71,18 +72,18 @@ let private streamAndRender
                     Console.Out.Flush()
                     assistantStreaming <- true
                 | Conversation.ToolStarted(id, name, args) ->
-                    toolMeta.[id] <- (name, args)
+                    toolMeta.[id] <- (name, args, Stopwatch.GetTimestamp())
                     if assistantStreaming then
                         Console.Out.WriteLine ()
                         assistantStreaming <- false
                 | Conversation.ToolCompleted(id, output, isErr) ->
-                    let name, args =
+                    let name, args, elapsed =
                         match toolMeta.TryGetValue id with
-                        | true, v -> v
-                        | false, _ -> "?", "?"
+                        | true, (n, a, tick) -> n, a, Stopwatch.GetElapsedTime(tick)
+                        | false, _ -> "?", "?", TimeSpan.Zero
                     let state =
-                        if isErr then Render.Failed(name, args, output)
-                        else Render.Completed(name, args, output)
+                        if isErr then Render.Failed(name, args, output, elapsed)
+                        else Render.Completed(name, args, output, elapsed)
                     AnsiConsole.Write(Render.toolBullet strings state)
                     AnsiConsole.WriteLine ()
                 | Conversation.Finished -> ()
