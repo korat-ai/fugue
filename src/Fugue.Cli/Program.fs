@@ -126,6 +126,28 @@ let main argv =
         let cwd = Environment.CurrentDirectory
         let passed = Doctor.run cwd
         if passed then 0 else 1
+    elif argv |> Array.contains "aliases" then
+        let install = argv |> Array.contains "--install"
+        let lines =
+            [ "# Fugue shell aliases"
+              "alias fask='fugue --print'"
+              "alias fnew='fugue --new-session'"
+              "alias fdoctor='fugue doctor'"
+              "alias faliases='fugue aliases'" ]
+        if install then
+            let shellRc =
+                let zshrc = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".zshrc")
+                let bashrc = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".bashrc")
+                if System.IO.File.Exists zshrc then zshrc else bashrc
+            let block = "\n" + (lines |> String.concat "\n") + "\n"
+            System.IO.File.AppendAllText(shellRc, block)
+            Console.WriteLine(sprintf "✓ Appended %d aliases to %s" (lines.Length - 1) shellRc)
+            Console.WriteLine(sprintf "  Reload with: source %s" shellRc)
+        else
+            for l in lines do Console.WriteLine l
+            Console.WriteLine()
+            Console.WriteLine "Run 'fugue aliases --install' to append these to ~/.zshrc automatically."
+        0
     else
     match Fugue.Core.Config.load argv with
     | Error (NoConfigFound help) ->

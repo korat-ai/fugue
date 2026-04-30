@@ -38,6 +38,12 @@ let mutable private aliasStore : Map<string, string> = Map.empty
 // Scratch buffer: accumulated lines
 let mutable private scratchLines : string list = []
 
+// Session title (set via /rename)
+let mutable private sessionTitle : string option = None
+
+// Session-scoped env vars set via /env
+let mutable private sessionEnvVars : Set<string> = Set.empty
+
 let internal generateUlid () : string =
     let alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
     let rng = System.Security.Cryptography.RandomNumberGenerator.Create()
@@ -658,6 +664,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/history [n]",    strings.CmdHistoryDesc
                                   "/templates",      "list available session templates"
                                   "/gen uuid|ulid|nanoid", "generate a unique identifier"
+                                  "/rename <title>",     "set a human-readable title for this session"
+                                  "/env set|unset|list", "manage session-scoped environment variables"
                                   "/rate up|down [n]", strings.CmdRateDesc
                                   "/annotate [n] [up|down] <note>", strings.CmdAnnotateDesc
                                   "/theme …",        strings.CmdThemeDesc
@@ -1450,6 +1458,10 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 activityStore <- Map.empty
                 aliasStore <- Map.empty
                 scratchLines <- []
+                sessionTitle <- None
+                for name in sessionEnvVars do
+                    Environment.SetEnvironmentVariable(name, null)
+                sessionEnvVars <- Set.empty
                 FileWatcher.clear ()
                 Macros.clear ()
                 Fugue.Core.Checkpoint.clear ()
@@ -1627,6 +1639,48 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                             AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AliasUsage + "[/]"))
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
+            | Some s when s = "/rename" || s.StartsWith "/rename " ->
+                let title = (if s = "/rename" then "" else s.Substring(7)).Trim().Trim('"').Trim('\'')
+                if String.IsNullOrWhiteSpace title then
+                    match sessionTitle with
+                    | Some t -> AnsiConsole.MarkupLine(sprintf "[dim]Session title: [/][bold]%s[/]" (Markup.Escape t))
+                    | None   -> AnsiConsole.MarkupLine "[dim]No session title set. Usage: /rename <title>[/]"
+                else
+                    sessionTitle <- Some title
+                    AnsiConsole.MarkupLine(sprintf "[dim]Session renamed to: [/][bold cyan]%s[/]" (Markup.Escape title))
+                StatusBar.refresh ()
+
+            | Some s when s = "/env" || s.StartsWith "/env " ->
+                let sub = (if s = "/env" then "list" else s.Substring(4).Trim())
+                match sub with
+                | "list" | "" ->
+                    if sessionEnvVars.IsEmpty then
+                        AnsiConsole.MarkupLine "[dim]No session env vars set.[/]"
+                    else
+                        AnsiConsole.MarkupLine "[dim]Session env vars:[/]"
+                        for name in sessionEnvVars do
+                            let v = Environment.GetEnvironmentVariable name |> Option.ofObj |> Option.defaultValue ""
+                            AnsiConsole.MarkupLine(sprintf "  [cyan]%s[/]=[green]%s[/]" (Markup.Escape name) (Markup.Escape v))
+                | cmd when cmd.StartsWith "set " ->
+                    let pair = cmd.Substring(4).Trim()
+                    let eqIdx = pair.IndexOf '='
+                    if eqIdx <= 0 then
+                        AnsiConsole.MarkupLine "[red]Usage: /env set NAME=value[/]"
+                    else
+                        let name  = pair.[..eqIdx - 1].Trim()
+                        let value = pair.[eqIdx + 1..]
+                        Environment.SetEnvironmentVariable(name, value)
+                        sessionEnvVars <- sessionEnvVars |> Set.add name
+                        AnsiConsole.MarkupLine(sprintf "[dim]Set [cyan]%s[/]=[green]%s[/][/]" (Markup.Escape name) (Markup.Escape value))
+                | cmd when cmd.StartsWith "unset " ->
+                    let name = cmd.Substring(6).Trim()
+                    Environment.SetEnvironmentVariable(name, null)
+                    sessionEnvVars <- sessionEnvVars |> Set.remove name
+                    AnsiConsole.MarkupLine(sprintf "[dim]Unset [cyan]%s[/][/]" (Markup.Escape name))
+                | other ->
+                    AnsiConsole.MarkupLine(sprintf "[red]Unknown /env subcommand: %s. Use: /env list | /env set NAME=value | /env unset NAME[/]" (Markup.Escape other))
+                StatusBar.refresh ()
+
             | Some s when s.StartsWith "/scratch" ->
                 let sub = s.Substring("/scratch".Length).Trim()
                 match sub with

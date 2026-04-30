@@ -34,7 +34,7 @@ let normalizeInput (s: string) = InputSanitize.normalize s
 
 // Hardcoded — small list, easier than passing through state.
 let slashCommands : string[] =
-    [| "/help"; "/clear"; "/summary"; "/short"; "/long"; "/clear-history"; "/tools"; "/new"; "/init"; "/exit"; "/quit"; "/diff"; "/diff --staged"; "/doctor"; "/summarize"; "/todo"; "/rate"; "/annotate"; "/gen uuid"; "/gen ulid"; "/gen nanoid" |]
+    [| "/help"; "/clear"; "/summary"; "/short"; "/long"; "/clear-history"; "/tools"; "/new"; "/init"; "/exit"; "/quit"; "/diff"; "/diff --staged"; "/doctor"; "/summarize"; "/todo"; "/rate"; "/annotate"; "/gen uuid"; "/gen ulid"; "/gen nanoid"; "/rename"; "/env list"; "/env set"; "/env unset" |]
 
 /// Session history (REPL is single-threaded). Not private so tests can seed entries directly.
 let historyStore = ResizeArray<string>()
