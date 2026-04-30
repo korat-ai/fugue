@@ -21,7 +21,7 @@ src/
   Fugue.Tools/   — Read / Write / Edit / Bash / Glob / Grep as no-reflection AIFunction subclasses
   Fugue.Cli/     — REPL: ReadLine (own ANSI), MarkdownRender (Markdig), DiffRender, Render, StatusBar (scroll-region), Repl, Program
 tests/
-  Fugue.Tests/   — xUnit + FsUnit, 87 unit tests
+  Fugue.Tests/   — xUnit + FsUnit, 88 unit tests
 docs/
   process.md, role-capabilities.md, workflows/  — orchestrator skill operational manual
   superpowers/specs/, superpowers/plans/        — design docs, implementation plans
@@ -78,8 +78,9 @@ Verified metrics:
 - Binary: **44 MB** osx-arm64 single-file AOT
 - Cold start: **40 ms**
 - Peak RSS: **47 MB**
-- Tests: **87/87** pass
+- Tests: **88/88** pass
 - E2E smoke: passed against LM Studio (OpenAI-compat); not yet against real Anthropic / OpenAI cloud / Ollama
+- PR #221 open: `!cmd` shell shortcut, `/new` session reset, Ctrl+L, 8 UX/bug fixes
 
 Live binary: `src/Fugue.Cli/bin/Release/net10.0/osx-arm64/publish/fugue`
 
@@ -110,7 +111,7 @@ gh issue list -R korat-ai/fugue --label integrations
 
 **Context for what each label group looks like (pre-MVP-close, may have shipped since):**
 
-- *UX & input*: slash commands beyond `/help`+`/clear`+`/exit`, `@file` injection, `!shell` shortcut, input history, ghost suggestions, themes, vim mode, compact tool output, batch labels for parallel tool calls
+- *UX & input*: slash commands beyond `/help`+`/clear`+`/new`+`/exit`, `@file` injection, input history, ghost suggestions, themes, vim mode, compact tool output, batch labels for parallel tool calls
 - *Safety*: approval modes (Plan/Default/Auto-Edit/YOLO with Shift+Tab cycle, covers spec's v0.2 permission-prompt), file-modification checkpointing + `/restore`
 - *Context & sessions*: `FUGUE.md` per-project context (loaded on session start), `/init` to bootstrap it, persistent sessions, context-window % indicator, `/compress` history summarisation
 - *Integrations*: MCP client, LSP integration, headless / non-interactive mode for CI
