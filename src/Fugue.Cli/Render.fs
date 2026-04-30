@@ -18,9 +18,11 @@ let initColor (enabled: bool) =
 
 let isColorEnabled () = colorEnabled
 
-/// Path-aware prompt string for ReadLine. Just visible chars; ANSI not added here
-/// because Console.WriteLine inside ReadLine doesn't go through Spectre.
-let prompt (_cwd: string) : string = "› "
+/// Build the input prompt from the UiConfig template.
+/// Supports {model} interpolation. Falls back to "› " if template is empty.
+let prompt (ui: Fugue.Core.Config.UiConfig) (modelShort: string) : string =
+    let tmpl = if System.String.IsNullOrWhiteSpace ui.PromptTemplate then "♩ " else ui.PromptTemplate
+    tmpl.Replace("{model}", modelShort)
 
 let userMessage (ui: UiConfig) (text: string) (turn: int) : IRenderable =
     if colorEnabled then

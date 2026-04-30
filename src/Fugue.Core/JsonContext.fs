@@ -8,8 +8,9 @@ open System.Text.Json.Serialization
 // and all public properties for STJ reflection-based (de)serialization under AOT.
 [<CLIMutable; DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)>]
 type UiConfigDto = {
-    userAlignment: string | null
-    locale: string | null
+    userAlignment : string | null
+    locale        : string | null
+    promptTemplate: string | null
 }
 
 [<CLIMutable; DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)>]

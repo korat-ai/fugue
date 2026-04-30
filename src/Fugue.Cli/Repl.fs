@@ -347,7 +347,12 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     try
         while not cancelSrc.QuitRequested do
             let callbacks : ReadLine.ReadLineCallbacks = { OnClearScreen = StatusBar.refresh }
-            let! lineOpt = ReadLine.readAsync (Render.prompt cwd) strings callbacks (Render.isColorEnabled ()) cancelSrc.Token
+            let modelShort =
+                let m = match cfg.Provider with
+                        | Fugue.Core.Config.Anthropic(_, m) | Fugue.Core.Config.OpenAI(_, m) | Fugue.Core.Config.Ollama(_, m) -> m
+                let i = m.LastIndexOf '/'
+                if i >= 0 && i + 1 < m.Length then m.Substring(i + 1) else m
+            let! lineOpt = ReadLine.readAsync (Render.prompt cfg.Ui modelShort) strings callbacks (Render.isColorEnabled ()) cancelSrc.Token
             match lineOpt with
             | None ->
                 cancelSrc.RequestQuit()

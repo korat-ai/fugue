@@ -14,8 +14,9 @@ type ProviderConfig =
 type UserAlignment = Left | Right
 
 type UiConfig =
-    { UserAlignment: UserAlignment
-      Locale:        string }
+    { UserAlignment  : UserAlignment
+      Locale         : string
+      PromptTemplate : string }
 
 let private defaultLocale () =
     let envLoc =
@@ -31,8 +32,9 @@ let private defaultLocale () =
         | _ -> "en"
 
 let defaultUi () : UiConfig =
-    { UserAlignment = Left
-      Locale = defaultLocale () }
+    { UserAlignment  = Left
+      Locale         = defaultLocale ()
+      PromptTemplate = "♩ " }
 
 type AppConfig =
     { Provider: ProviderConfig
@@ -170,7 +172,12 @@ let private fromFile (path: string) : Result<ProviderConfig * int * int option *
                     | Some "ru" -> "ru"
                     | Some "en" -> "en"
                     | _         -> defaultLocale ()
-                let ui = { UserAlignment = alignment; Locale = locale }
+                let promptTemplate =
+                    uiDto
+                    |> Option.bind (fun u -> Option.ofObj u.promptTemplate)
+                    |> Option.filter (fun s -> not (String.IsNullOrWhiteSpace s))
+                    |> Option.defaultValue "♩ "
+                let ui = { UserAlignment = alignment; Locale = locale; PromptTemplate = promptTemplate }
                 let baseUrl = dto.baseUrl |> Option.ofObj |> Option.filter (fun s -> not (String.IsNullOrEmpty s))
                 let maxTokens = if dto.maxTokens > 0 then Some dto.maxTokens else None
                 p, dto.maxIterations, maxTokens, ui, baseUrl)
@@ -219,8 +226,9 @@ let saveToFile (cfg: AppConfig) : unit =
     let dir = Path.GetDirectoryName(path) |> Option.ofObj |> Option.defaultValue "."
     Directory.CreateDirectory(dir) |> ignore
     let uiDto =
-        { userAlignment = (match cfg.Ui.UserAlignment with Left -> "left" | Right -> "right")
-          locale        = cfg.Ui.Locale }
+        { userAlignment  = (match cfg.Ui.UserAlignment with Left -> "left" | Right -> "right")
+          locale         = cfg.Ui.Locale
+          promptTemplate = if cfg.Ui.PromptTemplate = "♩ " then null else cfg.Ui.PromptTemplate }
     let baseUrlVal = cfg.BaseUrl |> Option.toObj
     let maxTokensVal = cfg.MaxTokens |> Option.defaultValue 0
     let dto =
