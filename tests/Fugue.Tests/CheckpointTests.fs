@@ -1,3 +1,4 @@
+[<Xunit.Collection("Sequential")>]
 module Fugue.Tests.CheckpointTests
 
 open System.IO
