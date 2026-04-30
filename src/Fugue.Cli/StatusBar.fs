@@ -21,6 +21,8 @@ let mutable private branchCache : string * DateTime = "", DateTime.MinValue
 let mutable private streamingSince : DateTime option = None
 let mutable private spinnerFrame  = 0
 let mutable private sessionWords  = 0   // cumulative word count for ctx% estimation
+let mutable private annotUpCount   = 0
+let mutable private annotDownCount = 0
 let mutable private spinnerTimer  : System.Threading.Timer option = None
 let mutable private onTick        : (unit -> unit) = fun () -> ()
 
@@ -85,6 +87,15 @@ let recordWords (n: int) = sessionWords <- sessionWords + n
 
 /// Reset session word counter (e.g. on /new).
 let resetWords () = sessionWords <- 0
+
+let recordAnnotation (rating: Fugue.Core.Annotation.Rating) =
+    match rating with
+    | Fugue.Core.Annotation.Up   -> annotUpCount   <- annotUpCount   + 1
+    | Fugue.Core.Annotation.Down -> annotDownCount <- annotDownCount + 1
+
+let resetAnnotations () =
+    annotUpCount   <- 0
+    annotDownCount <- 0
 
 /// Approximate context window (tokens) for a given model id.
 let internal contextWindowFor (model: string) : int =
@@ -168,10 +179,13 @@ let refresh () =
                     else "\x1b[32m"                   // green
                 sprintf " · %sctx %d%%\x1b[0m%s" color pct dimEsc2
         | None -> ""
+    let annotBadge =
+        if annotUpCount = 0 && annotDownCount = 0 then ""
+        else sprintf " · \x1b[32m↑%d\x1b[0m%s \x1b[31m↓%d\x1b[0m%s" annotUpCount dimEsc2 annotDownCount dimEsc2
     let line2 =
         match cfg with
-        | Some c -> dimEsc2 + spinnerPrefix + strings.StatusBarApp + " · " + (providerLabel c) + cadenceSuffix + elapsedSuffix + ctxBadge + sshBadge + "\x1b[0m"
-        | None   -> dimEsc2 + spinnerPrefix + strings.StatusBarApp + cadenceSuffix + elapsedSuffix + sshBadge + "\x1b[0m"
+        | Some c -> dimEsc2 + spinnerPrefix + strings.StatusBarApp + " · " + (providerLabel c) + cadenceSuffix + elapsedSuffix + ctxBadge + annotBadge + sshBadge + "\x1b[0m"
+        | None   -> dimEsc2 + spinnerPrefix + strings.StatusBarApp + cadenceSuffix + elapsedSuffix + annotBadge + sshBadge + "\x1b[0m"
     // save cursor, jump to bottom-1, clear two lines, write, restore
     writeRaw "\x1b[s"
     writeRaw ("\x1b[" + string (height - 1) + ";1H")

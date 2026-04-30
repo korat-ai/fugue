@@ -34,7 +34,7 @@ let normalizeInput (s: string) = InputSanitize.normalize s
 
 // Hardcoded — small list, easier than passing through state.
 let slashCommands : string[] =
-    [| "/help"; "/clear"; "/summary"; "/short"; "/long"; "/clear-history"; "/tools"; "/new"; "/init"; "/exit"; "/quit"; "/diff"; "/diff --staged"; "/doctor"; "/summarize"; "/todo" |]
+    [| "/help"; "/clear"; "/summary"; "/short"; "/long"; "/clear-history"; "/tools"; "/new"; "/init"; "/exit"; "/quit"; "/diff"; "/diff --staged"; "/doctor"; "/summarize"; "/todo"; "/rate"; "/annotate" |]
 
 /// Session history (REPL is single-threaded). Not private so tests can seed entries directly.
 let historyStore = ResizeArray<string>()
@@ -57,8 +57,12 @@ let private pushBounded (stack: ResizeArray<_>) item =
     stack.Add item
     if stack.Count > 100 then stack.RemoveAt 0
 
-type ReadLineCallbacks = { OnClearScreen: unit -> unit }
-let defaultCallbacks : ReadLineCallbacks = { OnClearScreen = ignore }
+type ReadLineCallbacks =
+    { OnClearScreen:  unit -> unit
+      OnAnnotateUp:   unit -> unit
+      OnAnnotateDown: unit -> unit }
+let defaultCallbacks : ReadLineCallbacks =
+    { OnClearScreen = ignore; OnAnnotateUp = ignore; OnAnnotateDown = ignore }
 
 /// Internal mutable line state. Public only because tests construct it directly.
 type S = {
@@ -85,6 +89,8 @@ type Action =
     | Quit
     | Wipe
     | ClearScreen
+    | AnnotateUp
+    | AnnotateDown
 
 let private isCtrl (k: ConsoleKeyInfo) (key: ConsoleKey) : bool =
     k.Modifiers.HasFlag ConsoleModifiers.Control && k.Key = key
@@ -154,6 +160,12 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
         if s.Cursor < s.Buffer.Count then
             s.Buffer.RemoveAt s.Cursor
         Continue
+    elif isCtrl k ConsoleKey.UpArrow then
+        s.ExitArmed <- false
+        AnnotateUp
+    elif isCtrl k ConsoleKey.DownArrow then
+        s.ExitArmed <- false
+        AnnotateDown
     elif k.Key = ConsoleKey.UpArrow then
         s.ExitArmed <- false
         if historyStore.Count = 0 then
@@ -439,7 +451,7 @@ let readAsync (prompt: string) (strings: Strings) (callbacks: ReadLineCallbacks)
             for ch in escapeBuf do
                 let ki = ConsoleKeyInfo(ch, ConsoleKey.A, false, false, false)
                 match applyKey ki st with
-                | Continue | Wipe | ClearScreen -> ()
+                | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown -> ()
                 | Submit _ | Quit -> ()   // rare; ignore — these chars won't normally Submit/Quit
             escapeBuf.Clear()
             pasteState <- Normal
@@ -490,6 +502,12 @@ let readAsync (prompt: string) (strings: Strings) (callbacks: ReadLineCallbacks)
                             st.RowsBelowCursor <- 0
                             callbacks.OnClearScreen ()
                             redraw st
+                        | AnnotateUp ->
+                            callbacks.OnAnnotateUp ()
+                            redraw st
+                        | AnnotateDown ->
+                            callbacks.OnAnnotateDown ()
+                            redraw st
                         | Submit s ->
                             eraseRendered ()
                             let normalized = InputSanitize.normalize s
@@ -512,7 +530,7 @@ let readAsync (prompt: string) (strings: Strings) (callbacks: ReadLineCallbacks)
                         flushEscape ()
                         let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
                         match applyKey ki2 st with
-                        | Continue | Wipe | ClearScreen -> redraw st
+                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown -> redraw st
                         | Submit _ | Quit -> ()
 
                 | BracketSeen ->
@@ -523,7 +541,7 @@ let readAsync (prompt: string) (strings: Strings) (callbacks: ReadLineCallbacks)
                         flushEscape ()
                         let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
                         match applyKey ki2 st with
-                        | Continue | Wipe | ClearScreen -> redraw st
+                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown -> redraw st
                         | Submit _ | Quit -> ()
 
                 | Digit2 ->
@@ -534,7 +552,7 @@ let readAsync (prompt: string) (strings: Strings) (callbacks: ReadLineCallbacks)
                         flushEscape ()
                         let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
                         match applyKey ki2 st with
-                        | Continue | Wipe | ClearScreen -> redraw st
+                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown -> redraw st
                         | Submit _ | Quit -> ()
 
                 | Digit0 ->
@@ -545,7 +563,7 @@ let readAsync (prompt: string) (strings: Strings) (callbacks: ReadLineCallbacks)
                         flushEscape ()
                         let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
                         match applyKey ki2 st with
-                        | Continue | Wipe | ClearScreen -> redraw st
+                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown -> redraw st
                         | Submit _ | Quit -> ()
 
                 | Digit0v2 ->
@@ -558,7 +576,7 @@ let readAsync (prompt: string) (strings: Strings) (callbacks: ReadLineCallbacks)
                         flushEscape ()
                         let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
                         match applyKey ki2 st with
-                        | Continue | Wipe | ClearScreen -> redraw st
+                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown -> redraw st
                         | Submit _ | Quit -> ()
 
                 | PasteActive ->

@@ -217,6 +217,10 @@ type Strings =
       RateUsage:     string
       RateSaved:     string   // "{0}" = turn index, "{1}" = up|down
 
+      // /annotate command
+      CmdAnnotateDesc: string
+      AnnotateUsage:   string
+
       // tool-call efficiency warning
       ToolCallsWarning: string }
 
@@ -354,6 +358,8 @@ let en : Strings =
       CmdRateDesc           = "rate the last response: /rate up|down [turn]"
       RateUsage             = "usage: /rate up|down [turn-number]"
       RateSaved             = "turn {0} rated {1}"
+      CmdAnnotateDesc       = "annotate a turn with a note: /annotate [n] [up|down] <text>"
+      AnnotateUsage         = "usage: /annotate [turn] [up|down] <note text>"
       ToolCallsWarning      = "{0} tool calls this turn — consider breaking the task into smaller steps" }
 
 let ru : Strings =
@@ -490,6 +496,8 @@ let ru : Strings =
       CmdRateDesc           = "оценить последний ответ: /rate up|down [ход]"
       RateUsage             = "использование: /rate up|down [номер-хода]"
       RateSaved             = "ход {0} оценён: {1}"
+      CmdAnnotateDesc       = "аннотировать ход с заметкой: /annotate [n] [up|down] <текст>"
+      AnnotateUsage         = "использование: /annotate [ход] [up|down] <текст заметки>"
       ToolCallsWarning      = "{0} вызовов инструментов за ход — попробуйте разбить задачу на части" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.

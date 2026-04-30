@@ -501,7 +501,22 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
     let mutable sessionNotes : (int * string) list = []  // (turnNumber, text)
     try
         while not cancelSrc.QuitRequested do
-            let callbacks : ReadLine.ReadLineCallbacks = { OnClearScreen = StatusBar.refresh }
+            let doAnnotate (rating: Fugue.Core.Annotation.Rating) =
+                let idx = max 1 turnNumber
+                let ann : Fugue.Core.Annotation.TurnAnnotation =
+                    { TurnIndex   = idx
+                      Rating      = Some rating
+                      Note        = None
+                      AnnotatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }
+                Fugue.Core.Annotation.save cwd ann
+                StatusBar.recordAnnotation rating
+                StatusBar.refresh ()
+                let sym = match rating with Fugue.Core.Annotation.Up -> "↑" | Fugue.Core.Annotation.Down -> "↓"
+                AnsiConsole.MarkupLine(sprintf "[dim]%s turn %d[/]" sym idx)
+            let callbacks : ReadLine.ReadLineCallbacks =
+                { OnClearScreen  = StatusBar.refresh
+                  OnAnnotateUp   = fun () -> doAnnotate Fugue.Core.Annotation.Up
+                  OnAnnotateDown = fun () -> doAnnotate Fugue.Core.Annotation.Down }
             // Drain file-watch triggers from background FileSystemWatcher
             let watchTriggers = FileWatcher.drain ()
             for wcmd in watchTriggers do
@@ -597,6 +612,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/compat",         strings.CmdCompatDesc
                                   "/history [n]",    strings.CmdHistoryDesc
                                   "/rate up|down [n]", strings.CmdRateDesc
+                                  "/annotate [n] [up|down] <note>", strings.CmdAnnotateDesc
                                   "/theme …",        strings.CmdThemeDesc
                                   "/exit",           strings.CmdExitDesc
                                   "/review pr <N>",  strings.CmdReviewPrDesc ]
@@ -1022,6 +1038,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                           Note        = None
                           AnnotatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }
                     Fugue.Core.Annotation.save cwd ann
+                    StatusBar.recordAnnotation rating
                     let msg = String.Format(strings.RateSaved, string targetTurn, ratingArg)
                     if Render.isColorEnabled () then
                         let color = if ratingArg = "up" then "green" else "red"
@@ -1031,6 +1048,45 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     if Render.isColorEnabled () then
                         AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.RateUsage))
                     else Console.Out.WriteLine strings.RateUsage
+                StatusBar.refresh ()
+            | Some s when s = "/annotate" || s.StartsWith "/annotate " ->
+                // /annotate [N] [up|down] <note text>
+                let arg = (if s = "/annotate" then "" else s.Substring(10)).Trim()
+                let tokens = arg.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                let mutable idx = 0
+                let mutable targetTurn = turnNumber
+                let mutable rating : Fugue.Core.Annotation.Rating option = None
+                // Try to parse optional leading turn number
+                if idx < tokens.Length then
+                    match System.Int32.TryParse tokens.[idx] with
+                    | true, n when n > 0 -> targetTurn <- n; idx <- idx + 1
+                    | _ -> ()
+                // Try to parse optional up|down
+                if idx < tokens.Length then
+                    match tokens.[idx].ToLowerInvariant() with
+                    | "up"   -> rating <- Some Fugue.Core.Annotation.Up;   idx <- idx + 1
+                    | "down" -> rating <- Some Fugue.Core.Annotation.Down; idx <- idx + 1
+                    | _ -> ()
+                // Rest is the note
+                let note =
+                    if idx < tokens.Length then Some (String.concat " " tokens.[idx..])
+                    else None
+                if rating = None && note = None then
+                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.AnnotateUsage))
+                else
+                    let ann : Fugue.Core.Annotation.TurnAnnotation =
+                        { TurnIndex   = targetTurn
+                          Rating      = rating
+                          Note        = note
+                          AnnotatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }
+                    Fugue.Core.Annotation.save cwd ann
+                    match rating with
+                    | Some r -> StatusBar.recordAnnotation r
+                    | None   -> ()
+                    let ratingStr = rating |> Option.map (fun r -> match r with Fugue.Core.Annotation.Up -> " ↑" | Fugue.Core.Annotation.Down -> " ↓") |> Option.defaultValue ""
+                    let noteStr   = note |> Option.map (fun n -> sprintf " \"%s\"" n) |> Option.defaultValue ""
+                    let msg = sprintf "turn %d%s%s" targetTurn ratingStr noteStr
+                    AnsiConsole.MarkupLine(sprintf "[dim]annotated: %s[/]" (Markup.Escape msg))
                 StatusBar.refresh ()
             | Some s when s = "/issue" || s.StartsWith "/issue " ->
                 let rawArg = if s = "/issue" then "" else s.Substring(7).TrimStart()
@@ -1306,6 +1362,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 lastFile <- None
                 zenMode <- false
                 StatusBar.resetWords ()
+                StatusBar.resetAnnotations ()
                 ClipRing.clear ()
                 snippetStore <- Map.empty
                 bookmarks <- []
