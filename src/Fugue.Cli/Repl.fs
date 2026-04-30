@@ -50,6 +50,9 @@ let mutable private currentSessionId = ""
 // Last turn that had tool errors — used by /report-bug.
 let mutable private lastFailedTurn : BugReport.TurnRecord option = None
 
+// Whether the last AI response looked like a plan (for smart follow-up detection).
+let mutable private lastResponseWasPlan = false
+
 let internal generateUlid () : string =
     let alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
     let rng = System.Security.Cryptography.RandomNumberGenerator.Create()
@@ -357,6 +360,8 @@ let private streamAndRender
     let mutable toolCallsThisTurn = 0
     let responseText = StringBuilder()
     let errorToolCalls = ResizeArray<string * string * string>()
+    // Track last failed args per tool name to compute retry diffs.
+    let failedArgs = Dictionary<string, string>()
 
     StatusBar.startStreaming()
     try
@@ -380,6 +385,20 @@ let private streamAndRender
                         if assistantStreaming then
                             Console.Out.WriteLine ()
                             assistantStreaming <- false
+                        // Show a retry diff when the same tool previously failed with different args.
+                        match failedArgs.TryGetValue name with
+                        | true, prevArgs when prevArgs <> args ->
+                            let diff = ToolRetryDiff.diffArgs prevArgs args
+                            if not diff.IsEmpty && not zen then
+                                let formatted = ToolRetryDiff.formatDiff diff
+                                if Render.isColorEnabled () then
+                                    AnsiConsole.MarkupLine(sprintf "[dim]↻ retry diff:[/]")
+                                    for line in formatted.Split('\n') do
+                                        let color = if line.StartsWith "+" then "green" elif line.StartsWith "-" then "red" else "yellow"
+                                        AnsiConsole.MarkupLine(sprintf "  [%s]%s[/]" color (Markup.Escape line))
+                                else
+                                    Console.Out.WriteLine(sprintf "↻ retry diff:\n%s" formatted)
+                        | _ -> ()
                         // Track last accessed file for @last expansion
                         if name = "Read" || name = "Write" || name = "Edit" then
                             let key = "\"path\":"
@@ -419,6 +438,9 @@ let private streamAndRender
                         if isErr then
                             errorToolCalls.Add((name, args, output))
                             Fugue.Core.ErrorTrend.record currentSessionId name output
+                            failedArgs.[name] <- args
+                        else
+                            failedArgs.Remove name |> ignore
                         let state =
                             if isErr then Render.Failed(name, args, output, elapsed)
                             else Render.Completed(name, args, output, elapsed)
@@ -473,6 +495,7 @@ let private streamAndRender
                         Console.Out.WriteLine(sprintf "⚠️ %s" msg)
                 if errorToolCalls.Count > 0 then
                     lastFailedTurn <- Some { BugReport.UserPrompt = input; BugReport.ToolCalls = errorToolCalls |> Seq.toList; BugReport.AiResponse = responseText.ToString(); BugReport.ErrorText = None }
+                lastResponseWasPlan <- Fugue.Core.ConversationIntent.looksLikePlan (responseText.ToString())
         with
         | :? OperationCanceledException ->
             if assistantStreaming then Console.Out.WriteLine ()
@@ -747,7 +770,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/theme …",        liveStrings.CmdThemeDesc
                                   "/exit",           liveStrings.CmdExitDesc
                                   "/review pr <N>",  liveStrings.CmdReviewPrDesc
-                                  "/report-bug",     "capture last failed turn as a GitHub issue draft" ]
+                                  "/report-bug",     "capture last failed turn as a GitHub issue draft"
+                                  "/http METHOD URL …", "inline HTTP client (HTTPie-style, -H/-d/--inject)" ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
@@ -999,6 +1023,81 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     session <- null
                     AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                     AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/http " || s = "/http" ->
+                let raw = if s = "/http" then "" else s.Substring("/http ".Length)
+                if raw.Trim() = "" then
+                    AnsiConsole.Write(Markup("[dim]Usage: /http METHOD URL [-H \"K: V\"] [-d BODY] [--timeout N] [--inject][/]"))
+                    AnsiConsole.WriteLine()
+                else
+                    // Parse: METHOD URL [-H "K: V"]... [-d BODY] [--timeout N] [--inject]
+                    let argv = raw.Trim().Split(' ', System.StringSplitOptions.RemoveEmptyEntries) |> Array.toList
+                    let method', rest =
+                        match argv with
+                        | m :: tail when System.Text.RegularExpressions.Regex.IsMatch(m, @"^[A-Z]+$") -> m, tail
+                        | _ -> "GET", argv
+                    let url, rest2 =
+                        match rest with
+                        | u :: tail -> System.Environment.ExpandEnvironmentVariables(u), tail
+                        | [] -> "", []
+                    let mutable headers : (string * string) list = []
+                    let mutable body : string option = None
+                    let mutable timeoutSec = 30
+                    let mutable inject = false
+                    let mutable i = 0
+                    let arr = List.toArray rest2
+                    while i < arr.Length do
+                        match arr.[i] with
+                        | "-H" when i + 1 < arr.Length ->
+                            let h = arr.[i + 1]
+                            let ci = h.IndexOf(':')
+                            if ci > 0 then headers <- headers @ [(h.[..ci-1].Trim(), h.[ci+1..].Trim())]
+                            i <- i + 2
+                        | "-d" when i + 1 < arr.Length ->
+                            body <- Some (System.Environment.ExpandEnvironmentVariables arr.[i + 1])
+                            i <- i + 2
+                        | "--timeout" when i + 1 < arr.Length ->
+                            match System.Int32.TryParse arr.[i + 1] with
+                            | true, n -> timeoutSec <- n
+                            | _ -> ()
+                            i <- i + 2
+                        | "--inject" -> inject <- true; i <- i + 1
+                        | _ -> i <- i + 1
+                    if url = "" then
+                        AnsiConsole.Write(Markup("[red]Missing URL[/]"))
+                        AnsiConsole.WriteLine()
+                    else
+                        use client = new System.Net.Http.HttpClient()
+                        client.Timeout <- System.TimeSpan.FromSeconds(float timeoutSec)
+                        use req = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod(method'), url)
+                        for (k, v) in headers do
+                            req.Headers.TryAddWithoutValidation(k, v) |> ignore
+                        match body with
+                        | Some b ->
+                            let ct = headers |> List.tryFind (fst >> (=) "Content-Type") |> Option.map snd |> Option.defaultValue "application/json"
+                            req.Content <- new System.Net.Http.StringContent(b, System.Text.Encoding.UTF8, ct)
+                        | None -> ()
+                        try
+                            let! resp = client.SendAsync(req)
+                            let! respBody = resp.Content.ReadAsStringAsync()
+                            let status = int resp.StatusCode
+                            let statusColor = if status >= 500 then "red" elif status >= 400 then "yellow" elif status >= 200 then "green" else "dim"
+                            if Render.isColorEnabled () then
+                                AnsiConsole.MarkupLine(sprintf "[bold][%s]HTTP %d %s[/][/]" statusColor status (string resp.StatusCode))
+                            else
+                                Console.Out.WriteLine(sprintf "HTTP %d %s" status (string resp.StatusCode))
+                            let preview = if respBody.Length > 4096 then respBody.[..4095] + sprintf "\n… [%d chars total]" respBody.Length else respBody
+                            AnsiConsole.Write(Render.assistantFinal preview)
+                            AnsiConsole.WriteLine()
+                            if inject then
+                                let ctx = sprintf "[HTTP response from %s %s — status %d]\n%s" method' url status respBody
+                                turnNumber <- turnNumber + 1
+                                AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "[injected HTTP response from %s %s]" method' url) turnNumber)
+                                AnsiConsole.WriteLine()
+                                do! streamAndRender agent session ctx cfg cancelSrc zenMode
+                        with ex ->
+                            AnsiConsole.Write(Render.errorLine liveStrings (sprintf "HTTP error: %s" ex.Message))
+                            AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/tools" ->
                 AnsiConsole.Write(Markup("[bold]" + Markup.Escape liveStrings.ToolsHeader + "[/]"))
@@ -1544,6 +1643,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 Fugue.Core.Checkpoint.clear ()
                 currentSessionId <- generateUlid ()
                 lastFailedTurn <- None
+                lastResponseWasPlan <- false
                 StatusBar.refresh ()
             | Some s when s.StartsWith "!" ->
                 let cmd = s.Substring(1).Trim()
@@ -2163,6 +2263,13 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 turnNumber <- turnNumber + 1
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput turnNumber)
                 AnsiConsole.WriteLine()
+                let expandedInput =
+                    match Fugue.Core.ConversationIntent.classify lastResponseWasPlan expandedInput with
+                    | Fugue.Core.ConversationIntent.Affirmation ->
+                        if Render.isColorEnabled () then AnsiConsole.MarkupLine "[dim]↳ proceeding with plan[/]"
+                        else Console.Out.WriteLine "↳ proceeding with plan"
+                        "Yes, please proceed with the plan outlined above."
+                    | _ -> expandedInput
                 let effectiveInput =
                     match verbosityPrefix with
                     | Some prefix -> prefix + expandedInput

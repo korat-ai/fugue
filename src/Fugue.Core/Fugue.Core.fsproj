@@ -16,5 +16,6 @@
     <Compile Include="SessionSummary.fs" />
     <Compile Include="Annotation.fs" />
     <Compile Include="ErrorTrend.fs" />
+    <Compile Include="ConversationIntent.fs" />
   </ItemGroup>
 </Project>
