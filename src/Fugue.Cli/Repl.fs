@@ -777,7 +777,10 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/compress",          "summarise session history and reset context window"
                                   "/rop <description>",  "generate ROP Result/Either chain from plain-English"
                                   "/infer-type <expr>",  "infer and explain F# type signature of an expression"
-                                  "/pointfree <fn>",     "offer point-free rewrite of an F# function" ]
+                                  "/pointfree <fn>",     "offer point-free rewrite of an F# function"
+                                  "/scaffold du <name>", "generate F# DU with match examples and JSON attrs"
+                                  "/monad <desc>",       "generate F# CE / Scala for-comprehension from pseudocode"
+                                  "/migrate oop-to-fp [file]", "convert OOP class hierarchy to F# DUs" ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
@@ -2257,6 +2260,48 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.Write(Render.userMessage cfg.Ui ("/summarize " + rawArg) 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session summarizePrompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/scaffold du " || s = "/scaffold du" ->
+                // /scaffold du <concept> — generate F# DU / Scala sealed trait with match examples
+                let concept = if s = "/scaffold du" then "" else s.Substring("/scaffold du ".Length).Trim()
+                if concept = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /scaffold du <concept name>[/]")
+                    AnsiConsole.WriteLine()
+                else
+                    let prompt =
+                        sprintf "Generate a complete F# discriminated union for the concept \"%s\".\n\nInclude:\n1. The DU definition with well-named cases and meaningful data payloads.\n2. An exhaustive `match` example covering every case.\n3. Smart constructor helpers (active patterns or module functions) for common construction patterns.\n4. `[<JsonDerivedType>]` / `[<JsonPolymorphic>]` attributes for AOT-safe System.Text.Json serialization.\n5. A brief comment per case explaining its semantics.\n\nTarget: F# 9 / .NET 10, Native AOT compatible." concept
+                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/scaffold du %s" concept) 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/monad " || s = "/monad" ->
+                // /monad <description> — generate F# CE / Scala for-comprehension
+                let desc = if s = "/monad" then "" else s.Substring("/monad ".Length).Trim()
+                if desc = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /monad <imperative description or pseudocode>[/]")
+                    AnsiConsole.WriteLine()
+                else
+                    let prompt =
+                        sprintf "Convert the following imperative description into idiomatic monadic F# code:\n\n\"%s\"\n\nSteps:\n1. Identify the primary effect (async I/O, error handling, sequence generation, cancellation, …).\n2. Choose the correct F# computation expression (`task`, `async`, `result`, `asyncResult`, `seq`, …).\n3. Generate the CE block — no nested `match`/`if` for error handling; use `let!` and `return`.\n4. If the operation mixes effects (e.g. async + Result), compose them correctly (e.g. `taskResult`).\n5. Include the type signatures.\n\nReturn only the code with a one-line comment on the CE chosen." desc
+                    AnsiConsole.Write(Render.userMessage cfg.Ui "/monad" 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/migrate oop-to-fp " || s = "/migrate oop-to-fp" ->
+                // /migrate oop-to-fp [file] — convert C#/Java class hierarchy to F# DUs
+                let arg = if s = "/migrate oop-to-fp" then "" else s.Substring("/migrate oop-to-fp ".Length).Trim()
+                if arg = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /migrate oop-to-fp <file-or-paste-code>[/]")
+                    AnsiConsole.WriteLine()
+                else
+                    let code =
+                        let fullPath = if IO.Path.IsPathRooted arg then arg else IO.Path.GetFullPath(IO.Path.Combine(cwd, arg))
+                        if IO.File.Exists fullPath then IO.File.ReadAllText fullPath else arg
+                    let prompt =
+                        sprintf "Migrate the following OOP code to idiomatic F#:\n\n```\n%s\n```\n\nMigration rules:\n1. `abstract class` / `interface` → F# discriminated union (one case per concrete class).\n2. Mutable fields → immutable record fields; setters → `with` copy-and-update expressions.\n3. `null` returns → `Option<T>`; `throw` → `Result<T, Error>` or DU error case.\n4. Virtual method dispatch → exhaustive `match` on the DU.\n5. Constructor logic → module-level factory functions.\n6. Preserve all business logic exactly.\n\nReturn the complete F# translation with brief migration notes per section." code
+                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/migrate oop-to-fp %s" arg) 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/rop " || s = "/rop" ->
                 // /rop <description> — generate a railway-oriented Result/Either chain
