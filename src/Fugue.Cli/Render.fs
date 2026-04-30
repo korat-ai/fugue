@@ -57,11 +57,11 @@ let private gradientMarkup (r0: int, g0: int, b0: int) (r1: int, g1: int, b1: in
         $"[#{r:x2}{g:x2}{b:x2}]{Markup.Escape (string c)}[/]")
     |> String.concat ""
 
-/// One-line startup banner: "♩ Fugue" with blue-to-purple gradient. No-op when colour is off.
+/// One-line startup banner: "♩♪♫ Fugue" with blue-to-purple gradient. No-op when colour is off.
 let showBanner () : unit =
     if not colorEnabled then () else
     let title = gradientMarkup (59, 130, 246) (168, 85, 247) "Fugue"
-    AnsiConsole.MarkupLine($"[dim]♩[/] {title}")
+    AnsiConsole.MarkupLine($"[dim]♩♪♫[/] {title}")
     AnsiConsole.WriteLine()
 
 /// Supports {model} interpolation. Falls back to "› " if template is empty.
