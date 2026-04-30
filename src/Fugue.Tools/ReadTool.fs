@@ -50,4 +50,18 @@ let read
         if offset.IsNone && limit.IsNone && allLines.Length > 300 then
             sprintf "\n\n[file has %d lines — re-read with offset+limit to focus on the relevant section]" allLines.Length
         else ""
-    body + hint
+
+    // Data file preview: prepend markdown table for CSV / JSON / JSONL when reading from the top.
+    let preview =
+        if offset.IsNone then
+            let ext = (Path.GetExtension(full) |> Option.ofObj |> Option.defaultValue "").ToLowerInvariant()
+            let rawContent = String.concat "\n" allLines
+            match ext with
+            | ".csv"  -> DataPreview.tryPreviewCsv  rawContent
+            | ".jsonl"-> DataPreview.tryPreviewJsonl rawContent
+            | ".json" -> DataPreview.tryPreviewJson  rawContent
+            | _ -> None
+        else None
+    match preview with
+    | Some p -> p + "\n\n---\n\n" + body + hint
+    | None   -> body + hint

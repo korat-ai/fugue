@@ -5,6 +5,7 @@
   <ItemGroup>
     <Compile Include="PathSafety.fs" />
     <Compile Include="InjectionGuard.fs" />
+    <Compile Include="DataPreview.fs" />
     <Compile Include="ReadTool.fs" />
     <Compile Include="WriteTool.fs" />
     <Compile Include="EditTool.fs" />

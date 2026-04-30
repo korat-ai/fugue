@@ -303,6 +303,37 @@ SEE ALSO
         else
             Console.WriteLine(sprintf "fugue %s" ver)
         0
+    elif argv |> Array.contains "env" then
+        let maskKey (v: string) =
+            if v.Length <= 8 then String.replicate v.Length "•"
+            else v.[..3] + String.replicate (min 16 (v.Length - 8)) "•" + v.[v.Length - 4..]
+        let fuguVars = [
+            "FUGUE_PROVIDER";   "FUGUE_MODEL";      "FUGUE_CA_BUNDLE"
+            "FUGUE_NO_COLOR";   "ANTHROPIC_API_KEY"; "OPENAI_API_KEY"
+            "ANTHROPIC_BASE_URL"; "OPENAI_BASE_URL";  "OLLAMA_ENDPOINT"
+            "TERM";              "NO_COLOR";           "PAGER" ]
+        let header = sprintf "%-30s %-35s %s" "Variable" "Value" "Status"
+        Console.WriteLine header
+        Console.WriteLine(String.replicate 75 "─")
+        let cfg0 = Fugue.Core.Config.load [||]
+        for name in fuguVars do
+            let v = Environment.GetEnvironmentVariable name |> Option.ofObj
+            let isKey = name.EndsWith "_KEY"
+            let display =
+                match v with
+                | None -> "(not set)"
+                | Some s -> if isKey then maskKey s else s
+            let status =
+                match v with
+                | None -> "—"
+                | Some _ ->
+                    match cfg0, name with
+                    | Ok c, "FUGUE_PROVIDER" ->
+                        let cfgProv = match c.Provider with Anthropic _ -> "anthropic" | OpenAI _ -> "openai" | Ollama _ -> "ollama"
+                        sprintf "env (config: %s)" cfgProv
+                    | _ -> "env"
+            Console.WriteLine(sprintf "%-30s %-35s %s" name display status)
+        0
     elif argv |> Array.contains "aliases" then
         let install = argv |> Array.contains "--install"
         let lines =

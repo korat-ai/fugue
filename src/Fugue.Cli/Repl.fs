@@ -526,6 +526,24 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
     Console.Out.Write "\x1b[?2004h"   // enable bracketed paste
     Console.Out.Flush()
 
+    // .env file awareness: detect .env in cwd and offer to load into session env.
+    let dotEnvPath = System.IO.Path.Combine(cwd, ".env")
+    if System.IO.File.Exists dotEnvPath then
+        let suspiciousPrefixes = [| "sk-"; "sk-ant-"; "ghp_"; "gho_"; "ghs_"; "AKIA"; "AIza"; "xox" |]
+        let lines =
+            System.IO.File.ReadAllLines dotEnvPath
+            |> Array.filter (fun l -> not (l.TrimStart().StartsWith '#') && l.Contains '=')
+        let hasSecrets =
+            lines |> Array.exists (fun l ->
+                let v = let i = l.IndexOf '=' in if i >= 0 then l.Substring(i + 1).Trim().Trim('"', '\'') else ""
+                suspiciousPrefixes |> Array.exists (fun p -> v.StartsWith p))
+        let badge = if hasSecrets then " [yellow]⚠ contains secrets[/]" else ""
+        if Render.isColorEnabled () then
+            AnsiConsole.MarkupLine(sprintf "[dim]▸ .env detected (%d vars)%s — /env load to import[/]" lines.Length badge)
+        else
+            Console.Out.WriteLine(sprintf ".env detected (%d vars) — /env load to import" lines.Length)
+        AnsiConsole.WriteLine()
+
     // Load .fugue/ignore patterns (lines starting with # are comments)
     let ignorePatterns =
         let p = System.IO.Path.Combine(cwd, ".fugue", "ignore")
@@ -1843,8 +1861,25 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     Environment.SetEnvironmentVariable(name, null)
                     sessionEnvVars <- sessionEnvVars |> Set.remove name
                     AnsiConsole.MarkupLine(sprintf "[dim]Unset [cyan]%s[/][/]" (Markup.Escape name))
+                | "load" ->
+                    let dotEnvPath = System.IO.Path.Combine(cwd, ".env")
+                    if not (System.IO.File.Exists dotEnvPath) then
+                        AnsiConsole.MarkupLine "[dim yellow].env not found in current directory.[/]"
+                    else
+                        let mutable loaded = 0
+                        for line in System.IO.File.ReadAllLines dotEnvPath do
+                            let l = line.Trim()
+                            if not (l.StartsWith '#') && l.Contains '=' then
+                                let eq = l.IndexOf '='
+                                let name  = l.[..eq - 1].Trim()
+                                let value = l.[eq + 1..].Trim().Trim('"', '\'')
+                                if name.Length > 0 then
+                                    Environment.SetEnvironmentVariable(name, value)
+                                    sessionEnvVars <- sessionEnvVars |> Set.add name
+                                    loaded <- loaded + 1
+                        AnsiConsole.MarkupLine(sprintf "[dim]Loaded %d vars from .env[/]" loaded)
                 | other ->
-                    AnsiConsole.MarkupLine(sprintf "[red]Unknown /env subcommand: %s. Use: /env list | /env set NAME=value | /env unset NAME[/]" (Markup.Escape other))
+                    AnsiConsole.MarkupLine(sprintf "[red]Unknown /env subcommand: %s. Use: /env list | /env load | /env set NAME=value | /env unset NAME[/]" (Markup.Escape other))
                 StatusBar.refresh ()
 
             | Some s when s.StartsWith "/scratch" ->
