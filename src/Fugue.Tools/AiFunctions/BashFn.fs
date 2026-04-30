@@ -33,6 +33,6 @@ let create (cwd: string) : AIFunction =
                     else
                         let details = warns |> List.map (fun f -> "  • " + f.Detail) |> String.concat "\n"
                         "[injection-guard] Warning — suspicious pattern:\n" + details + "\n\n"
-                let result = Fugue.Tools.BashTool.bash cwd command timeoutMs
+                let result = Fugue.Tools.BashTool.bash cwd command timeoutMs ct
                 return warnPrefix + result
         }) :> AIFunction

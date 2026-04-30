@@ -274,6 +274,35 @@ SEE ALSO
         Console.WriteLine "✓ Created .fugue/hooks/ directory"
         Console.WriteLine "Edit FUGUE.md to add project-specific context, then run: fugue"
         0
+    elif argv |> Array.contains "version" || argv |> Array.contains "--version" then
+        let asm = System.Reflection.Assembly.GetExecutingAssembly()
+        let ver =
+            let attr = asm.GetCustomAttributes(typeof<System.Reflection.AssemblyInformationalVersionAttribute>, false)
+            if attr.Length > 0 then
+                (attr.[0] :?> System.Reflection.AssemblyInformationalVersionAttribute).InformationalVersion
+            else
+                match asm.GetName().Version |> Option.ofObj with
+                | Some v -> sprintf "%d.%d.%d" v.Major v.Minor v.Build
+                | None   -> "0.0.0"
+        let verbose = argv |> Array.contains "--verbose"
+        if verbose then
+            let rid     = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier
+            let rtVer   = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription
+            let asmPath = asm.Location
+            let cfgPath = Fugue.Core.Config.configFilePath ()
+            let home    = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+            let profDir = System.IO.Path.Combine(home, ".fugue", "profiles")
+            let tmplDir = System.IO.Path.Combine(home, ".fugue", "templates")
+            Console.WriteLine(sprintf "fugue %s" ver)
+            Console.WriteLine(sprintf "  Target RID:    %s" rid)
+            Console.WriteLine(sprintf "  .NET runtime:  %s" rtVer)
+            Console.WriteLine(sprintf "  Binary:        %s" (if asmPath = "" then "(AOT native)" else asmPath))
+            Console.WriteLine(sprintf "  Config file:   %s" cfgPath)
+            Console.WriteLine(sprintf "  Profiles dir:  %s" profDir)
+            Console.WriteLine(sprintf "  Templates dir: %s" tmplDir)
+        else
+            Console.WriteLine(sprintf "fugue %s" ver)
+        0
     elif argv |> Array.contains "aliases" then
         let install = argv |> Array.contains "--install"
         let lines =

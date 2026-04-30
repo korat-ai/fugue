@@ -493,6 +493,12 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
     use cancelSrc = new CancelSource()
     let handler = ConsoleCancelEventHandler(fun _ args -> cancelSrc.OnCtrlC args)
     Console.CancelKeyPress.AddHandler handler
+    use _sigtermReg =
+        System.Runtime.InteropServices.PosixSignalRegistration.Create(
+            System.Runtime.InteropServices.PosixSignal.SIGTERM,
+            fun ctx ->
+                ctx.Cancel <- true
+                cancelSrc.RequestQuit())
     let! initialSession = agent.CreateSessionAsync(CancellationToken.None)
     let mutable session : AgentSession | null = initialSession
     let providerName, modelName = providerInfo cfg.Provider
