@@ -122,15 +122,109 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             | Some s when s = "/help" ->
                 AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.HelpHeader + "[/]"))
                 AnsiConsole.WriteLine()
-                let helpItems = [ "/help",  strings.CmdHelpDesc
-                                  "/clear", strings.CmdClearDesc
-                                  "/exit",  strings.CmdExitDesc ]
+                let helpItems = [ "/help",      strings.CmdHelpDesc
+                                  "/clear",     strings.CmdClearDesc
+                                  "/issue <N>", strings.CmdIssueDesc
+                                  "/exit",      strings.CmdExitDesc ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s = "/issue" || s.StartsWith "/issue " ->
+                let rawArg = if s = "/issue" then "" else s.Substring(7).TrimStart()
+                if String.IsNullOrWhiteSpace rawArg then
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.IssueUsage + "[/]"))
+                    AnsiConsole.WriteLine()
+                else
+                    let psi = System.Diagnostics.ProcessStartInfo()
+                    psi.FileName <- "gh"
+                    psi.ArgumentList.Add "issue"
+                    psi.ArgumentList.Add "view"
+                    psi.ArgumentList.Add rawArg
+                    psi.ArgumentList.Add "--json"
+                    psi.ArgumentList.Add "number,title,body"
+                    psi.UseShellExecute <- false
+                    psi.RedirectStandardOutput <- true
+                    psi.RedirectStandardError <- true
+                    psi.WorkingDirectory <- cwd
+                    try
+                        use proc = new System.Diagnostics.Process()
+                        proc.StartInfo <- psi
+                        match proc.Start() with
+                        | false ->
+                            AnsiConsole.Write(Render.errorLine strings (String.Format(strings.IssueNotFound, rawArg)))
+                            AnsiConsole.WriteLine()
+                        | true ->
+                            let output = proc.StandardOutput.ReadToEnd()
+                            proc.WaitForExit()
+                            if proc.ExitCode <> 0 then
+                                let err = proc.StandardError.ReadToEnd().Trim()
+                                AnsiConsole.Write(Render.errorLine strings (String.Format(strings.IssueNotFound, err)))
+                                AnsiConsole.WriteLine()
+                            else
+                                // Extract a string field from compact gh JSON output (AOT-safe, no JsonSerializer)
+                                let extractField (field: string) (json: string) =
+                                    let key = sprintf "\"%s\":" field
+                                    let idx = json.IndexOf key
+                                    if idx < 0 then ""
+                                    else
+                                        let start = idx + key.Length
+                                        let rest = json.Substring(start).TrimStart()
+                                        if rest.StartsWith "\"" then
+                                            let mutable i = 1
+                                            let sb = System.Text.StringBuilder()
+                                            while i < rest.Length && rest.[i] <> '"' do
+                                                if rest.[i] = '\\' && i + 1 < rest.Length then
+                                                    i <- i + 1
+                                                    sb.Append rest.[i] |> ignore
+                                                else
+                                                    sb.Append rest.[i] |> ignore
+                                                i <- i + 1
+                                            sb.ToString()
+                                        else
+                                            let j = rest.IndexOfAny [|','; '}'; '\n'|]
+                                            if j < 0 then rest else rest.Substring(0, j)
+                                let title = extractField "title" output
+                                let body  = extractField "body"  output
+                                let issueContext = sprintf "Issue #%s: %s\n\n%s" rawArg title body
+                                AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.IssueFetched, rawArg, title))))
+                                AnsiConsole.WriteLine()
+                                // Best-effort branch creation
+                                let slugify (src: string) =
+                                    src.ToLowerInvariant()
+                                    |> String.map (fun c -> if Char.IsLetterOrDigit c then c else '-')
+                                    |> fun s -> s.Trim '-'
+                                let words =
+                                    title.Split([|' '; '/'; ':'; '('; ')'; '['; ']'|], StringSplitOptions.RemoveEmptyEntries)
+                                    |> Array.truncate 5
+                                    |> Array.map slugify
+                                    |> String.concat "-"
+                                let branchName = sprintf "feat/issue-%s-%s" rawArg words
+                                let gitPsi = System.Diagnostics.ProcessStartInfo()
+                                gitPsi.FileName <- "git"
+                                gitPsi.ArgumentList.Add "checkout"
+                                gitPsi.ArgumentList.Add "-b"
+                                gitPsi.ArgumentList.Add branchName
+                                gitPsi.UseShellExecute <- false
+                                gitPsi.RedirectStandardError <- true
+                                gitPsi.WorkingDirectory <- cwd
+                                try
+                                    use gitProc = new System.Diagnostics.Process()
+                                    gitProc.StartInfo <- gitPsi
+                                    if gitProc.Start() then
+                                        gitProc.WaitForExit()
+                                        if gitProc.ExitCode = 0 then
+                                            AnsiConsole.MarkupLine(sprintf "[dim]created branch %s[/]" (Markup.Escape branchName))
+                                            AnsiConsole.WriteLine()
+                                with _ -> ()   // git unavailable or not a repo — silent
+                                // Inject issue context into conversation
+                                do! streamAndRender agent session issueContext cfg cancelSrc
+                    with ex ->
+                        AnsiConsole.Write(Render.errorLine strings ex.Message)
+                        AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some userInput ->
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)

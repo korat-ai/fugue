@@ -28,7 +28,13 @@ type Strings =
       CmdHelpDesc:  string
       CmdClearDesc: string
       CmdExitDesc:  string
-      HelpHeader:   string }
+      HelpHeader:   string
+
+      // /issue command
+      CmdIssueDesc:  string
+      IssueNotFound: string
+      IssueFetched:  string
+      IssueUsage:    string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -48,7 +54,11 @@ let en : Strings =
       CmdHelpDesc           = "show this help"
       CmdClearDesc          = "clear the screen"
       CmdExitDesc           = "exit Fugue"
-      HelpHeader            = "Available slash commands:" }
+      HelpHeader            = "Available slash commands:"
+      CmdIssueDesc          = "fetch GitHub issue and inject context"
+      IssueNotFound         = "issue not found or gh not available: {0}"
+      IssueFetched          = "fetched issue #{0}: {1}"
+      IssueUsage            = "usage: /issue <number>" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -68,7 +78,11 @@ let ru : Strings =
       CmdHelpDesc           = "показать эту справку"
       CmdClearDesc          = "очистить экран"
       CmdExitDesc           = "выйти из Fugue"
-      HelpHeader            = "Доступные команды:" }
+      HelpHeader            = "Доступные команды:"
+      CmdIssueDesc          = "получить задачу GitHub и добавить контекст"
+      IssueNotFound         = "задача не найдена или gh недоступен: {0}"
+      IssueFetched          = "получена задача #{0}: {1}"
+      IssueUsage            = "использование: /issue <номер>" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =
