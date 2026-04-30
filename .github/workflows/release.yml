@@ -1,0 +1,136 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.rid }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - rid: osx-arm64
+            runner: macos-14
+            binary: fugue
+            archive_ext: tar.gz
+          - rid: linux-x64
+            runner: ubuntu-latest
+            binary: fugue
+            archive_ext: tar.gz
+          - rid: win-x64
+            runner: windows-latest
+            binary: fugue.exe
+            archive_ext: zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Inject version from tag
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          # Patch Version property into Directory.Build.props so binary reports correct version
+          sed -i.bak "s|</PropertyGroup>|  <Version>$VERSION</Version>\n</PropertyGroup>|" Directory.Build.props || true
+
+      - name: AOT publish
+        run: >
+          dotnet publish src/Fugue.Cli
+          -c Release
+          -r ${{ matrix.rid }}
+          -p:Version=${{ env.VERSION }}
+
+      - name: Archive (unix)
+        if: matrix.archive_ext == 'tar.gz'
+        shell: bash
+        run: |
+          OUTDIR=src/Fugue.Cli/bin/Release/net10.0/${{ matrix.rid }}/publish
+          ARCHIVE=fugue-${{ env.VERSION }}-${{ matrix.rid }}.tar.gz
+          tar -czf $ARCHIVE -C $OUTDIR ${{ matrix.binary }}
+          echo "ARCHIVE=$ARCHIVE" >> $GITHUB_ENV
+          sha256sum $ARCHIVE > $ARCHIVE.sha256
+
+      - name: Archive (windows)
+        if: matrix.archive_ext == 'zip'
+        shell: pwsh
+        run: |
+          $version = $env:VERSION
+          $outDir  = "src\Fugue.Cli\bin\Release\net10.0\${{ matrix.rid }}\publish"
+          $archive = "fugue-$version-${{ matrix.rid }}.zip"
+          Compress-Archive -Path "$outDir\${{ matrix.binary }}" -DestinationPath $archive
+          echo "ARCHIVE=$archive" | Out-File -Append $env:GITHUB_ENV
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
+          "$hash  $archive" | Out-File -Encoding ascii "$archive.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fugue-${{ matrix.rid }}
+          path: |
+            fugue-*.${{ matrix.archive_ext }}
+            fugue-*.${{ matrix.archive_ext }}.sha256
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Set VERSION
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            # Extract block between first two version headers
+            awk '/^## \['"$VERSION"'\]/{found=1; next} found && /^## /{exit} found{print}' CHANGELOG.md > notes.md
+          else
+            echo "Release ${{ github.ref_name }}" > notes.md
+          fi
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Fugue ${{ github.ref_name }}"
+          body_path: notes.md
+          files: |
+            dist/fugue-*.tar.gz
+            dist/fugue-*.tar.gz.sha256
+            dist/fugue-*.zip
+            dist/fugue-*.zip.sha256
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  update-homebrew:
+    name: Update Homebrew tap
+    needs: release
+    runs-on: ubuntu-latest
+    # Only run if the tap repo exists; set secret HOMEBREW_TAP_TOKEN in repo settings.
+    if: ${{ vars.HOMEBREW_TAP_ENABLED == 'true' }}
+    steps:
+      - name: Trigger tap update
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: korat-ai/homebrew-fugue
+          event-type: new-release
+          client-payload: '{"version": "${{ github.ref_name }}", "run_id": "${{ github.run_id }}"}'
