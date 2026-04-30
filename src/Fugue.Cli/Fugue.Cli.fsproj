@@ -5,7 +5,19 @@
     <RootNamespace>Fugue.Cli</RootNamespace>
     <AssemblyName>fugue</AssemblyName>
     <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
-    <!-- AOT publish settings -->
+    <!-- NuGet tool metadata -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>fugue</ToolCommandName>
+    <PackageId>fugue</PackageId>
+    <Description>Fast F#/.NET terminal coding agent. Provider-agnostic (Anthropic / OpenAI-compat / Ollama). 40ms cold start.</Description>
+    <Authors>korat-ai</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/korat-ai/fugue</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/korat-ai/fugue</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>cli;tool;ai;agent;fsharp;dotnet;coding-assistant;llm</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- AOT publish settings (only applied on dotnet publish, not dotnet pack) -->
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
     <StripSymbols>true</StripSymbols>
@@ -47,6 +59,10 @@
     <Compile Include="Repl.fs" />
     <Compile Include="Doctor.fs" />
     <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>

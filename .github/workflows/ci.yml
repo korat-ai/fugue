@@ -36,6 +36,11 @@ jobs:
       - name: Test
         run: dotnet test -c Release --no-build --logger "trx;LogFileName=results.trx"
 
+      - name: Pack (tool smoke)
+        # Verify nupkg can be created; only run on one OS to save minutes.
+        if: matrix.os == 'ubuntu-latest'
+        run: dotnet pack src/Fugue.Cli -c Release -p:Version=0.0.0-ci --no-build
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
