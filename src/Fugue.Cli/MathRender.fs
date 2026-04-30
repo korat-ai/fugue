@@ -244,12 +244,51 @@ let private stripDelimiters (s: string) : string =
             j <- j + 1
     result2.ToString()
 
+/// Apply transform to portions of s that are outside fenced code blocks (```) and inline code spans (`).
+/// Emits code regions verbatim so LaTeX inside code examples is not mangled.
+let private applyOutsideCode (transform: string -> string) (s: string) : string =
+    let sb = System.Text.StringBuilder()
+    let mutable i = 0
+    while i < s.Length do
+        // Fenced code block: ``` or ~~~
+        if i + 2 < s.Length &&
+           ((s.[i] = '`' && s.[i+1] = '`' && s.[i+2] = '`') ||
+            (s.[i] = '~' && s.[i+1] = '~' && s.[i+2] = '~')) then
+            let fence = s.[i..i+2]
+            let closeIdx = s.IndexOf(fence, i + 3, System.StringComparison.Ordinal)
+            if closeIdx >= 0 then
+                sb.Append(s, i, closeIdx + 3 - i) |> ignore
+                i <- closeIdx + 3
+            else
+                sb.Append(s, i, s.Length - i) |> ignore
+                i <- s.Length
+        // Inline code span: `...`
+        elif s.[i] = '`' then
+            let closeIdx = s.IndexOf('`', i + 1)
+            if closeIdx >= 0 then
+                sb.Append(s, i, closeIdx + 1 - i) |> ignore
+                i <- closeIdx + 1
+            else
+                sb.Append(s.[i]) |> ignore
+                i <- i + 1
+        else
+            // Collect non-code text up to the next backtick or fence
+            let mutable j = i
+            while j < s.Length && s.[j] <> '`' &&
+                  not (j + 2 < s.Length && s.[j] = '~' && s.[j+1] = '~' && s.[j+2] = '~') do
+                j <- j + 1
+            sb.Append(transform (s.[i..j-1])) |> ignore
+            i <- j
+    sb.ToString()
+
 /// Pre-process a string, converting common LaTeX math to Unicode approximations.
 /// Call this before passing text to Markdig so the rendered output contains
 /// readable Unicode rather than raw LaTeX commands.
+/// Content inside code fences (```) or inline code spans (`) is left untouched.
 let preprocess (s: string) : string =
-    s
-    |> replaceFrac
-    |> replaceCommands
-    |> replaceScripts
-    |> stripDelimiters
+    applyOutsideCode (fun chunk ->
+        chunk
+        |> replaceFrac
+        |> replaceCommands
+        |> replaceScripts
+        |> stripDelimiters) s
