@@ -4,6 +4,7 @@ open System
 open System.Collections.Generic
 open System.Diagnostics
 open System.Diagnostics.CodeAnalysis
+open System.IO
 open System.Text
 open System.Threading
 open System.Threading.Tasks
@@ -14,6 +15,7 @@ open Fugue.Core.Config
 open Fugue.Core.Localization
 open Fugue.Agent
 open Fugue.Cli
+open Fugue.Tools.PathSafety
 
 /// Try to find the git repository root starting from startDir.
 /// Runs `git rev-parse --show-toplevel` as a best-effort child process; returns None on any failure.
@@ -40,6 +42,27 @@ let private findGitRoot (startDir: string) : string option =
         else None
     with _ -> None
 
+
+/// Search for a sibling test file in the `tests/` subdirectory of cwd (recursively).
+/// Returns the relative path from cwd if found, or None.
+let tryFindTestFile (cwd: string) (sourceFile: string) : string option =
+    let stem =
+        System.IO.Path.GetFileNameWithoutExtension sourceFile
+        |> Option.ofObj
+        |> Option.defaultValue ""
+    let testsDir = System.IO.Path.Combine(cwd, "tests")
+    if not (System.IO.Directory.Exists testsDir) then None
+    else
+        let candidates = [| stem + "Tests.fs"; stem + "Test.fs" |]
+        candidates |> Array.tryPick (fun name ->
+            try
+                System.IO.Directory.GetFiles(testsDir, name, SearchOption.AllDirectories)
+                |> Array.tryHead
+                |> Option.map (fun abs ->
+                    try System.IO.Path.GetRelativePath(cwd, abs)
+                    with _ -> abs)
+            with _ -> None)
+
 /// Find @path tokens in a string.
 /// Returns list of (startIdx, tokenLength, path) for each @word token that is preceded
 /// by start-of-string or whitespace.
@@ -62,7 +85,7 @@ let private findAtTokens (input: string) : (int * int * string) list =
 /// Expand @path tokens in user input. Each @word that resolves to an existing file
 /// within cwd is replaced with its contents (up to 4000 chars). Skips missing, binary,
 /// or out-of-cwd files silently or with a dim notice.
-let private expandAtFiles (cwd: string) (strings: Fugue.Core.Localization.Strings) (input: string) : string =
+let expandAtFiles (cwd: string) (strings: Fugue.Core.Localization.Strings) (input: string) : string =
     let tokens = findAtTokens input
     if tokens.IsEmpty then input
     else
@@ -80,7 +103,13 @@ let private expandAtFiles (cwd: string) (strings: Fugue.Core.Localization.String
                     let truncated = content.Length > 4000
                     let body = if truncated then content.[..3999] else content
                     let header = sprintf "[contents of %s]%s:\n" pathPart (if truncated then " " + strings.AtFileTooBig else "")
-                    result <- result.[0 .. start - 1] + header + body + result.[start + length ..]
+                    let hint =
+                        match tryFindTestFile cwd fullPath with
+                        | Some testRel ->
+                            let msg = System.String.Format(strings.TestFileHint, testRel, testRel)
+                            sprintf "\n\n%s" msg
+                        | None -> ""
+                    result <- result.[0 .. start - 1] + header + body + hint + result.[start + length ..]
                 with _ ->
                     AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (System.String.Format(strings.AtFileNotFound, pathPart))))
         result
@@ -90,7 +119,6 @@ let private providerInfo (p: ProviderConfig) : string * string =
     | Anthropic(_, m) -> "anthropic", m
     | OpenAI(_, m)    -> "openai", m
     | Ollama(ep, m)   -> string ep, m
-
 /// Cheap heuristic — does the text contain markdown markers worth re-rendering?
 /// Avoids re-printing pure plain text twice. False positives (e.g. raw `**` in code)
 /// are acceptable; the markdown render still produces readable output.
@@ -297,6 +325,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     let providerName, modelName = providerInfo cfg.Provider
     DebugLog.sessionStart providerName modelName cwd
     StatusBar.start cwd cfg
+    Console.Out.Write "\x1b[?2004h"   // enable bracketed paste
+    Console.Out.Flush()
 
     let strings = pick cfg.Ui.Locale
     let mutable verbosityPrefix : string option = None
@@ -317,10 +347,13 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/ask <q>",        strings.CmdAskDesc
                                   "/clear",          strings.CmdClearDesc
                                   "/summary",         strings.CmdSummaryDesc
+                                  "/squash <N>",      strings.CmdSquashDesc
                                   "/short",           strings.CmdShortDesc
                                   "/long",            strings.CmdLongDesc
                                   "/clear-history",   strings.CmdClearHistoryDesc
                                   "/tools",           strings.CmdToolsDesc
+                                  "/todo",            strings.CmdTodoDesc
+                                  "/summarize <p>",   strings.CmdSummarizeDesc
                                   "/new",             strings.CmdNewDesc
                                   "/diff",           strings.CmdDiffDesc
                                   "/init",           strings.CmdInitDesc
@@ -366,6 +399,41 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s = "/squash" || s.StartsWith "/squash " ->
+                let rawArg = if s = "/squash" then "" else s.Substring(8).TrimStart()
+                let n = if String.IsNullOrWhiteSpace rawArg then 0 else (try int rawArg with _ -> 0)
+                if n <= 0 then
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.SquashUsage + "[/]"))
+                    AnsiConsole.WriteLine()
+                else
+                    let psi = System.Diagnostics.ProcessStartInfo()
+                    psi.FileName <- "git"
+                    psi.ArgumentList.Add "log"
+                    psi.ArgumentList.Add "--oneline"
+                    psi.ArgumentList.Add (sprintf "-%d" n)
+                    psi.UseShellExecute <- false
+                    psi.RedirectStandardOutput <- true
+                    psi.WorkingDirectory <- cwd
+                    try
+                        use proc = new System.Diagnostics.Process()
+                        proc.StartInfo <- psi
+                        match proc.Start() with
+                        | false ->
+                            AnsiConsole.Write(Render.errorLine strings strings.SquashNoRepo)
+                            AnsiConsole.WriteLine()
+                        | true ->
+                            let out = proc.StandardOutput.ReadToEnd()
+                            proc.WaitForExit()
+                            if proc.ExitCode <> 0 || String.IsNullOrWhiteSpace out then
+                                AnsiConsole.Write(Render.errorLine strings strings.SquashNoRepo)
+                                AnsiConsole.WriteLine()
+                            else
+                                let prompt = sprintf """Here are the last %d commits to be squashed:\n\n%s\n\nPlease generate a single conventional commit message that summarizes all these changes.\nFollow the format: type(scope): description\n\nAlso show the git command to execute the squash:\n  git reset --soft HEAD~%d && git commit -m "<your message>"\n\nDo NOT run the command — just show it for the user to review and run manually.""" n out n
+                                do! streamAndRender agent session prompt cfg cancelSrc
+                    with ex ->
+                        AnsiConsole.Write(Render.errorLine strings ex.Message)
+                        AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/short" ->
                 verbosityPrefix <- Some "[VERBOSITY: respond briefly, 1-2 sentences per point, no elaboration unless asked]\n\n"
@@ -689,7 +757,71 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 AnsiConsole.WriteLine()
                 do! streamAndRender agent session summaryPrompt cfg cancelSrc
                 StatusBar.refresh ()
-
+            | Some s when s = "/todo" ->
+                let tryRun (exe: string) (args: string[]) =
+                    try
+                        let psi = System.Diagnostics.ProcessStartInfo()
+                        psi.FileName <- exe
+                        for a in args do psi.ArgumentList.Add a
+                        psi.UseShellExecute <- false
+                        psi.RedirectStandardOutput <- true
+                        psi.RedirectStandardError <- true
+                        psi.WorkingDirectory <- cwd
+                        use proc = new System.Diagnostics.Process()
+                        proc.StartInfo <- psi
+                        match proc.Start() with
+                        | false -> None
+                        | true ->
+                            let out = proc.StandardOutput.ReadToEnd()
+                            proc.WaitForExit()
+                            if proc.ExitCode = 0 && not (String.IsNullOrWhiteSpace out) then Some out
+                            elif proc.ExitCode = 1 then Some ""  // grep/rg return 1 for no matches
+                            else None
+                    with _ -> None
+                let results =
+                    match tryRun "rg" [| "--line-number"; "--with-filename"; "--no-heading";
+                                         "-e"; "TODO"; "-e"; "FIXME"; "-e"; "HACK"; "." |] with
+                    | Some r -> Some r
+                    | None ->
+                        tryRun "grep" [| "-rn"; "-E"; "TODO|FIXME|HACK"; "." |]
+                match results with
+                | None ->
+                    AnsiConsole.Write(Render.errorLine strings "rg and grep unavailable")
+                    AnsiConsole.WriteLine()
+                | Some "" ->
+                    AnsiConsole.MarkupLine("[dim]" + Markup.Escape strings.TodoNone + "[/]")
+                    AnsiConsole.WriteLine()
+                | Some output ->
+                    let lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    let truncated, note =
+                        if lines.Length > 200 then
+                            Array.take 200 lines, sprintf "\n\n[truncated — showing 200 of %d matches]" lines.Length
+                        else lines, ""
+                    let body = String.concat "\n" truncated
+                    let summary =
+                        sprintf "Found %d TODO/FIXME/HACK items in workspace:\n\n%s%s\n\nPlease review these and suggest which ones are worth addressing now."
+                            lines.Length body note
+                    do! streamAndRender agent session summary cfg cancelSrc
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/summarize" ->
+                let rawArg = s.Substring("/summarize".Length).Trim()
+                if System.String.IsNullOrWhiteSpace rawArg then
+                    AnsiConsole.Write(Markup("[dim]Usage: /summarize <path>[/]"))
+                    AnsiConsole.WriteLine()
+                else
+                    let targetPath =
+                        if System.IO.Path.IsPathRooted rawArg then rawArg
+                        else System.IO.Path.GetFullPath(System.IO.Path.Combine(cwd, rawArg))
+                    let summarizePrompt =
+                        if System.IO.Directory.Exists targetPath then
+                            sprintf "Please summarize the directory '%s'.\n\nProvide a structured summary:\n1. Purpose — what does this module/package do?\n2. Public API — key functions, types, or entry points\n3. Key dependencies — what does it depend on?\n4. Notable design decisions — any interesting patterns or constraints\n\nBe concise (2–4 sentences per section). Use the Read and Glob tools to explore the files." rawArg
+                        elif System.IO.File.Exists targetPath then
+                            sprintf "Please summarize the file '%s'.\n\nProvide a structured summary:\n1. Purpose — what does this file do?\n2. Public API — exported functions or types\n3. Key dependencies — what modules/libraries does it use?\n4. Notable design decisions — any interesting patterns or constraints\n\nBe concise (2–4 sentences per section). Use the Read tool to examine the file." rawArg
+                        else
+                            sprintf "The path '%s' does not exist. Please let me know." rawArg
+                    AnsiConsole.Write(Render.userMessage cfg.Ui ("/summarize " + rawArg))
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session summarizePrompt cfg cancelSrc
                 StatusBar.refresh ()
             | Some userInput ->
                 if ReadLine.hasZeroWidth userInput then
@@ -708,5 +840,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 StatusBar.refresh ()
     finally
         Console.CancelKeyPress.RemoveHandler handler
+        Console.Out.Write "\x1b[?2004l"   // disable bracketed paste
+        Console.Out.Flush()
         StatusBar.stop ()
 }

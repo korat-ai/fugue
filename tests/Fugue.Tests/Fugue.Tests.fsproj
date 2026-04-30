@@ -32,11 +32,13 @@
     <Compile Include="BashToolTests.fs" />
     <Compile Include="GlobToolTests.fs" />
     <Compile Include="GrepToolTests.fs" />
+    <Compile Include="TreeToolTests.fs" />
     <Compile Include="DiscoveryTests.fs" />
     <Compile Include="ConversationTests.fs" />
     <Compile Include="AtFileTests.fs" />
     <Compile Include="PathSafetyGuardTests.fs" />
     <Compile Include="PathSafetySymlinkTests.fs" />
+    <Compile Include="ReplTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>

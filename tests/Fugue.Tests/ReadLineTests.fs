@@ -352,6 +352,82 @@ let ``word_CtrlW_atZero_isNoOp`` () =
     String(s.Buffer.ToArray()) |> should equal "hello"
     s.Cursor |> should equal 0
 
+// ── Bracketed paste tests ─────────────────────────────────────────────────────
+
+[<Fact>]
+let ``paste_applyPastedText_setsBufferAndCursor`` () =
+    let s = mkState "old" 3
+    applyPastedText "hello world" s
+    String(s.Buffer.ToArray()) |> should equal "hello world"
+    s.Cursor |> should equal 11
+
+[<Fact>]
+let ``paste_applyPastedText_replacesExistingContent`` () =
+    let s = mkState "existing text" 5
+    applyPastedText "new content" s
+    String(s.Buffer.ToArray()) |> should equal "new content"
+    s.Cursor |> should equal 11
+
+[<Fact>]
+let ``paste_applyPastedText_multiLinePreservesNewlines`` () =
+    let s = mkState "" 0
+    applyPastedText "line1\nline2\nline3" s
+    String(s.Buffer.ToArray()) |> should equal "line1\nline2\nline3"
+    s.Cursor |> should equal 17
+
+[<Fact>]
+let ``paste_applyPastedText_trims_trailing_newline`` () =
+    // Pasting a block that ends in \n should strip the trailing newline
+    // so the user can review before submitting.
+    let s = mkState "" 0
+    applyPastedText "hello\n" s
+
+// ── Tab-completion list tests ─────────────────────────────────────────────────
+
+[<Fact>]
+let ``tab_slashCommands_containsExpectedEntries`` () =
+    slashCommands |> should contain "/help"
+    slashCommands |> should contain "/clear"
+    slashCommands |> should contain "/new"
+    slashCommands |> should contain "/exit"
+    slashCommands |> should contain "/quit"
+    slashCommands |> should contain "/diff"
+    slashCommands |> should contain "/diff --staged"
+    slashCommands |> should contain "/init"
+    slashCommands |> should contain "/summarize"
+    slashCommands |> should contain "/tools"
+    slashCommands |> should contain "/clear-history"
+    slashCommands |> should contain "/short"
+    slashCommands |> should contain "/long"
+    slashCommands |> should contain "/summary"
+    slashCommands |> should contain "/doctor"
+
+[<Fact>]
+let ``tab_filterByPrefix_cl_returnsExpectedMatches`` () =
+    let matches = slashCommands |> Array.filter (fun c -> c.StartsWith "/cl")
+    matches |> should contain "/clear"
+    matches |> should contain "/clear-history"
+    matches.Length |> should equal 2
+
+[<Fact>]
+let ``tab_filterByPrefix_h_returnsSingleMatch`` () =
+    let matches = slashCommands |> Array.filter (fun c -> c.StartsWith "/h")
+    matches |> should equal [| "/help" |]
+
+[<Fact>]
+let ``tab_filterByPrefix_noMatch_returnsEmpty`` () =
+    let matches = slashCommands |> Array.filter (fun c -> c.StartsWith "/zzz")
+    matches |> should equal [||]
+
+[<Fact>]
+let ``tab_filterByPrefix_slash_returnsAll`` () =
+    let matches = slashCommands |> Array.filter (fun c -> c.StartsWith "/")
+    matches.Length |> should equal slashCommands.Length
+
+[<Fact>]
+let ``tab_allCommandsStartWithSlash`` () =
+    slashCommands |> Array.forall (fun c -> c.StartsWith "/") |> should equal true
+
 // ── Undo / redo tests ─────────────────────────────────────────────────────────
 
 [<Fact>]
@@ -364,6 +440,18 @@ let ``undo_CtrlZ_onEmptyStack_isNoOp`` () =
     s.Cursor |> should equal 5
 
 [<Fact>]
+let ``paste_applyPastedText_emptyString_clearsBuffer`` () =
+    let s = mkState "something" 3
+    applyPastedText "" s
+    String(s.Buffer.ToArray()) |> should equal ""
+    s.Cursor |> should equal 0
+
+[<Fact>]
+let ``paste_applyPastedText_cursorAtEnd_afterPaste`` () =
+    let s = mkState "" 0
+    applyPastedText "abc" s
+    s.Cursor |> should equal s.Buffer.Count
+
 let ``undo_typingChar_pushesSnapshotOntoUndoStack`` () =
     clearUndoRedo()
     let s = mkState "ab" 2

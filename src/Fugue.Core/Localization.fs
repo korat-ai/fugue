@@ -89,7 +89,22 @@ type Strings =
       VerbosityLongSet:  string
 
       // /summary
-      CmdSummaryDesc: string }
+      CmdSummaryDesc: string
+
+      // /squash
+      CmdSquashDesc: string
+      SquashUsage:   string
+      SquashNoRepo:  string
+
+      // /todo command
+      CmdTodoDesc: string
+      TodoNone:    string
+
+      // /summarize command
+      CmdSummarizeDesc: string
+
+      // @path injection hints
+      TestFileHint:  string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -144,7 +159,14 @@ let en : Strings =
       CmdLongDesc           = "switch to detailed responses"
       VerbosityShortSet     = "Brevity mode on. Responses will be concise."
       VerbosityLongSet      = "Detail mode on. Responses will be thorough."
-      CmdSummaryDesc        = "ask the agent to summarize the current session" }
+      CmdSummaryDesc        = "ask the agent to summarize the current session"
+      CmdSquashDesc         = "generate squash commit message for last N commits"
+      SquashUsage           = "usage: /squash <N>"
+      SquashNoRepo          = "not a git repository or git unavailable"
+      CmdTodoDesc           = "scan workspace for TODO/FIXME/HACK comments"
+      TodoNone              = "no TODO/FIXME/HACK comments found in workspace"
+      CmdSummarizeDesc      = "summarize a file or directory"
+      TestFileHint          = "[test file found: {0} — include it with @{1}]" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -199,7 +221,14 @@ let ru : Strings =
       CmdLongDesc           = "перейти к подробным ответам"
       VerbosityShortSet     = "Режим краткости включён. Ответы будут краткими."
       VerbosityLongSet      = "Режим подробности включён. Ответы будут развёрнутыми."
-      CmdSummaryDesc        = "попросить агента резюмировать текущую сессию" }
+      CmdSummaryDesc        = "попросить агента резюмировать текущую сессию"
+      CmdSquashDesc         = "сгенерировать squash-сообщение для последних N коммитов"
+      SquashUsage           = "использование: /squash <N>"
+      SquashNoRepo          = "не git-репозиторий или git недоступен"
+      CmdTodoDesc           = "найти TODO/FIXME/HACK комментарии в проекте"
+      TodoNone              = "TODO/FIXME/HACK комментарии не найдены"
+      CmdSummarizeDesc      = "резюме файла или директории"
+      TestFileHint          = "[найден тест-файл: {0} — подключите его через @{1}]" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =
