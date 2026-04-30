@@ -8,8 +8,8 @@ open Fugue.Core.Localization
 
 type ToolState =
     | Running   of name: string * args: string
-    | Completed of name: string * args: string * output: string
-    | Failed    of name: string * args: string * err: string
+    | Completed of name: string * args: string * output: string * elapsed: TimeSpan
+    | Failed    of name: string * args: string * err: string   * elapsed: TimeSpan
 
 let mutable private colorEnabled = true
 
@@ -73,6 +73,12 @@ let private softWrap (width: int) (line: string) : string list =
             i <- chunkEnd
         result
 
+let private formatElapsed (e: TimeSpan) =
+    if e.TotalMilliseconds >= 1000.0 then
+        sprintf "%.1fs" e.TotalSeconds
+    else
+        sprintf "%dms" (int e.TotalMilliseconds)
+
 let private renderToolBody (output: string) : IRenderable =
     if colorEnabled then
         if DiffRender.looksLikeDiff output then DiffRender.toRenderable output
@@ -110,15 +116,15 @@ let toolBullet (s: Strings) (state: ToolState) : IRenderable =
             let body =
                 Padder(Markup(sprintf "[dim]%s[/]" (Markup.Escape s.ToolRunning))).PadLeft(2)
             Rows([ Markup(header) :> IRenderable; body :> _ ]) :> _
-        | Completed(name, args, output) ->
+        | Completed(name, args, output, elapsed) ->
             let header =
-                sprintf "[green]●[/] [bold]%s[/]([dim]%s[/])"
-                    (Markup.Escape name) (Markup.Escape args)
+                sprintf "[green]●[/] [bold]%s[/]([dim]%s[/]) [dim]%s[/]"
+                    (Markup.Escape name) (Markup.Escape args) (formatElapsed elapsed)
             Rows([ Markup(header) :> IRenderable; renderToolBody output ]) :> _
-        | Failed(name, args, err) ->
+        | Failed(name, args, err, elapsed) ->
             let header =
-                sprintf "[red]●[/] [bold]%s[/]([dim]%s[/])"
-                    (Markup.Escape name) (Markup.Escape args)
+                sprintf "[red]●[/] [bold]%s[/]([dim]%s[/]) [dim]%s[/]"
+                    (Markup.Escape name) (Markup.Escape args) (formatElapsed elapsed)
             let body =
                 Padder(Markup(sprintf "[red]%s[/]" (Markup.Escape err))).PadLeft(2)
             Rows([ Markup(header) :> IRenderable; body :> _ ]) :> _
@@ -127,9 +133,9 @@ let toolBullet (s: Strings) (state: ToolState) : IRenderable =
         | Running(name, args) ->
             Rows([ Text(sprintf "* %s(%s)" name args) :> IRenderable
                    Padder(Text(s.ToolRunning)).PadLeft(2) :> _ ]) :> _
-        | Completed(name, args, output) ->
-            Rows([ Text(sprintf "* %s(%s)" name args) :> IRenderable
+        | Completed(name, args, output, elapsed) ->
+            Rows([ Text(sprintf "* %s(%s) %s" name args (formatElapsed elapsed)) :> IRenderable
                    renderToolBody output ]) :> _
-        | Failed(name, args, err) ->
-            Rows([ Text(sprintf "* %s(%s)" name args) :> IRenderable
+        | Failed(name, args, err, elapsed) ->
+            Rows([ Text(sprintf "* %s(%s) %s" name args (formatElapsed elapsed)) :> IRenderable
                    Padder(Text(sprintf "Error: %s" err)).PadLeft(2) :> _ ]) :> _
