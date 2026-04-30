@@ -33,6 +33,8 @@ let private buildAgent (cfg: AppConfig) : AIAgent =
 let private runWithCfg (cfg: AppConfig) : int =
     let isClassic = cfg.Ui.Theme = "fugue-classic" || cfg.Ui.Theme = "monochrome"
     Render.initColor (not (noColor () || isClassic))
+    MarkdownRender.initEmoji (not (Fugue.Core.EmojiMap.terminalSupportsEmoji ()))
+    MarkdownRender.initTheme cfg.Ui.Theme
     let agent = buildAgent cfg
     let cwd = Environment.CurrentDirectory
     let t =

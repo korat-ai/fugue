@@ -173,7 +173,14 @@ type Strings =
       InputPlaceholder: string
 
       // Streaming waiting label
-      Thinking: string }
+      Thinking: string
+
+      // /watch command
+      CmdWatchDesc:  string
+      WatchAdded:    string
+      WatchRemoved:  string
+      WatchNone:     string
+      WatchUsage:    string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -280,7 +287,12 @@ let en : Strings =
       FindInjectHint        = "type @<path> to inject a file into your next prompt"
       TestFileHint          = "[test file found: {0} — include it with @{1}]"
       InputPlaceholder      = "Type a message or /help"
-      Thinking              = "thinking" }
+      Thinking              = "thinking"
+      CmdWatchDesc          = "watch a file and re-run a command on save"
+      WatchAdded            = "watching {0} → will run: {1}"
+      WatchRemoved          = "stopped watching {0}"
+      WatchNone             = "no active watches"
+      WatchUsage            = "usage: /watch <path> <command> | /unwatch <path> | /watches" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -387,7 +399,12 @@ let ru : Strings =
       FindInjectHint        = "введите @<путь> чтобы добавить файл в следующее сообщение"
       TestFileHint          = "[найден тест-файл: {0} — подключите его через @{1}]"
       InputPlaceholder      = "Введите сообщение или /help"
-      Thinking              = "думаю" }
+      Thinking              = "думаю"
+      CmdWatchDesc          = "следить за файлом и перезапускать команду при сохранении"
+      WatchAdded            = "слежу за {0} → запущу: {1}"
+      WatchRemoved          = "перестал следить за {0}"
+      WatchNone             = "активных наблюдений нет"
+      WatchUsage            = "использование: /watch <путь> <команда> | /unwatch <путь> | /watches" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =

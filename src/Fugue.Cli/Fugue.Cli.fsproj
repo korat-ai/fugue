@@ -36,6 +36,7 @@
     <Compile Include="DiffRender.fs" />
     <Compile Include="Render.fs" />
     <Compile Include="StatusBar.fs" />
+    <Compile Include="FileWatcher.fs" />
     <Compile Include="Repl.fs" />
     <Compile Include="Doctor.fs" />
     <Compile Include="Program.fs" />

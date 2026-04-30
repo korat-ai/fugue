@@ -14,13 +14,23 @@ let pipeline : MarkdownPipeline =
         .UseEmphasisExtras()
         .Build()
 
+let mutable private emojiNormalise = false
+
+let initEmoji (enabled: bool) = emojiNormalise <- enabled
+
+let mutable private activeTheme = ""
+
+let initTheme (theme: string) = activeTheme <- theme
+
 let private escape (text: string) : string =
     Markup.Escape text
 
 let rec private renderInline (sb: StringBuilder) (inl: Inline) : unit =
     match inl with
     | :? LiteralInline as lit ->
-        sb.Append(escape (lit.Content.ToString())) |> ignore
+        let raw = lit.Content.ToString()
+        let text = if emojiNormalise then Fugue.Core.EmojiMap.normalise raw else raw
+        sb.Append(escape text) |> ignore
     | :? EmphasisInline as em ->
         let tag =
             match em.DelimiterCount with
@@ -31,7 +41,8 @@ let rec private renderInline (sb: StringBuilder) (inl: Inline) : unit =
         for child in (em :> seq<Inline>) do renderInline sb child
         sb.Append "[/]" |> ignore
     | :? CodeInline as ci ->
-        sb.Append(sprintf "[teal]%s[/]" (escape ci.Content)) |> ignore
+        let color = if activeTheme = "nocturne" then "#4a90d9" else "teal"
+        sb.Append(sprintf "[%s]%s[/]" color (escape ci.Content)) |> ignore
     | :? LinkInline as li ->
         let label =
             let inner = StringBuilder()
@@ -59,10 +70,16 @@ let rec private renderBlock (block: Block) : IRenderable =
     match block with
     | :? HeadingBlock as h ->
         let style =
-            match h.Level with
-            | 1 -> "bold underline"
-            | 2 -> "bold"
-            | _ -> "bold dim"
+            if activeTheme = "nocturne" then
+                match h.Level with
+                | 1 -> "bold underline #b8a060"
+                | 2 -> "bold #b8a060"
+                | _ -> "bold dim #b8a060"
+            else
+                match h.Level with
+                | 1 -> "bold underline"
+                | 2 -> "bold"
+                | _ -> "bold dim"
         let body = inlineToMarkupOpt h.Inline
         Markup(sprintf "[%s]%s[/]" style body) :> IRenderable
     | :? ParagraphBlock as p ->

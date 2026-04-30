@@ -435,6 +435,18 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     try
         while not cancelSrc.QuitRequested do
             let callbacks : ReadLine.ReadLineCallbacks = { OnClearScreen = StatusBar.refresh }
+            // Drain file-watch triggers from background FileSystemWatcher
+            let watchTriggers = FileWatcher.drain ()
+            for wcmd in watchTriggers do
+                AnsiConsole.Write(Markup(sprintf "[dim]⟳ watch → %s[/]" (Markup.Escape wcmd)))
+                AnsiConsole.WriteLine()
+                turnNumber <- turnNumber + 1
+                AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "[watch] %s" wcmd) turnNumber)
+                AnsiConsole.WriteLine()
+                prelude cfg
+                do! streamAndRender agent session wcmd cfg cancelSrc zenMode
+                coda cfg
+                StatusBar.refresh ()
             let modelShort =
                 let m = match cfg.Provider with
                         | Fugue.Core.Config.Anthropic(_, m) | Fugue.Core.Config.OpenAI(_, m) | Fugue.Core.Config.Ollama(_, m) -> m
@@ -499,6 +511,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/issue <N>",      strings.CmdIssueDesc
                                   "/model suggest",  strings.CmdModelDesc
                                   "/onboard",        strings.CmdOnboardDesc
+                                  "/watch <p> <cmd>", strings.CmdWatchDesc
                                   "/exit",           strings.CmdExitDesc
                                   "/review pr <N>",  strings.CmdReviewPrDesc ]
                 for (name, desc) in helpItems do
@@ -1038,6 +1051,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 activityStore <- Map.empty
                 aliasStore <- Map.empty
                 scratchLines <- []
+                FileWatcher.clear ()
                 Fugue.Core.Checkpoint.clear ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "!" ->
@@ -1181,6 +1195,41 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     // /scratch alone with no subcommand: show usage
                     AnsiConsole.Write(Markup("[dim]usage: /scratch <text> | /scratch send | /scratch show | /scratch clear[/]"))
                     AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s = "/watches" ->
+                let ws = FileWatcher.list ()
+                if ws.IsEmpty then
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.WatchNone + "[/]"))
+                    AnsiConsole.WriteLine()
+                else
+                    for (path, cmd) in ws do
+                        AnsiConsole.Write(Markup(sprintf "  [cyan]%s[/] → [dim]%s[/]" (Markup.Escape path) (Markup.Escape cmd)))
+                        AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/unwatch " ->
+                let path = s.Substring("/unwatch ".Length).Trim()
+                let absPath = System.IO.Path.GetFullPath(path)
+                FileWatcher.remove absPath
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.WatchRemoved, path)) + "[/]"))
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/watch " ->
+                let rest = s.Substring("/watch ".Length).Trim()
+                let spaceIdx = rest.IndexOf ' '
+                if spaceIdx <= 0 then
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.WatchUsage + "[/]"))
+                    AnsiConsole.WriteLine()
+                else
+                    let path = rest.Substring(0, spaceIdx).Trim()
+                    let cmd  = rest.Substring(spaceIdx + 1).Trim()
+                    let absPath = System.IO.Path.GetFullPath(path)
+                    if not (System.IO.File.Exists absPath) then
+                        AnsiConsole.Write(Markup(sprintf "[dim]%s[/]" (Markup.Escape (System.String.Format(strings.AtFileNotFound, path)))))
+                        AnsiConsole.WriteLine()
+                    else
+                        FileWatcher.add absPath cmd
+                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(strings.WatchAdded, path, cmd)) + "[/]"))
+                        AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/note " ->
                 let text = s.Substring("/note ".Length).Trim()

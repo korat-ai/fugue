@@ -5,6 +5,7 @@
   <ItemGroup>
     <Compile Include="Log.fs" />
     <Compile Include="Checkpoint.fs" />
+    <Compile Include="EmojiMap.fs" />
     <Compile Include="Localization.fs" />
     <Compile Include="Domain.fs" />
     <Compile Include="SystemPrompt.fs" />
