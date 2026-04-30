@@ -26,6 +26,7 @@
     <Compile Include="BashToolTests.fs" />
     <Compile Include="GlobToolTests.fs" />
     <Compile Include="GrepToolTests.fs" />
+    <Compile Include="TreeToolTests.fs" />
     <Compile Include="DiscoveryTests.fs" />
     <Compile Include="ConversationTests.fs" />
     <Compile Include="Program.fs" />

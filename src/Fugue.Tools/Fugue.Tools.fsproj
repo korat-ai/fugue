@@ -10,6 +10,7 @@
     <Compile Include="BashTool.fs" />
     <Compile Include="GlobTool.fs" />
     <Compile Include="GrepTool.fs" />
+    <Compile Include="TreeTool.fs" />
     <Compile Include="AiFunctions/Args.fs" />
     <Compile Include="AiFunctions/DelegatedFn.fs" />
     <Compile Include="AiFunctions/ReadFn.fs" />
@@ -18,6 +19,7 @@
     <Compile Include="AiFunctions/BashFn.fs" />
     <Compile Include="AiFunctions/GlobFn.fs" />
     <Compile Include="AiFunctions/GrepFn.fs" />
+    <Compile Include="AiFunctions/TreeFn.fs" />
     <Compile Include="ToolRegistry.fs" />
   </ItemGroup>
   <ItemGroup>
