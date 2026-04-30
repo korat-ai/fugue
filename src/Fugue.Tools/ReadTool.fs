@@ -13,6 +13,8 @@ let read
     ([<Description("Read at most this many lines (default unlimited).")>] limit: int option)
     : string =
     let full = resolve cwd path
+    if not (isUnder cwd full) then
+        raise (UnauthorizedAccessException(sprintf "path outside working directory: %s" path))
     if not (File.Exists full) then raise (FileNotFoundException("file not found", full))
 
     let allLines = File.ReadAllLines full
