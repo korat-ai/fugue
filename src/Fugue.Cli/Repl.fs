@@ -122,15 +122,36 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             | Some s when s = "/help" ->
                 AnsiConsole.Write(Markup("[bold]" + Markup.Escape strings.HelpHeader + "[/]"))
                 AnsiConsole.WriteLine()
-                let helpItems = [ "/help",  strings.CmdHelpDesc
-                                  "/clear", strings.CmdClearDesc
-                                  "/exit",  strings.CmdExitDesc ]
+                let helpItems = [ "/help",      strings.CmdHelpDesc
+                                  "/clear",     strings.CmdClearDesc
+                                  "/exit",      strings.CmdExitDesc
+                                  "/summarize", strings.CmdSummarizeDesc ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/summarize" ->
+                let rawArg = s.Substring("/summarize".Length).Trim()
+                if System.String.IsNullOrWhiteSpace rawArg then
+                    AnsiConsole.Write(Markup("[dim]Usage: /summarize <path>[/]"))
+                    AnsiConsole.WriteLine()
+                else
+                    let targetPath =
+                        if System.IO.Path.IsPathRooted rawArg then rawArg
+                        else System.IO.Path.GetFullPath(System.IO.Path.Combine(cwd, rawArg))
+                    let summarizePrompt =
+                        if System.IO.Directory.Exists targetPath then
+                            sprintf "Please summarize the directory '%s'.\n\nProvide a structured summary:\n1. Purpose — what does this module/package do?\n2. Public API — key functions, types, or entry points\n3. Key dependencies — what does it depend on?\n4. Notable design decisions — any interesting patterns or constraints\n\nBe concise (2–4 sentences per section). Use the Read and Glob tools to explore the files." rawArg
+                        elif System.IO.File.Exists targetPath then
+                            sprintf "Please summarize the file '%s'.\n\nProvide a structured summary:\n1. Purpose — what does this file do?\n2. Public API — exported functions or types\n3. Key dependencies — what modules/libraries does it use?\n4. Notable design decisions — any interesting patterns or constraints\n\nBe concise (2–4 sentences per section). Use the Read tool to examine the file." rawArg
+                        else
+                            sprintf "The path '%s' does not exist. Please let me know." rawArg
+                    AnsiConsole.Write(Render.userMessage cfg.Ui ("/summarize " + rawArg))
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session summarizePrompt cfg cancelSrc
                 StatusBar.refresh ()
             | Some userInput ->
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
