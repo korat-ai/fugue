@@ -9,8 +9,8 @@ open Fugue.Cli.Render
 open Fugue.Core.Config
 open Fugue.Core.Localization
 
-let private uiLeft : UiConfig = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ " }
-let private uiRight : UiConfig = { UserAlignment = Right; Locale = "en"; PromptTemplate = "♩ " }
+let private uiLeft : UiConfig = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false }
+let private uiRight : UiConfig = { UserAlignment = Right; Locale = "en"; PromptTemplate = "♩ "; Bell = false }
 
 let private toStr (r: Spectre.Console.Rendering.IRenderable) : string =
     let c = new TestConsole()

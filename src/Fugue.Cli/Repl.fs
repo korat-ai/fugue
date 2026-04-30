@@ -346,6 +346,17 @@ let private streamAndRender
         StatusBar.refresh()
 }
 
+let private bellChar () = Console.Out.Write '\a'
+
+let private prelude (cfg: AppConfig) =
+    if cfg.Ui.Bell then
+        bellChar ()
+        System.Threading.Thread.Sleep 80
+        bellChar ()
+
+let private coda (cfg: AppConfig) =
+    if cfg.Ui.Bell then bellChar ()
+
 [<RequiresUnreferencedCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 [<RequiresDynamicCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
@@ -357,6 +368,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     let providerName, modelName = providerInfo cfg.Provider
     DebugLog.sessionStart providerName modelName cwd
     StatusBar.start cwd cfg
+    prelude cfg
     Console.Out.Write "\x1b[?2004h"   // enable bracketed paste
     Console.Out.Flush()
 
@@ -1025,6 +1037,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
         Console.CancelKeyPress.RemoveHandler handler
         Console.Out.Write "\x1b[?2004l"   // disable bracketed paste
         Console.Out.Flush()
+        coda cfg
         StatusBar.stop ()
 }
 

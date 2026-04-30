@@ -16,7 +16,8 @@ type UserAlignment = Left | Right
 type UiConfig =
     { UserAlignment  : UserAlignment
       Locale         : string
-      PromptTemplate : string }
+      PromptTemplate : string
+      Bell           : bool }
 
 let private defaultLocale () =
     let envLoc =
@@ -34,7 +35,8 @@ let private defaultLocale () =
 let defaultUi () : UiConfig =
     { UserAlignment  = Left
       Locale         = defaultLocale ()
-      PromptTemplate = "♩ " }
+      PromptTemplate = "♩ "
+      Bell           = false }
 
 type AppConfig =
     { Provider: ProviderConfig
@@ -177,7 +179,8 @@ let private fromFile (path: string) : Result<ProviderConfig * int * int option *
                     |> Option.bind (fun u -> Option.ofObj u.promptTemplate)
                     |> Option.filter (fun s -> not (String.IsNullOrWhiteSpace s))
                     |> Option.defaultValue "♩ "
-                let ui = { UserAlignment = alignment; Locale = locale; PromptTemplate = promptTemplate }
+                let bell = uiDto |> Option.map (fun u -> u.bell) |> Option.defaultValue false
+                let ui = { UserAlignment = alignment; Locale = locale; PromptTemplate = promptTemplate; Bell = bell }
                 let baseUrl = dto.baseUrl |> Option.ofObj |> Option.filter (fun s -> not (String.IsNullOrEmpty s))
                 let maxTokens = if dto.maxTokens > 0 then Some dto.maxTokens else None
                 p, dto.maxIterations, maxTokens, ui, baseUrl)
@@ -228,7 +231,8 @@ let saveToFile (cfg: AppConfig) : unit =
     let uiDto =
         { userAlignment  = (match cfg.Ui.UserAlignment with Left -> "left" | Right -> "right")
           locale         = cfg.Ui.Locale
-          promptTemplate = if cfg.Ui.PromptTemplate = "♩ " then null else cfg.Ui.PromptTemplate }
+          promptTemplate = if cfg.Ui.PromptTemplate = "♩ " then null else cfg.Ui.PromptTemplate
+          bell           = cfg.Ui.Bell }
     let baseUrlVal = cfg.BaseUrl |> Option.toObj
     let maxTokensVal = cfg.MaxTokens |> Option.defaultValue 0
     let dto =
