@@ -45,6 +45,44 @@ type ConfigError =
     | NoConfigFound of help: string
     | InvalidConfig of reason: string
 
+let private modelDisplayNames : (string * string) list =
+    [ "claude-opus-4-7",        "Claude Opus 4.7"
+      "claude-opus-4-5",        "Claude Opus 4.5"
+      "claude-sonnet-4-6",      "Claude Sonnet 4.6"
+      "claude-haiku-4-5",       "Claude Haiku 4.5"
+      "claude-haiku-4",         "Claude Haiku 4"
+      "claude-3-7-sonnet",      "Claude 3.7 Sonnet"
+      "claude-3-5-sonnet",      "Claude 3.5 Sonnet"
+      "claude-3-opus",          "Claude 3 Opus"
+      "gpt-5",                  "GPT-5"
+      "gpt-4o",                 "GPT-4o"
+      "gpt-4-turbo",            "GPT-4 Turbo"
+      "gpt-4",                  "GPT-4"
+      "gpt-3.5",                "GPT-3.5"
+      "o3",                     "o3"
+      "o1",                     "o1"
+      "llama3.3",               "Llama 3.3"
+      "llama3.2",               "Llama 3.2"
+      "llama3.1",               "Llama 3.1"
+      "qwen2.5-coder",          "Qwen 2.5 Coder"
+      "qwen2.5",                "Qwen 2.5"
+      "deepseek-coder",         "DeepSeek Coder"
+      "deepseek",               "DeepSeek"
+      "mistral",                "Mistral"
+      "mixtral",                "Mixtral"
+      "phi-4",                  "Phi-4"
+      "phi-3",                  "Phi-3"
+      "gemma3",                 "Gemma 3"
+      "gemma2",                 "Gemma 2" ]
+
+/// Map a raw API model ID to a friendly display name.
+/// Matches from the start of the ID; unknown IDs return unchanged.
+let modelDisplayName (modelId: string) : string =
+    modelDisplayNames
+    |> List.tryFind (fun (prefix, _) -> modelId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+    |> Option.map snd
+    |> Option.defaultValue modelId
+
 let private configPath () =
     let home =
         match Environment.GetEnvironmentVariable("HOME") with
