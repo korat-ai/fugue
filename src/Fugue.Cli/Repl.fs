@@ -264,6 +264,7 @@ let private streamAndRender
     let strings = pick cfg.Ui.Locale
     let toolMeta = Dictionary<string, string * string * int64>()
     let mutable assistantStreaming = false   // are we mid-line in the plain-text stream
+    let responseText = StringBuilder()
 
     StatusBar.startStreaming()
     try
@@ -278,6 +279,7 @@ let private streamAndRender
                     | Conversation.TextChunk t ->
                         Console.Out.Write t
                         Console.Out.Flush()
+                        responseText.Append t |> ignore
                         assistantStreaming <- true
                     | Conversation.ToolStarted(id, name, args) ->
                         toolMeta.[id] <- (name, args, Stopwatch.GetTimestamp())
@@ -299,7 +301,17 @@ let private streamAndRender
                     | Conversation.Finished -> ()
                     | Conversation.Failed ex -> raise ex
                 else hasNext <- false
-            if assistantStreaming then Console.Out.WriteLine ()
+            if assistantStreaming then
+                Console.Out.WriteLine ()
+                let wordCount = responseText.ToString().Split([|' '; '\n'; '\r'; '\t'|], StringSplitOptions.RemoveEmptyEntries).Length
+                if wordCount >= 20 then
+                    let mins = max 1 (int (Math.Round(float wordCount / 220.0)))
+                    let timeStr = if mins = 1 then "~1 min read" else sprintf "~%d min read" mins
+                    let footer = sprintf "[~%d words · %s]" wordCount timeStr
+                    if Render.isColorEnabled () then
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape footer))
+                    else
+                        Console.Out.WriteLine footer
         with
         | :? OperationCanceledException ->
             if assistantStreaming then Console.Out.WriteLine ()
@@ -657,12 +669,24 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
             | Some s when s = "/ask" ->
                 AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AskUsage + "[/]"))
                 AnsiConsole.WriteLine()
-            | Some s when s = "/diff" || s = "/diff --staged" ->
-                let args = if s = "/diff --staged" then "--staged" else ""
+            | Some s when s = "/diff" || s = "/diff --staged" ||
+                          (s.StartsWith("/diff ") && s <> "/diff --staged") ->
+                let rest = if s.Length > 6 then s.Substring(6).Trim() else ""
+                // Determine mode: git diff, git diff --staged, or git diff --no-index <a> <b>
+                let parts =
+                    if rest = "--staged" || rest = "" then [||]
+                    else rest.Split(' ') |> Array.filter (fun p -> p <> "")
                 let psi = System.Diagnostics.ProcessStartInfo()
                 psi.FileName <- "git"
                 psi.ArgumentList.Add "diff"
-                if args <> "" then psi.ArgumentList.Add args
+                match parts with
+                | [| a; b |] ->
+                    let resolve (p: string) = if System.IO.Path.IsPathRooted p then p else System.IO.Path.Combine(cwd, p)
+                    psi.ArgumentList.Add "--no-index"
+                    psi.ArgumentList.Add (resolve a)
+                    psi.ArgumentList.Add (resolve b)
+                | _ ->
+                    if rest = "--staged" then psi.ArgumentList.Add "--staged"
                 psi.UseShellExecute <- false
                 psi.RedirectStandardOutput <- true
                 psi.RedirectStandardError <- true
@@ -674,7 +698,9 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     let output = proc.StandardOutput.ReadToEnd()
                     let errOut = proc.StandardError.ReadToEnd().Trim()
                     proc.WaitForExit()
-                    if proc.ExitCode <> 0 then
+                    // git diff --no-index exits 1 when files differ — that is a success case
+                    let isTwoFile = match parts with [| _; _ |] -> true | _ -> false
+                    if proc.ExitCode <> 0 && not (isTwoFile && proc.ExitCode = 1) then
                         let msg = if errOut <> "" then errOut else sprintf "git diff exited %d" proc.ExitCode
                         AnsiConsole.Write(Render.errorLine strings msg)
                         AnsiConsole.WriteLine()
