@@ -12,7 +12,9 @@ let private buildAgent (cfg: AppConfig) : AIAgent =
     let basePrompt =
         match cfg.SystemPrompt with
         | Some s -> s
-        | None -> Fugue.Core.SystemPrompt.render cwd Fugue.Tools.ToolRegistry.names
+        | None ->
+            let ctx = Fugue.Core.SystemPrompt.loadFugueContext cwd
+            Fugue.Core.SystemPrompt.render cwd Fugue.Tools.ToolRegistry.names ctx
     let sysPrompt =
         match cfg.ProfileContent with
         | Some profile -> profile + "\n\n---\n\n" + basePrompt

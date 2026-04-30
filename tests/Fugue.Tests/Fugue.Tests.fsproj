@@ -18,6 +18,7 @@
     <Compile Include="ConfigDisplayNameTests.fs" />
     <Compile Include="DebugLogTests.fs" />
     <Compile Include="LocalizationTests.fs" />
+    <Compile Include="SystemPromptTests.fs" />
     <Compile Include="ReadLineTests.fs" />
     <Compile Include="InputSanitizeTests.fs" />
     <Compile Include="MarkdownRenderTests.fs" />
