@@ -57,7 +57,7 @@ let private providerLabel (cfg: AppConfig) : string =
     | Ollama(_, m)    -> "ollama:" + shortModel m
 
 let refresh () =
-    if not active then () else
+    if not active || not (Render.isColorEnabled ()) then () else
     let height = Console.WindowHeight
     let strings =
         match cfg with
@@ -80,7 +80,7 @@ let refresh () =
     writeRaw "\x1b[u"
 
 let start (initialCwd: string) (initialCfg: AppConfig) : unit =
-    if active then () else
+    if active || not (Render.isColorEnabled ()) then () else
     cwd <- initialCwd
     cfg <- Some initialCfg
     active <- true
@@ -93,7 +93,7 @@ let start (initialCwd: string) (initialCfg: AppConfig) : unit =
     refresh ()
 
 let stop () : unit =
-    if not active then () else
+    if not active || not (Render.isColorEnabled ()) then () else
     let height = Console.WindowHeight
     writeRaw "\x1b[r"          // reset scroll region
     writeRaw ("\x1b[" + string (height - 1) + ";1H")
