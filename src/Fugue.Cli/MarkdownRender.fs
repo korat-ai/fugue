@@ -70,15 +70,14 @@ let rec private renderBlock (block: Block) : IRenderable =
     | :? FencedCodeBlock as f ->
         let lines =
             f.Lines.Lines
-            |> Seq.take f.Lines.Count
+            |> Seq.truncate f.Lines.Count
             |> Seq.map (fun l -> l.ToString())
             |> Seq.toArray
         let rows =
             lines
             |> Array.mapi (fun i ln ->
-                let nr = "[dim]" + (string (i + 1)).PadLeft(3) + "[/]"
-                let body = sprintf "[dim]%s[/]" (escape ln)
-                Columns([ Markup(nr) :> IRenderable; Markup(body) :> IRenderable ]) :> IRenderable)
+                let nr = (string (i + 1)).PadLeft(3)
+                Markup("[dim]" + nr + "  " + escape ln + "[/]") :> IRenderable)
         Padder(Rows(rows)).PadLeft(2) :> IRenderable
     | :? Markdig.Syntax.CodeBlock as c ->
         let txt = c.Lines.ToString()
@@ -91,24 +90,70 @@ let rec private renderBlock (block: Block) : IRenderable =
             |> Seq.toArray
         Padder(Rows(inner)).PadLeft(2) :> IRenderable
     | :? Markdig.Syntax.ListBlock as lb ->
+        // Render each list item as a single Markup line "prefix text".
+        // Multi-paragraph items: stack the rest indented below.
         let items =
             lb
             |> Seq.cast<Block>
             |> Seq.mapi (fun i item ->
                 let prefix = if lb.IsOrdered then string (i + 1) + ". " else "• "
-                let inner : IRenderable =
-                    match item with
-                    | :? Markdig.Syntax.ListItemBlock as li ->
-                        li
-                        |> Seq.cast<Block>
-                        |> Seq.map renderBlock
-                        |> Seq.toArray
-                        |> Rows
-                        :> IRenderable
-                    | _ -> Markup("") :> IRenderable
-                Columns([ Markup(prefix) :> IRenderable; inner ]) :> IRenderable)
+                match item with
+                | :? Markdig.Syntax.ListItemBlock as li ->
+                    let blocks = li |> Seq.cast<Block> |> Seq.toArray
+                    match blocks with
+                    | [||] -> Markup(prefix) :> IRenderable
+                    | _ ->
+                        let firstLine =
+                            match blocks.[0] with
+                            | :? ParagraphBlock as p -> Markup(prefix + inlineToMarkupOpt p.Inline) :> IRenderable
+                            | other ->
+                                // Non-paragraph first block (nested list etc.): render with prefix on its own line.
+                                Rows([| Markup(prefix) :> IRenderable; renderBlock other |]) :> IRenderable
+                        if blocks.Length = 1 then firstLine
+                        else
+                            let rest =
+                                blocks
+                                |> Array.skip 1
+                                |> Array.map renderBlock
+                            let restPadded = Padder(Rows(rest)).PadLeft(2) :> IRenderable
+                            Rows([| firstLine; restPadded |]) :> IRenderable
+                | _ -> Markup("") :> IRenderable)
             |> Seq.toArray
         Rows(items) :> IRenderable
+    | :? Markdig.Extensions.Tables.Table as tbl ->
+        let table = new Spectre.Console.Table()
+        let mutable headerSeen = false
+        for row in tbl |> Seq.cast<Markdig.Extensions.Tables.TableRow> do
+            let cellTexts =
+                row
+                |> Seq.cast<Markdig.Extensions.Tables.TableCell>
+                |> Seq.map (fun cell ->
+                    let buf = StringBuilder()
+                    for blk in cell |> Seq.cast<Block> do
+                        match blk with
+                        | :? ParagraphBlock as p -> buf.Append(inlineToMarkupOpt p.Inline) |> ignore
+                        | _ -> ()
+                    buf.ToString())
+                |> Seq.toArray
+            if not headerSeen && row.IsHeader then
+                for text in cellTexts do
+                    table.AddColumn(text) |> ignore
+                headerSeen <- true
+            else
+                if not headerSeen then
+                    // No explicit header — synthesise empty columns from this row's width.
+                    for _ in cellTexts do table.AddColumn("") |> ignore
+                    headerSeen <- true
+                table.AddRow(cellTexts) |> ignore
+        table :> IRenderable
+    | :? Markdig.Syntax.HtmlBlock as hb ->
+        // Render HTML block as plain dim text — Spectre can't display arbitrary HTML.
+        let txt =
+            hb.Lines.Lines
+            |> Seq.truncate hb.Lines.Count
+            |> Seq.map (fun l -> l.ToString())
+            |> String.concat "\n"
+        Markup("[dim]" + escape txt + "[/]") :> IRenderable
     | :? ThematicBreakBlock ->
         Rule() :> IRenderable
     | _ ->
