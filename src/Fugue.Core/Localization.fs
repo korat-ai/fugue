@@ -34,6 +34,7 @@ type Strings =
 
       // /model suggest
       ModelSuggestPrompt: string
+      AskingModelRecommendation: string
 
       // /review pr
       ReviewPrUsage:     string
@@ -62,6 +63,7 @@ let en : Strings =
       CmdReviewPrDesc       = "fetch PR diff and generate AI review"
       HelpHeader            = "Available slash commands:"
       ModelSuggestPrompt    = "Based on our conversation so far, what Fugue model configuration would you recommend? Consider: task complexity, whether deep reasoning is needed, response speed requirements, and cost efficiency. Fugue supports any OpenAI-compatible endpoint — suggest a specific model name if appropriate."
+      AskingModelRecommendation = "Asking for model recommendation…"
       ReviewPrUsage         = "Usage: /review pr <N>"
       ReviewPrNotFound      = "PR not found or gh CLI unavailable"
       ReviewPrPrompt        = "Please review GitHub PR #{0}.\n\nPR metadata:\n{1}\n\nDiff:\n```\n{2}\n```\n\nProvide a thorough code review: identify bugs, style issues, missing tests, security concerns, and any improvements. Be specific with line references where possible." }
@@ -88,6 +90,7 @@ let ru : Strings =
       CmdReviewPrDesc       = "получить diff PR и сгенерировать AI-ревью"
       HelpHeader            = "Доступные команды:"
       ModelSuggestPrompt    = "На основе нашего разговора, какую конфигурацию модели Fugue вы бы порекомендовали? Учтите: сложность задачи, необходимость глубокого рассуждения, требования к скорости ответа и эффективность по затратам. Fugue поддерживает любой OpenAI-совместимый эндпоинт — при необходимости предложите конкретное название модели."
+      AskingModelRecommendation = "Запрашиваю рекомендацию по модели…"
       ReviewPrUsage         = "Использование: /review pr <N>"
       ReviewPrNotFound      = "PR не найден или gh CLI недоступен"
       ReviewPrPrompt        = "Пожалуйста, проверь GitHub PR #{0}.\n\nМетаданные PR:\n{1}\n\nDiff:\n```\n{2}\n```\n\nПроведи подробное ревью кода: выяви баги, проблемы со стилем, отсутствующие тесты, уязвимости безопасности и возможные улучшения. Указывай конкретные строки там, где это возможно." }

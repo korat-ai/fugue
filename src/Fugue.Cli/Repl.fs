@@ -153,8 +153,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
                 StatusBar.refresh ()
-            | Some s when s = "/model suggest" || s = "/model" ->
-                AnsiConsole.Write(Markup("[dim]Asking for model recommendation…[/]"))
+            | Some s when s = "/model suggest" ->
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.AskingModelRecommendation + "[/]"))
                 AnsiConsole.WriteLine()
                 do! streamAndRender agent session strings.ModelSuggestPrompt cfg cancelSrc
                 StatusBar.refresh ()
