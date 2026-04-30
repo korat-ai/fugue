@@ -1,5 +1,6 @@
 module Fugue.Tests.RenderTests
 
+open System
 open Spectre.Console.Testing
 open Xunit
 open FsUnit.Xunit
@@ -53,7 +54,7 @@ let ``toolBullet running shows yellow circle and tool name`` () =
 [<Fact>]
 let ``toolBullet completed plain output renders without diff`` () =
     let s = pick "en"
-    let state = Completed("Read", "{}", "alpha\nbeta")
+    let state = Completed("Read", "{}", "alpha\nbeta", TimeSpan.FromMilliseconds 12.0)
     let out = toolBullet s state |> toStr
     out |> should haveSubstring "Read"
     out |> should haveSubstring "alpha"
