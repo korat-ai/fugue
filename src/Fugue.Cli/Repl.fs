@@ -3,6 +3,7 @@ module Fugue.Cli.Repl
 open System
 open System.Collections.Generic
 open System.Diagnostics.CodeAnalysis
+open System.IO
 open System.Text
 open System.Threading
 open System.Threading.Tasks
@@ -12,6 +13,61 @@ open Fugue.Core.Config
 open Fugue.Core.Localization
 open Fugue.Agent
 open Fugue.Cli
+
+/// Search for a sibling test file in the `tests/` subdirectory of cwd (up to 3 levels deep).
+/// Returns the relative path from cwd if found, or None.
+let tryFindTestFile (cwd: string) (sourceFile: string) : string option =
+    let stem =
+        match Path.GetFileNameWithoutExtension sourceFile |> Option.ofObj with
+        | Some s -> s
+        | None   -> ""
+    let testsDir = Path.Combine(cwd, "tests")
+    if not (Directory.Exists testsDir) then None
+    else
+        let candidates = [| stem + "Tests.fs"; stem + "Test.fs" |]
+        let found =
+            candidates |> Array.tryPick (fun name ->
+                try
+                    Directory.GetFiles(testsDir, name, SearchOption.AllDirectories)
+                    |> Array.tryHead
+                with _ -> None)
+        found |> Option.map (fun abs ->
+            try Path.GetRelativePath(cwd, abs)
+            with _ -> abs)
+
+/// Expand `@path` tokens in user input. For each token, inlines the file contents.
+/// If a sibling test file is found, appends a hint. Returns the expanded string.
+let expandAtFiles (cwd: string) (strings: Strings) (input: string) : string =
+    let words = input.Split(' ')
+    let anyAt = words |> Array.exists (fun w -> w.StartsWith "@" && w.Length > 1)
+    if not anyAt then input
+    else
+        let sb = StringBuilder()
+        for i in 0 .. words.Length - 1 do
+            let w = words.[i]
+            if w.StartsWith "@" && w.Length > 1 then
+                let relPath = w.Substring 1
+                let absPath =
+                    if Path.IsPathRooted relPath then relPath
+                    else Path.Combine(cwd, relPath)
+                if File.Exists absPath then
+                    let contents =
+                        try File.ReadAllText absPath
+                        with ex -> sprintf "[error reading %s: %s]" relPath ex.Message
+                    if sb.Length > 0 then sb.Append ' ' |> ignore
+                    sb.Append(sprintf "[contents of %s]:\n%s" relPath contents) |> ignore
+                    match tryFindTestFile cwd absPath with
+                    | Some testRel ->
+                        let hint = String.Format(strings.TestFileHint, testRel, testRel)
+                        sb.Append(sprintf "\n\n%s" hint) |> ignore
+                    | None -> ()
+                else
+                    if sb.Length > 0 then sb.Append ' ' |> ignore
+                    sb.Append w |> ignore
+            else
+                if sb.Length > 0 then sb.Append ' ' |> ignore
+                sb.Append w |> ignore
+        sb.ToString()
 
 /// Cheap heuristic — does the text contain markdown markers worth re-rendering?
 /// Avoids re-printing pure plain text twice. False positives (e.g. raw `**` in code)
@@ -133,9 +189,10 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 AnsiConsole.Clear()
                 StatusBar.refresh ()
             | Some userInput ->
+                let expandedInput = expandAtFiles cwd strings userInput
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
                 AnsiConsole.WriteLine()
-                do! streamAndRender agent session userInput cfg cancelSrc
+                do! streamAndRender agent session expandedInput cfg cancelSrc
                 StatusBar.refresh ()
     finally
         Console.CancelKeyPress.RemoveHandler handler

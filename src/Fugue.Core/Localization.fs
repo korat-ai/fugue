@@ -28,7 +28,10 @@ type Strings =
       CmdHelpDesc:  string
       CmdClearDesc: string
       CmdExitDesc:  string
-      HelpHeader:   string }
+      HelpHeader:   string
+
+      // @path injection hints
+      TestFileHint: string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -48,7 +51,8 @@ let en : Strings =
       CmdHelpDesc           = "show this help"
       CmdClearDesc          = "clear the screen"
       CmdExitDesc           = "exit Fugue"
-      HelpHeader            = "Available slash commands:" }
+      HelpHeader            = "Available slash commands:"
+      TestFileHint          = "[test file found: {0} — include it with @{1}]" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -68,7 +72,8 @@ let ru : Strings =
       CmdHelpDesc           = "показать эту справку"
       CmdClearDesc          = "очистить экран"
       CmdExitDesc           = "выйти из Fugue"
-      HelpHeader            = "Доступные команды:" }
+      HelpHeader            = "Доступные команды:"
+      TestFileHint          = "[найден тест-файл: {0} — подключите его через @{1}]" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =
