@@ -68,17 +68,19 @@ let rec private renderBlock (block: Block) : IRenderable =
     | :? ParagraphBlock as p ->
         Markup(inlineToMarkupOpt p.Inline) :> IRenderable
     | :? FencedCodeBlock as f ->
+        // Single Markup with \n separators avoids Spectre's per-row width-fill padding.
         let lines =
             f.Lines.Lines
             |> Seq.truncate f.Lines.Count
             |> Seq.map (fun l -> l.ToString())
             |> Seq.toArray
-        let rows =
+        let body =
             lines
             |> Array.mapi (fun i ln ->
                 let nr = (string (i + 1)).PadLeft(3)
-                Markup("[dim]" + nr + "  " + escape ln + "[/]") :> IRenderable)
-        Padder(Rows(rows)).PadLeft(2) :> IRenderable
+                "[dim]" + nr + "  " + escape ln + "[/]")
+            |> String.concat "\n"
+        Padder(Markup(body)).PadLeft(2) :> IRenderable
     | :? Markdig.Syntax.CodeBlock as c ->
         let txt = c.Lines.ToString()
         Padder(Markup(sprintf "[dim]%s[/]" (escape txt))).PadLeft(2) :> IRenderable
