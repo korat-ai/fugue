@@ -29,7 +29,8 @@ let hasZeroWidth (s: string) = InputSanitize.hasZeroWidth s
 let normalizeInput (s: string) = InputSanitize.normalize s
 
 // Hardcoded — small list, easier than passing through state.
-let slashCommands : string list = [ "/help"; "/clear"; "/summary"; "/short"; "/long"; "/clear-history"; "/tools"; "/new"; "/init"; "/exit"; "/diff"; "/diff --staged" ]
+let slashCommands : string[] =
+    [| "/help"; "/clear"; "/summary"; "/short"; "/long"; "/clear-history"; "/tools"; "/new"; "/init"; "/exit"; "/diff"; "/diff --staged"; "/doctor" |]
 
 /// Session history (REPL is single-threaded). Not private so tests can seed entries directly.
 let historyStore = ResizeArray<string>()
@@ -376,6 +377,9 @@ let readAsync (prompt: string) (strings: Strings) (callbacks: ReadLineCallbacks)
           SlashHelp       = slashHelp }
 
     Console.TreatControlCAsInput <- true
+    // Tab-completion cycle state — resets on any non-Tab keypress.
+    let mutable tabMatches : string[] = [||]
+    let mutable tabIndex   = -1
     try
         redraw st
         let mutable result : string option voption = ValueNone
@@ -388,29 +392,51 @@ let readAsync (prompt: string) (strings: Strings) (callbacks: ReadLineCallbacks)
                     writeRaw ("\x1b[" + string st.RowsBelowCursor + "B")
                 eraseLines st.LinesRendered
                 st.RowsBelowCursor <- 0
-            match applyKey k st with
-            | Continue -> redraw st
-            | Wipe     -> redraw st
-            | ClearScreen ->
-                eraseRendered ()
-                writeRaw "\x1b[2J\x1b[H"
-                st.LinesRendered <- 0
-                st.RowsBelowCursor <- 0
-                callbacks.OnClearScreen ()
-                redraw st
-            | Submit s ->
-                eraseRendered ()
-                let normalized = InputSanitize.normalize s
-                if not (String.IsNullOrWhiteSpace normalized) then
-                    if historyStore.Count = 0 || historyStore.[historyStore.Count - 1] <> normalized then
-                        historyStore.Add normalized
-                st.HistoryIdx <- -1
-                st.SavedBuffer <- None
-                result <- ValueSome (Some normalized)
-            | Quit ->
-                eraseRendered ()
-                writeRaw "\n"
-                result <- ValueSome None
+            if k.Key = ConsoleKey.Tab then
+                let currentInput = String(st.Buffer.ToArray())
+                if currentInput.StartsWith "/" then
+                    let needsReset =
+                        tabMatches.Length = 0 ||
+                        (tabIndex >= 0 && tabIndex < tabMatches.Length &&
+                         currentInput <> tabMatches.[tabIndex])
+                    if needsReset then
+                        tabMatches <- slashCommands |> Array.filter (fun c -> c.StartsWith currentInput)
+                        tabIndex   <- -1
+                    if tabMatches.Length > 0 then
+                        tabIndex <- (tabIndex + 1) % tabMatches.Length
+                        let completed = tabMatches.[tabIndex]
+                        st.Buffer.Clear()
+                        st.Buffer.AddRange(completed.ToCharArray())
+                        st.Cursor <- st.Buffer.Count
+                        redraw st
+                // Tab on empty / non-slash input: ignore.
+            else
+                // Any non-Tab key resets the completion cycle.
+                tabMatches <- [||]
+                tabIndex   <- -1
+                match applyKey k st with
+                | Continue -> redraw st
+                | Wipe     -> redraw st
+                | ClearScreen ->
+                    eraseRendered ()
+                    writeRaw "\x1b[2J\x1b[H"
+                    st.LinesRendered <- 0
+                    st.RowsBelowCursor <- 0
+                    callbacks.OnClearScreen ()
+                    redraw st
+                | Submit s ->
+                    eraseRendered ()
+                    let normalized = InputSanitize.normalize s
+                    if not (String.IsNullOrWhiteSpace normalized) then
+                        if historyStore.Count = 0 || historyStore.[historyStore.Count - 1] <> normalized then
+                            historyStore.Add normalized
+                    st.HistoryIdx <- -1
+                    st.SavedBuffer <- None
+                    result <- ValueSome (Some normalized)
+                | Quit ->
+                    eraseRendered ()
+                    writeRaw "\n"
+                    result <- ValueSome None
         return
             match result with
             | ValueSome v -> v
