@@ -31,6 +31,7 @@
     <Compile Include="WriteToolTests.fs" />
     <Compile Include="EditToolTests.fs" />
     <Compile Include="CheckpointTests.fs" />
+    <Compile Include="SessionSummaryTests.fs" />
     <Compile Include="BashToolTests.fs" />
     <Compile Include="GlobToolTests.fs" />
     <Compile Include="GrepToolTests.fs" />

@@ -422,7 +422,8 @@ let private coda (cfg: AppConfig) =
 
 [<RequiresUnreferencedCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 [<RequiresDynamicCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
-let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
+let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string option) : Task<unit> = task {
+    let sessionStartedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
     use cancelSrc = new CancelSource()
     let handler = ConsoleCancelEventHandler(fun _ args -> cancelSrc.OnCtrlC args)
     Console.CancelKeyPress.AddHandler handler
@@ -432,6 +433,16 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     DebugLog.sessionStart providerName modelName cwd
     StatusBar.start cwd cfg
     Render.showBanner ()
+    // Show last-session resuming hint if available
+    let strings0 = pick cfg.Ui.Locale
+    lastSummary |> Option.iter (fun s ->
+        let first = let i = s.IndexOf('.') in if i > 0 && i < 120 then s.[..i - 1] else s.[..min 119 (s.Length - 1)]
+        let msg = strings0.SessionResuming.Replace("{0}", first)
+        if Render.isColorEnabled () then
+            AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape msg))
+        else
+            Console.Out.WriteLine msg
+        AnsiConsole.WriteLine())
     prelude cfg
     Console.Out.Write "\x1b[?2004h"   // enable bracketed paste
     Console.Out.Flush()
@@ -561,6 +572,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/watch <p> <cmd>", strings.CmdWatchDesc
                                   "/macro …",        strings.CmdMacroDesc
                                   "/compat",         strings.CmdCompatDesc
+                                  "/history [n]",    strings.CmdHistoryDesc
                                   "/theme …",        strings.CmdThemeDesc
                                   "/exit",           strings.CmdExitDesc
                                   "/review pr <N>",  strings.CmdReviewPrDesc ]
@@ -868,6 +880,32 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                     Console.Out.WriteLine(sprintf "Kitty protocol:  %s" (yn kitty))
                     Console.Out.WriteLine(sprintf "OSC 8:           %s" (yn osc8))
                     Console.Out.WriteLine(sprintf "Terminal width:  %d" termW)
+                StatusBar.refresh ()
+            | Some s when s = "/history" || s.StartsWith "/history " ->
+                let nArg = if s = "/history" then 5 else
+                               let rest = s.Substring(8).Trim()
+                               match System.Int32.TryParse rest with
+                               | true, n when n > 0 -> min n 20
+                               | _ -> 5
+                let records = Fugue.Core.SessionSummary.loadHistory cwd nArg
+                if records.IsEmpty then
+                    AnsiConsole.Write(Markup("[dim]no session history yet[/]"))
+                    AnsiConsole.WriteLine()
+                else
+                    for (idx, (ts, summary)) in records |> List.mapi (fun i r -> i, r) do
+                        let ago =
+                            let diff = DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds ts
+                            if diff.TotalDays >= 1.0 then sprintf "%dd ago" (int diff.TotalDays)
+                            elif diff.TotalHours >= 1.0 then sprintf "%dh ago" (int diff.TotalHours)
+                            else sprintf "%dm ago" (max 1 (int diff.TotalMinutes))
+                        if Render.isColorEnabled () then
+                            AnsiConsole.MarkupLine(sprintf "[dim]#%d (%s)[/]" (idx + 1) ago)
+                            AnsiConsole.Write(MarkdownRender.toRenderable summary)
+                            AnsiConsole.WriteLine()
+                        else
+                            Console.Out.WriteLine(sprintf "#%d (%s)" (idx + 1) ago)
+                            Console.Out.WriteLine summary
+                            Console.Out.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/issue" || s.StartsWith "/issue " ->
                 let rawArg = if s = "/issue" then "" else s.Substring(7).TrimStart()
@@ -1566,6 +1604,31 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 let sw = System.Diagnostics.Stopwatch.StartNew()
                 do! streamAndRender agent session effectiveInput cfg cancelSrc zenMode
                 StatusBar.refresh ()
+        // Generate and persist a 3-sentence session summary when the session had at least one turn.
+        if turnNumber > 0 then
+            try
+                use summaryCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds 20.0)
+                let summaryPrompt =
+                    "Summarise what was accomplished in this coding session in exactly 3 sentences. " +
+                    "Be specific: mention file names, feature names, and any incomplete work. " +
+                    "Output plain text only — no lists, no markdown, no headings."
+                let summaryBuf = System.Text.StringBuilder()
+                let summaryStream = Conversation.run agent session summaryPrompt summaryCts.Token
+                let enum = summaryStream.GetAsyncEnumerator(summaryCts.Token)
+                let mutable summaryRunning = true
+                while summaryRunning do
+                    let! stepped = enum.MoveNextAsync().AsTask()
+                    if stepped then
+                        match enum.Current with
+                        | Conversation.TextChunk t -> summaryBuf.Append t |> ignore
+                        | Conversation.Finished    -> summaryRunning <- false
+                        | Conversation.Failed _    -> summaryRunning <- false
+                        | _ -> ()
+                    else summaryRunning <- false
+                let summary = summaryBuf.ToString().Trim()
+                if summary.Length > 0 then
+                    Fugue.Core.SessionSummary.save cwd sessionStartedAt summary
+            with _ -> ()
     finally
         Console.CancelKeyPress.RemoveHandler handler
         Console.Out.Write "\x1b[?2004l"   // disable bracketed paste

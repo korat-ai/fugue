@@ -13,7 +13,7 @@ let private noColor () =
     || Console.IsOutputRedirected
     || Console.IsInputRedirected
 
-let private buildAgent (cfg: AppConfig) : AIAgent =
+let private buildAgent (cfg: AppConfig) (lastSummary: string option) : AIAgent =
     let cwd = Environment.CurrentDirectory
     let tools = Fugue.Tools.ToolRegistry.buildAll cwd
     let basePrompt =
@@ -26,7 +26,11 @@ let private buildAgent (cfg: AppConfig) : AIAgent =
         match cfg.ProfileContent with
         | Some profile -> profile + "\n\n---\n\n" + basePrompt
         | None -> basePrompt
-    AgentFactory.create cfg.Provider cfg.BaseUrl cfg.MaxTokens sysPrompt tools
+    let sysPromptFull =
+        match lastSummary with
+        | Some s -> sysPrompt + "\n\n<previous-session>\n" + s + "\n</previous-session>"
+        | None   -> sysPrompt
+    AgentFactory.create cfg.Provider cfg.BaseUrl cfg.MaxTokens sysPromptFull tools
 
 [<RequiresUnreferencedCode("Calls Repl.run and Config.saveToFile which use STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 [<RequiresDynamicCode("Calls Repl.run and Config.saveToFile which use STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
@@ -44,11 +48,12 @@ let private runWithCfg (cfg: AppConfig) : int =
     StatusBar.initTheme cfg.Ui.Theme
     Render.initTypewriter cfg.Ui.TypewriterMode
     Render.initBubbles (cfg.Ui.BubblesMode || cfg.Ui.Theme = "bubbles")
-    let agent = buildAgent cfg
     let cwd = Environment.CurrentDirectory
+    let lastSummary = Fugue.Core.SessionSummary.loadLast cwd
+    let agent = buildAgent cfg lastSummary
     let t =
         if Console.IsInputRedirected then Repl.runHeadless agent cfg cwd
-        else Repl.run agent cfg cwd
+        else Repl.run agent cfg cwd lastSummary
     try t.Wait()
     with
     | :? AggregateException as agg ->

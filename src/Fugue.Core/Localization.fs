@@ -203,6 +203,10 @@ type Strings =
       // /compat command
       CmdCompatDesc: string
 
+      // /history command
+      CmdHistoryDesc:      string
+      SessionResuming:     string  // "{0}" = first sentence of last summary
+
       // tool-call efficiency warning
       ToolCallsWarning: string }
 
@@ -332,6 +336,8 @@ let en : Strings =
       ThemeTypewriterOff    = "typewriter effect off"
       ThemeUsage            = "usage: /theme bubbles|typewriter"
       CmdCompatDesc         = "show terminal capability matrix"
+      CmdHistoryDesc        = "show past session summaries"
+      SessionResuming       = "▸ Last session: {0}…"
       ToolCallsWarning      = "{0} tool calls this turn — consider breaking the task into smaller steps" }
 
 let ru : Strings =
@@ -460,6 +466,8 @@ let ru : Strings =
       ThemeTypewriterOff    = "эффект машинки выключен"
       ThemeUsage            = "использование: /theme bubbles|typewriter"
       CmdCompatDesc         = "показать матрицу возможностей терминала"
+      CmdHistoryDesc        = "показать историю прошлых сессий"
+      SessionResuming       = "▸ Прошлая сессия: {0}…"
       ToolCallsWarning      = "{0} вызовов инструментов за ход — попробуйте разбить задачу на части" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.

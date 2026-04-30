@@ -12,5 +12,6 @@
     <Compile Include="JsonContext.fs" />
     <Compile Include="DebugLog.fs" />
     <Compile Include="Config.fs" />
+    <Compile Include="SessionSummary.fs" />
   </ItemGroup>
 </Project>
