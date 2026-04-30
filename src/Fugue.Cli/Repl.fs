@@ -369,12 +369,12 @@ let private streamAndRender
                         Console.Out.Write(sprintf "\x1b[%dA\x1b[J" rawLines)
                         Console.Out.Flush()
                     if Render.isTypewriterMode () then
-                        // Render to ANSI string, then write line-by-line with delay.
+                        // Render to ANSI string, then write line-by-line with async delay.
                         let lines = Render.captureLines (Render.assistantFinal text)
                         for line in lines do
                             Console.Out.WriteLine line
                             Console.Out.Flush()
-                            System.Threading.Thread.Sleep 12
+                            do! Task.Delay 12
                     else
                         AnsiConsole.Write(Render.assistantFinal text)
                         AnsiConsole.WriteLine()
