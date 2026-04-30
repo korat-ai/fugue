@@ -344,3 +344,48 @@ let ``word_CtrlW_atZero_isNoOp`` () =
     act |> should equal Continue
     String(s.Buffer.ToArray()) |> should equal "hello"
     s.Cursor |> should equal 0
+
+// ── Undo/redo bounded-stack tests ─────────────────────────────────────────────
+
+[<Fact>]
+let ``pushBounded_underLimit_appendsItem`` () =
+    let stack = ResizeArray<int>()
+    for i in 1 .. 5 do pushBounded stack i
+    stack.Count |> should equal 5
+    stack.[stack.Count - 1] |> should equal 5
+
+[<Fact>]
+let ``pushBounded_atLimit_evictsOldest`` () =
+    let stack = ResizeArray<int>()
+    // Fill to exactly 100
+    for i in 1 .. 100 do pushBounded stack i
+    stack.Count |> should equal 100
+    stack.[0] |> should equal 1
+    // Push one more — oldest (1) should be evicted, count stays at 100
+    pushBounded stack 101
+    stack.Count |> should equal 100
+    stack.[0] |> should equal 2
+    stack.[stack.Count - 1] |> should equal 101
+
+[<Fact>]
+let ``pushBounded_101pushes_countStaysAt100`` () =
+    let stack = ResizeArray<string * int>()
+    for i in 1 .. 101 do pushBounded stack ("buf" + string i, i)
+    stack.Count |> should equal 100
+    // Oldest entry (1) is gone; newest (101) is at the top
+    let (buf, cur) = stack.[stack.Count - 1]
+    buf |> should equal "buf101"
+    cur |> should equal 101
+
+[<Fact>]
+let ``pushBounded_push3_undoOnce_stackHas2`` () =
+    let stack = ResizeArray<string * int>()
+    pushBounded stack ("a", 1)
+    pushBounded stack ("ab", 2)
+    pushBounded stack ("abc", 3)
+    stack.Count |> should equal 3
+    // Pop one (simulate undo)
+    let top = stack.[stack.Count - 1]
+    stack.RemoveAt(stack.Count - 1)
+    stack.Count |> should equal 2
+    top |> should equal ("abc", 3)

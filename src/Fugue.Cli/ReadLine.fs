@@ -197,6 +197,24 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
     else
         Continue
 
+// ── Undo/redo bounded-stack helpers ──────────────────────────────────────────
+
+let private maxUndo = 100
+
+/// Push `item` onto `stack`, evicting the oldest entry when full.
+/// Public so tests can exercise the bounded-push logic without going through readAsync.
+let pushBounded (stack: ResizeArray<'a>) (item: 'a) =
+    if stack.Count >= maxUndo then stack.RemoveAt 0
+    stack.Add item
+
+/// Pop the last element from a ResizeArray used as a stack. Returns None if empty.
+let private popResizeArray (stack: ResizeArray<'a>) : 'a option =
+    if stack.Count = 0 then None
+    else
+        let item = stack.[stack.Count - 1]
+        stack.RemoveAt(stack.Count - 1)
+        Some item
+
 let private writeRaw (s: string) =
     Console.Out.Write s
     Console.Out.Flush()
@@ -295,6 +313,32 @@ let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task
           Width           = max 40 Console.WindowWidth
           SlashHelp       = slashHelp }
 
+    // Per-prompt undo/redo stacks (reset when readAsync returns).
+    let undoStack = ResizeArray<string * int>()
+    let redoStack = ResizeArray<string * int>()
+
+    let snapshot () = (String(st.Buffer.ToArray()), st.Cursor)
+
+    let pushUndo () =
+        pushBounded undoStack (snapshot ())
+        redoStack.Clear()
+
+    let applySnapshot (buf: string, cur: int) =
+        st.Buffer.Clear()
+        st.Buffer.AddRange(buf.ToCharArray())
+        st.Cursor <- min cur st.Buffer.Count
+
+    // Keys that modify the buffer — push undo snapshot before dispatching.
+    let isEditKey (k: ConsoleKeyInfo) =
+        not (Char.IsControl k.KeyChar)           // printable insert
+        || k.Key = ConsoleKey.Backspace
+        || k.Key = ConsoleKey.Delete
+        || (k.Key = ConsoleKey.Enter && k.Modifiers.HasFlag ConsoleModifiers.Shift)  // Shift+Enter inserts \n
+        || isCtrl k ConsoleKey.D                 // delete-char-forward (when buffer non-empty)
+        || isCtrl k ConsoleKey.W                 // word delete
+        || (k.Key = ConsoleKey.UpArrow)          // history load replaces buffer
+        || (k.Key = ConsoleKey.DownArrow)        // history load replaces buffer
+
     Console.TreatControlCAsInput <- true
     try
         redraw st
@@ -308,21 +352,39 @@ let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task
                     writeRaw ("\x1b[" + string st.RowsBelowCursor + "B")
                 eraseLines st.LinesRendered
                 st.RowsBelowCursor <- 0
-            match applyKey k st with
-            | Continue -> redraw st
-            | Wipe     -> redraw st
-            | Submit s ->
-                eraseRendered ()
-                if not (String.IsNullOrWhiteSpace s) then
-                    if historyStore.Count = 0 || historyStore.[historyStore.Count - 1] <> s then
-                        historyStore.Add s
-                st.HistoryIdx <- -1
-                st.SavedBuffer <- None
-                result <- ValueSome (Some s)
-            | Quit ->
-                eraseRendered ()
-                writeRaw "\n"
-                result <- ValueSome None
+            // Handle undo/redo before general key dispatch.
+            if isCtrl k ConsoleKey.Z then
+                match popResizeArray undoStack with
+                | Some snap ->
+                    redoStack.Add(snapshot ())
+                    applySnapshot snap
+                    redraw st
+                | None -> ()
+            elif isCtrl k ConsoleKey.Y then
+                match popResizeArray redoStack with
+                | Some snap ->
+                    undoStack.Add(snapshot ())
+                    applySnapshot snap
+                    redraw st
+                | None -> ()
+            else
+                // Push undo snapshot before any buffer-modifying key.
+                if isEditKey k then pushUndo ()
+                match applyKey k st with
+                | Continue -> redraw st
+                | Wipe     -> redraw st
+                | Submit s ->
+                    eraseRendered ()
+                    if not (String.IsNullOrWhiteSpace s) then
+                        if historyStore.Count = 0 || historyStore.[historyStore.Count - 1] <> s then
+                            historyStore.Add s
+                    st.HistoryIdx <- -1
+                    st.SavedBuffer <- None
+                    result <- ValueSome (Some s)
+                | Quit ->
+                    eraseRendered ()
+                    writeRaw "\n"
+                    result <- ValueSome None
         return
             match result with
             | ValueSome v -> v
