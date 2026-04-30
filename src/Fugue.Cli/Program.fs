@@ -10,6 +10,8 @@ let private noColor () =
     let isSet name = Environment.GetEnvironmentVariable name |> isNull |> not
     isSet "NO_COLOR" || isSet "FUGUE_NO_COLOR"
     || Environment.GetEnvironmentVariable "TERM" = "dumb"
+    || Console.IsOutputRedirected
+    || Console.IsInputRedirected
 
 let private buildAgent (cfg: AppConfig) : AIAgent =
     let cwd = Environment.CurrentDirectory
@@ -32,7 +34,9 @@ let private runWithCfg (cfg: AppConfig) : int =
     Render.initColor (not (noColor ()))
     let agent = buildAgent cfg
     let cwd = Environment.CurrentDirectory
-    let t = Repl.run agent cfg cwd
+    let t =
+        if Console.IsInputRedirected then Repl.runHeadless agent cfg cwd
+        else Repl.run agent cfg cwd
     try t.Wait()
     with
     | :? AggregateException as agg ->

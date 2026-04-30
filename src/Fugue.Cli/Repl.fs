@@ -847,3 +847,30 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
         Console.Out.Flush()
         StatusBar.stop ()
 }
+
+[<RequiresUnreferencedCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
+[<RequiresDynamicCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
+let runHeadless (agent: AIAgent) (cfg: AppConfig) (_cwd: string) : Task<unit> = task {
+    let input = Console.In.ReadToEnd().Trim()
+    if not (String.IsNullOrWhiteSpace input) then
+        let! session = agent.CreateSessionAsync(CancellationToken.None)
+        let stream = Conversation.run agent session input CancellationToken.None
+        let enumerator = stream.GetAsyncEnumerator(CancellationToken.None)
+        let mutable hasNext = true
+        while hasNext do
+            let! step = enumerator.MoveNextAsync().AsTask()
+            if step then
+                match enumerator.Current with
+                | Conversation.TextChunk t ->
+                    Console.Out.Write t
+                    Console.Out.Flush()
+                | Conversation.ToolStarted(_, name, args) ->
+                    Console.Error.WriteLine(sprintf "[tool: %s(%s)]" name args)
+                | Conversation.ToolCompleted(id, output, isErr) ->
+                    ignore id
+                    if isErr then Console.Error.WriteLine(sprintf "[tool error: %s]" output)
+                | Conversation.Finished -> ()
+                | Conversation.Failed ex -> raise ex
+            else hasNext <- false
+        Console.Out.WriteLine()
+}
