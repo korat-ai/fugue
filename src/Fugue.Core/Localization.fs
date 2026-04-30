@@ -65,7 +65,11 @@ type Strings =
       AtFileTooBig:   string
 
       // @clipboard expansion
-      ClipboardUnavailable: string }
+      ClipboardUnavailable: string
+
+      // /diff command
+      CmdDiffDesc: string
+      NoDiff:      string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -106,7 +110,9 @@ let en : Strings =
       ZeroWidthWarning      = "Warning: input contains invisible zero-width characters — these may cause Edit tool diff mismatches"
       AtFileNotFound        = "@{0}: file not found, skipping"
       AtFileTooBig          = "[file too large — truncated to 4000 chars]"
-      ClipboardUnavailable  = "clipboard unavailable — pbpaste/xclip/wl-paste not found" }
+      ClipboardUnavailable  = "clipboard unavailable — pbpaste/xclip/wl-paste not found"
+      CmdDiffDesc           = "show unstaged git diff (use /diff --staged for staged changes)"
+      NoDiff                = "no changes" }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -147,7 +153,9 @@ let ru : Strings =
       ZeroWidthWarning      = "Предупреждение: ввод содержит невидимые символы нулевой ширины — они могут нарушить работу инструмента Edit"
       AtFileNotFound        = "@{0}: файл не найден, пропускаем"
       AtFileTooBig          = "[файл слишком большой — обрезано до 4000 символов]"
-      ClipboardUnavailable  = "буфер обмена недоступен — pbpaste/xclip/wl-paste не найдены" }
+      ClipboardUnavailable  = "буфер обмена недоступен — pbpaste/xclip/wl-paste не найдены"
+      CmdDiffDesc           = "показать unstaged git diff (используйте /diff --staged для staged изменений)"
+      NoDiff                = "изменений нет" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =
