@@ -31,7 +31,8 @@ let private buildAgent (cfg: AppConfig) : AIAgent =
 [<RequiresUnreferencedCode("Calls Repl.run and Config.saveToFile which use STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 [<RequiresDynamicCode("Calls Repl.run and Config.saveToFile which use STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 let private runWithCfg (cfg: AppConfig) : int =
-    Render.initColor (not (noColor ()))
+    let isClassic = cfg.Ui.Theme = "fugue-classic" || cfg.Ui.Theme = "monochrome"
+    Render.initColor (not (noColor () || isClassic))
     let agent = buildAgent cfg
     let cwd = Environment.CurrentDirectory
     let t =

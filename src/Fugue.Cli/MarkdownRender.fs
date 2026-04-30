@@ -70,6 +70,8 @@ let rec private renderBlock (block: Block) : IRenderable =
     | :? FencedCodeBlock as f ->
         // Single Markup with \n separators avoids Spectre's per-row width-fill padding.
         // Markdig sometimes returns null Lines.Lines for empty blocks; guard via Count.
+        let lang =
+            f.Info |> Option.ofObj |> Option.defaultValue "" |> (fun s -> s.Trim().ToLowerInvariant())
         let lines =
             if f.Lines.Count = 0 || isNull (box f.Lines.Lines) then [||]
             else
@@ -83,7 +85,11 @@ let rec private renderBlock (block: Block) : IRenderable =
                 let nr = (string (i + 1)).PadLeft(3)
                 "[dim]" + nr + "  " + escape ln + "[/]")
             |> String.concat "\n"
-        Padder(Markup(body)).PadLeft(2) :> IRenderable
+        let codeBlock = Padder(Markup(body)).PadLeft(2) :> IRenderable
+        if lang <> "" then
+            let badge = Markup(sprintf "[dim]╭─ %s ─[/]" (escape lang)) :> IRenderable
+            Rows([| badge; codeBlock |]) :> IRenderable
+        else codeBlock
     | :? Markdig.Syntax.CodeBlock as c ->
         let txt = c.Lines.ToString()
         Padder(Markup(sprintf "[dim]%s[/]" (escape txt))).PadLeft(2) :> IRenderable

@@ -12,6 +12,7 @@ type UiConfigDto = {
     locale        : string | null
     promptTemplate: string | null
     bell          : bool
+    theme         : string | null
 }
 
 [<CLIMutable; DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)>]
