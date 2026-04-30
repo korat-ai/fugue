@@ -330,6 +330,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
 
     let strings = pick cfg.Ui.Locale
     let mutable verbosityPrefix : string option = None
+    let mutable turnNumber = 0
     try
         while not cancelSrc.QuitRequested do
             let callbacks : ReadLine.ReadLineCallbacks = { OnClearScreen = StatusBar.refresh }
@@ -638,7 +639,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                                 .Replace("{0}", string prNum)
                                 .Replace("{1}", titleBody)
                                 .Replace("{2}", truncatedDiff)
-                        AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "Reviewing PR #%d…" prNum))
+                        AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "Reviewing PR #%d…" prNum) 0)
                         AnsiConsole.WriteLine()
                         do! streamAndRender agent session prompt cfg cancelSrc
                 StatusBar.refresh ()
@@ -649,7 +650,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let augmented = sprintf "[System: answer from your training knowledge only — do not invoke any tools, do not read files, do not run commands]\n\nUser: %s" question
-                    AnsiConsole.Write(Render.userMessage cfg.Ui question)
+                    AnsiConsole.Write(Render.userMessage cfg.Ui question 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session augmented cfg cancelSrc
                 StatusBar.refresh ()
@@ -699,7 +700,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         "- Any gotchas or non-obvious constraints\n\n" +
                         "Keep it concise — aim for 50-150 lines. Use Markdown headers.\n" +
                         "Write the file to ./FUGUE.md using the Write tool."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui "/init")
+                    AnsiConsole.Write(Render.userMessage cfg.Ui "/init" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session initPrompt cfg cancelSrc
                     StatusBar.refresh ()
@@ -716,6 +717,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     session <- null
                     AnsiConsole.Write(Render.errorLine strings ex.Message)
                     AnsiConsole.WriteLine()
+                turnNumber <- 0
                 StatusBar.refresh ()
             | Some s when s.StartsWith "!" ->
                 let cmd = s.Substring(1).Trim()
@@ -753,7 +755,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     "- Key decisions made\n" +
                     "- Any open questions or next steps\n\n" +
                     "Be concise but complete."
-                AnsiConsole.Write(Render.userMessage cfg.Ui "/summary")
+                AnsiConsole.Write(Render.userMessage cfg.Ui "/summary" 0)
                 AnsiConsole.WriteLine()
                 do! streamAndRender agent session summaryPrompt cfg cancelSrc
                 StatusBar.refresh ()
@@ -819,7 +821,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                             sprintf "Please summarize the file '%s'.\n\nProvide a structured summary:\n1. Purpose — what does this file do?\n2. Public API — exported functions or types\n3. Key dependencies — what modules/libraries does it use?\n4. Notable design decisions — any interesting patterns or constraints\n\nBe concise (2–4 sentences per section). Use the Read tool to examine the file." rawArg
                         else
                             sprintf "The path '%s' does not exist. Please let me know." rawArg
-                    AnsiConsole.Write(Render.userMessage cfg.Ui ("/summarize " + rawArg))
+                    AnsiConsole.Write(Render.userMessage cfg.Ui ("/summarize " + rawArg) 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session summarizePrompt cfg cancelSrc
                 StatusBar.refresh ()
@@ -829,7 +831,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 let expandedInput = expandAtFiles cwd strings userInput
                 let expandedInput = expandClipboard expandedInput strings
-                AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
+                turnNumber <- turnNumber + 1
+                AnsiConsole.Write(Render.userMessage cfg.Ui userInput turnNumber)
                 AnsiConsole.WriteLine()
                 let effectiveInput =
                     match verbosityPrefix with
