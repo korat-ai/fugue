@@ -26,6 +26,10 @@ let private buildAgent (cfg: AppConfig) (lastSummary: string option) : AIAgent =
         match cfg.ProfileContent with
         | Some profile -> profile + "\n\n---\n\n" + basePrompt
         | None -> basePrompt
+    let sysPrompt =
+        match cfg.TemplateContent with
+        | Some tmpl -> sysPrompt + "\n\n---\n\n# Session template\n\n" + tmpl
+        | None -> sysPrompt
     let sysPromptFull =
         match lastSummary with
         | Some s -> sysPrompt + "\n\n<previous-session>\n" + s + "\n</previous-session>"
@@ -52,6 +56,7 @@ let private runWithCfg (cfg: AppConfig) : int =
     Render.initTheme cfg.Ui.Theme
     StatusBar.initTheme cfg.Ui.Theme
     StatusBar.setLowBandwidth cfg.LowBandwidth
+    StatusBar.setTemplateName cfg.TemplateName
     Render.initTypewriter cfg.Ui.TypewriterMode
     Render.initBubbles (cfg.Ui.BubblesMode || cfg.Ui.Theme = "bubbles")
     let cwd = Environment.CurrentDirectory
@@ -77,6 +82,11 @@ let main argv =
         |> Array.tryFindIndex ((=) "--profile")
         |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
         |> Option.bind Fugue.Core.Config.loadProfile
+    let templateName =
+        argv
+        |> Array.tryFindIndex ((=) "--template")
+        |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
+    let templateContent = templateName |> Option.bind Fugue.Core.Config.loadTemplate
     let lowBandwidth = argv |> Array.contains "--low-bandwidth"
     let offline      = argv |> Array.contains "--offline"
     if argv |> Array.contains "doctor" then
@@ -102,7 +112,7 @@ let main argv =
                     let m = if List.isEmpty models then "llama3.1" else List.head models
                     Ollama(ep, m)
                 | _ -> failwith "unsupported candidate"
-            let cfg = { Provider = provider; SystemPrompt = None; ProfileContent = profileContent; MaxIterations = 30; MaxTokens = None; Ui = Fugue.Core.Config.defaultUi (); BaseUrl = None; LowBandwidth = lowBandwidth; Offline = offline }
+            let cfg = { Provider = provider; SystemPrompt = None; ProfileContent = profileContent; TemplateContent = templateContent; TemplateName = templateName; MaxIterations = 30; MaxTokens = None; Ui = Fugue.Core.Config.defaultUi (); BaseUrl = None; LowBandwidth = lowBandwidth; Offline = offline }
             Fugue.Core.Config.saveToFile cfg
             runWithCfg cfg
         | None ->
@@ -112,4 +122,4 @@ let main argv =
         Console.Error.WriteLine("Invalid config: " + reason)
         1
     | Ok cfg ->
-        runWithCfg { cfg with ProfileContent = profileContent; LowBandwidth = lowBandwidth; Offline = offline }
+        runWithCfg { cfg with ProfileContent = profileContent; TemplateContent = templateContent; TemplateName = templateName; LowBandwidth = lowBandwidth; Offline = offline }

@@ -472,6 +472,13 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
         else
             Console.Out.WriteLine msg
         AnsiConsole.WriteLine())
+    // Show template badge on startup
+    cfg.TemplateName |> Option.iter (fun name ->
+        if Render.isColorEnabled () then
+            AnsiConsole.MarkupLine(sprintf "[dim cyan]▸ template: %s[/]" (Markup.Escape name))
+        else
+            Console.Out.WriteLine(sprintf "template: %s" name)
+        AnsiConsole.WriteLine())
     prelude cfg
     Console.Out.Write "\x1b[?2004h"   // enable bracketed paste
     Console.Out.Flush()
@@ -618,6 +625,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/bench [n]",      strings.CmdBenchDesc
                                   "/compat",         strings.CmdCompatDesc
                                   "/history [n]",    strings.CmdHistoryDesc
+                                  "/templates",      "list available session templates"
                                   "/rate up|down [n]", strings.CmdRateDesc
                                   "/annotate [n] [up|down] <note>", strings.CmdAnnotateDesc
                                   "/theme …",        strings.CmdThemeDesc
@@ -1027,6 +1035,22 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                             Console.Out.WriteLine(sprintf "#%d (%s)" (idx + 1) ago)
                             Console.Out.WriteLine summary
                             Console.Out.WriteLine()
+                StatusBar.refresh ()
+            | Some "/templates" ->
+                let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+                let dir = System.IO.Path.Combine(home, ".fugue", "templates")
+                if not (System.IO.Directory.Exists dir) then
+                    AnsiConsole.MarkupLine("[dim]No templates found. Create ~/.fugue/templates/<name>.md to add one.[/]")
+                else
+                    let files = System.IO.Directory.GetFiles(dir, "*.md")
+                    if files.Length = 0 then
+                        AnsiConsole.MarkupLine("[dim]No templates found. Create ~/.fugue/templates/<name>.md to add one.[/]")
+                    else
+                        AnsiConsole.MarkupLine("[dim]Available templates (use fugue --template <name>):[/]")
+                        for f in files |> Array.sort do
+                            let name = System.IO.Path.GetFileNameWithoutExtension f |> Option.ofObj |> Option.defaultValue ""
+                            if name <> "" then
+                                AnsiConsole.MarkupLine(sprintf "  [cyan]%s[/]" (Markup.Escape name))
                 StatusBar.refresh ()
             | Some s when s = "/rate" || s.StartsWith "/rate " ->
                 let parts = (if s = "/rate" then "" else s.Substring(6)).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)

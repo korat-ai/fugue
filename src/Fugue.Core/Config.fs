@@ -50,6 +50,8 @@ type AppConfig =
     { Provider: ProviderConfig
       SystemPrompt: string option
       ProfileContent: string option
+      TemplateContent: string option
+      TemplateName: string option
       MaxIterations: int
       MaxTokens: int option
       Ui: UiConfig
@@ -61,6 +63,14 @@ type AppConfig =
 let loadProfile (name: string) : string option =
     let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
     let path = Path.Combine(home, ".fugue", "profiles", name + ".md")
+    if File.Exists path then
+        try Some (File.ReadAllText path)
+        with _ -> None
+    else None
+
+let loadTemplate (name: string) : string option =
+    let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+    let path = Path.Combine(home, ".fugue", "templates", name + ".md")
     if File.Exists path then
         try Some (File.ReadAllText path)
         with _ -> None
@@ -226,19 +236,19 @@ Set environment variables:
 let load (_argv: string[]) : Result<AppConfig, ConfigError> =
     match fromExplicitEnv () with
     | Some provider ->
-        Ok { Provider = provider; SystemPrompt = None; ProfileContent = None; MaxIterations = 30; MaxTokens = None; Ui = defaultUi (); BaseUrl = None; LowBandwidth = false; Offline = false }
+        Ok { Provider = provider; SystemPrompt = None; ProfileContent = None; TemplateContent = None; TemplateName = None; MaxIterations = 30; MaxTokens = None; Ui = defaultUi (); BaseUrl = None; LowBandwidth = false; Offline = false }
     | None ->
         let path = configPath ()
         if File.Exists path then
             match fromFile path with
             | Ok (p, mi, maxTokens, ui, baseUrl) ->
                 let mi = if mi <= 0 then 30 else mi
-                Ok { Provider = p; SystemPrompt = None; ProfileContent = None; MaxIterations = mi; MaxTokens = maxTokens; Ui = ui; BaseUrl = baseUrl; LowBandwidth = false; Offline = false }
+                Ok { Provider = p; SystemPrompt = None; ProfileContent = None; TemplateContent = None; TemplateName = None; MaxIterations = mi; MaxTokens = maxTokens; Ui = ui; BaseUrl = baseUrl; LowBandwidth = false; Offline = false }
             | Error e -> Error(InvalidConfig e)
         else
             match fromImplicitEnv () with
             | Some provider ->
-                Ok { Provider = provider; SystemPrompt = None; ProfileContent = None; MaxIterations = 30; MaxTokens = None; Ui = defaultUi (); BaseUrl = None; LowBandwidth = false; Offline = false }
+                Ok { Provider = provider; SystemPrompt = None; ProfileContent = None; TemplateContent = None; TemplateName = None; MaxIterations = 30; MaxTokens = None; Ui = defaultUi (); BaseUrl = None; LowBandwidth = false; Offline = false }
             | None ->
                 Error(NoConfigFound (helpText ()))
 
