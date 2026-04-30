@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <Compile Include="ReadLine.fs" />
+    <Compile Include="MathRender.fs" />
     <Compile Include="MarkdownRender.fs" />
     <Compile Include="DiffRender.fs" />
     <Compile Include="Render.fs" />

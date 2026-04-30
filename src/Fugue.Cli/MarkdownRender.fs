@@ -167,8 +167,9 @@ let rec private renderBlock (block: Block) : IRenderable =
         Markup(escape (block.ToString() |> Option.ofObj |> Option.defaultValue "")) :> IRenderable
 
 /// Convert markdown source text to a single composite Spectre IRenderable.
+/// Math pre-processing runs before Markdig so LaTeX notation renders as Unicode.
 let toRenderable (markdown: string) : IRenderable =
-    let doc = Markdown.Parse(markdown, pipeline)
+    let doc = Markdown.Parse(MathRender.preprocess markdown, pipeline)
     let parts =
         doc
         |> Seq.cast<Block>
