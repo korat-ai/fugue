@@ -95,7 +95,7 @@ let ``GrepTool rejects root outside working directory`` () =
     let tmpDir = mkTmpDir ()
     let outsideDir = mkTmpDir ()
     try
-        (fun () -> Fugue.Tools.GrepTool.grep tmpDir "pattern" (Some outsideDir) None |> ignore)
+        (fun () -> Fugue.Tools.GrepTool.grep tmpDir "pattern" (Some outsideDir) None None |> ignore)
         |> should throw typeof<UnauthorizedAccessException>
     finally
         Directory.Delete(tmpDir, true)
@@ -105,7 +105,7 @@ let ``GrepTool rejects root outside working directory`` () =
 let ``GrepTool rejects traversal root outside working directory`` () =
     let tmpDir = mkTmpDir ()
     try
-        (fun () -> Fugue.Tools.GrepTool.grep tmpDir "pattern" (Some "../../etc") None |> ignore)
+        (fun () -> Fugue.Tools.GrepTool.grep tmpDir "pattern" (Some "../../etc") None None |> ignore)
         |> should throw typeof<UnauthorizedAccessException>
     finally
         Directory.Delete(tmpDir, true)

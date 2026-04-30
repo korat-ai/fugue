@@ -4,12 +4,14 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="PathSafety.fs" />
+    <Compile Include="ReadTimeRegistry.fs" />
     <Compile Include="InjectionGuard.fs" />
     <Compile Include="DataPreview.fs" />
     <Compile Include="RetryPolicy.fs" />
     <Compile Include="CircuitBreaker.fs" />
     <Compile Include="ReadTool.fs" />
     <Compile Include="WriteTool.fs" />
+    <Compile Include="WriteBatchTool.fs" />
     <Compile Include="EditTool.fs" />
     <Compile Include="BashTool.fs" />
     <Compile Include="GlobTool.fs" />
@@ -19,6 +21,7 @@
     <Compile Include="AiFunctions/DelegatedFn.fs" />
     <Compile Include="AiFunctions/ReadFn.fs" />
     <Compile Include="AiFunctions/WriteFn.fs" />
+    <Compile Include="AiFunctions/WriteBatchFn.fs" />
     <Compile Include="AiFunctions/EditFn.fs" />
     <Compile Include="AiFunctions/BashFn.fs" />
     <Compile Include="AiFunctions/GlobFn.fs" />

@@ -5,9 +5,9 @@ open FsUnit.Xunit
 open Fugue.Tools
 
 [<Fact>]
-let ``buildAll returns 7 functions`` () =
+let ``buildAll returns 8 functions`` () =
     let fns = ToolRegistry.buildAll "/tmp"
-    fns |> List.length |> should equal 7
+    fns |> List.length |> should equal 8
 
 [<Fact>]
 let ``buildAll names match the names list`` () =

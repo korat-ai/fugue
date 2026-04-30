@@ -6,11 +6,40 @@ open System.Text
 open System.Threading
 open System.ComponentModel
 
+/// Patterns for secret-like env var names (suffix-based).
+let private secretSuffixes =
+    [| "_KEY"; "_SECRET"; "_TOKEN"; "_PASSWORD"; "_PASS"; "_CREDENTIAL"; "_CREDENTIALS" |]
+
+/// Prefixes that are always stripped.
+let private secretPrefixes =
+    [| "AWS_"; "AZURE_"; "GCP_"; "DATABASE_URL" |]
+
+/// Names that are always kept.
+let private allowedNames =
+    [| "PATH"; "HOME"; "SHELL"; "USER"; "LOGNAME"; "TERM"; "LANG"; "LC_ALL";
+       "TMPDIR"; "XDG_RUNTIME_DIR"; "DOTNET_ROOT"; "JAVA_HOME"; "CARGO_HOME";
+       "GOPATH"; "GOROOT"; "NVM_DIR" |]
+
+/// Prefixes that are kept.
+let private allowedPrefixes =
+    [| "DOTNET_"; "GO_"; "JAVA_"; "CARGO_" |]
+
+let private isSafe (key: string) : bool =
+    let up = key.ToUpperInvariant()
+    // Always strip known secret patterns
+    if secretPrefixes |> Array.exists (fun p -> up.StartsWith(p, StringComparison.Ordinal)) then false
+    elif secretSuffixes |> Array.exists (fun s -> up.EndsWith(s, StringComparison.Ordinal)) then false
+    // Keep explicit allow-list
+    elif allowedNames |> Array.contains up then true
+    elif allowedPrefixes |> Array.exists (fun p -> up.StartsWith(p, StringComparison.Ordinal)) then true
+    else false
+
 [<Description("Run a shell command via /bin/zsh -lc and return combined stdout/stderr with exit code.")>]
 let bash
     ([<Description("Working directory.")>] cwd: string)
     ([<Description("Command line to execute (shell syntax allowed).")>] command: string)
     ([<Description("Timeout in milliseconds (default 60000 = 60s).")>] timeoutMs: int option)
+    ([<Description("Strip secret env vars before starting the process.")>] cleanEnv: bool option)
     ([<Description("CancellationToken to interrupt the process early.")>] ct: CancellationToken)
     : string =
     let timeout = timeoutMs |> Option.defaultValue 60_000
@@ -20,6 +49,14 @@ let bash
     psi.RedirectStandardOutput <- true
     psi.RedirectStandardError <- true
     psi.UseShellExecute <- false
+
+    if cleanEnv = Some true then
+        let env = psi.Environment
+        let toRemove =
+            env.Keys
+            |> Seq.filter (fun k -> not (isSafe k))
+            |> Seq.toArray
+        for k in toRemove do env.Remove k |> ignore
 
     let proc =
         match Process.Start psi |> Option.ofObj with

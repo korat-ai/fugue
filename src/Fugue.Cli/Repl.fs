@@ -38,6 +38,9 @@ let mutable private aliasStore : Map<string, string> = Map.empty
 // Scratch buffer: accumulated lines
 let mutable private scratchLines : string list = []
 
+// Pinned messages: prepended to each turn's effective input
+let mutable private pinnedMessages : string list = []
+
 // Session title (set via /rename)
 let mutable private sessionTitle : string option = None
 
@@ -153,6 +156,36 @@ let private findAtTokens (input: string) : (int * int * string) list =
 /// within cwd is replaced with its contents (up to 4000 chars). Skips missing, binary,
 /// or out-of-cwd files silently or with a dim notice.
 let expandAtFiles (cwd: string) (strings: Fugue.Core.Localization.Strings) (input: string) : string =
+    // @recent N: expand to N most recently modified files
+    let input =
+        let m = System.Text.RegularExpressions.Regex.Match(input, @"@recent\s+(\d+)")
+        if not m.Success then input
+        else
+            let n = max 1 (min 20 (int m.Groups.[1].Value))
+            let files =
+                try
+                    System.IO.Directory.EnumerateFiles(cwd, "*", System.IO.SearchOption.AllDirectories)
+                    |> Seq.filter (fun f ->
+                        let rel = try System.IO.Path.GetRelativePath(cwd, f) with _ -> f
+                        Fugue.Tools.PathSafety.isUnder cwd f
+                        && not (rel.Contains(string System.IO.Path.DirectorySeparatorChar + ".git"))
+                        && not (rel.StartsWith ".git"))
+                    |> Seq.sortByDescending (fun f -> (System.IO.FileInfo f).LastWriteTimeUtc)
+                    |> Seq.truncate n
+                    |> Seq.toList
+                with _ -> []
+            let injection =
+                files
+                |> List.map (fun f ->
+                    let rel = try System.IO.Path.GetRelativePath(cwd, f) with _ -> f
+                    let content =
+                        try
+                            let text = System.IO.File.ReadAllText f
+                            if text.Length > 3000 then text.[..2999] + "\n[truncated]" else text
+                        with _ -> "[unreadable]"
+                    sprintf "[contents of %s]:\n%s" rel content)
+                |> String.concat "\n\n"
+            input.Substring(0, m.Index) + injection + input.Substring(m.Index + m.Length)
     let tokens = findAtTokens input
     if tokens.IsEmpty then input
     else
@@ -1665,6 +1698,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 currentSessionId <- generateUlid ()
                 lastFailedTurn <- None
                 lastResponseWasPlan <- false
+                pinnedMessages <- []
                 StatusBar.refresh ()
             | Some s when s.StartsWith "!" ->
                 let cmd = s.Substring(1).Trim()
@@ -2594,6 +2628,106 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
+            | Some s when s = "/context show" || s.StartsWith "/context show" ->
+                let wordsToTokens (text: string) =
+                    let words = text.Split([|' '; '\n'; '\r'; '\t'|], StringSplitOptions.RemoveEmptyEntries).Length
+                    int (float words * 1.35)
+                let sysTok =
+                    match cfg.SystemPrompt with
+                    | Some sp -> wordsToTokens sp
+                    | None    -> 0
+                let contextLimit = 200_000
+                let pctUsed = int (float sysTok / float contextLimit * 100.0)
+                if Render.isColorEnabled () then
+                    AnsiConsole.MarkupLine "[bold]Context budget estimate[/] [dim](word-count based, ×1.35)[/]"
+                    AnsiConsole.MarkupLine(sprintf "  [dim]system prompt[/]  ~%d tokens" sysTok)
+                    AnsiConsole.MarkupLine(sprintf "  [dim]context limit[/]   %d tokens (provider estimate)" contextLimit)
+                    AnsiConsole.MarkupLine(sprintf "  [dim]system usage[/]   %d%% of limit" pctUsed)
+                    AnsiConsole.MarkupLine "[dim]  (turn history token count requires provider usage reporting)[/]"
+                else
+                    Console.Out.WriteLine(sprintf "System prompt: ~%d tokens / %d limit (%d%%)" sysTok contextLimit pctUsed)
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s = "/tokens" ->
+                let wordsToTokens (text: string) =
+                    text.Split([|' '; '\n'; '\r'; '\t'|], StringSplitOptions.RemoveEmptyEntries).Length
+                    |> fun w -> int (float w * 1.35)
+                let sysTok =
+                    match cfg.SystemPrompt with
+                    | Some sp -> wordsToTokens sp
+                    | None    -> 0
+                let prov, model =
+                    match cfg.Provider with
+                    | Fugue.Core.Config.Anthropic(_, m) -> "anthropic", m
+                    | Fugue.Core.Config.OpenAI(_, m)    -> "openai", m
+                    | Fugue.Core.Config.Ollama(_, m)    -> "ollama", m
+                let friendly = Fugue.Core.Config.modelDisplayName model
+                if Render.isColorEnabled () then
+                    AnsiConsole.MarkupLine(sprintf "[bold]/tokens[/] — provider: [cyan]%s[/]  model: [cyan]%s[/]" prov friendly)
+                    AnsiConsole.MarkupLine(sprintf "  system prompt:  ~%d tokens" sysTok)
+                    AnsiConsole.MarkupLine "[dim]  Exact per-turn counts require the provider to return usage metadata.[/]"
+                    AnsiConsole.MarkupLine "[dim]  Use /context show for a full budget breakdown.[/]"
+                else
+                    Console.Out.WriteLine(sprintf "Provider: %s  Model: %s  System: ~%d tokens" prov friendly sysTok)
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/locale " || s = "/locale" ->
+                let arg = if s = "/locale" then "" else s.Substring("/locale ".Length).Trim()
+                if arg = "" then
+                    let current = savedUi.Locale
+                    if Render.isColorEnabled () then
+                        AnsiConsole.MarkupLine(sprintf "[dim]Current locale: [cyan]%s[/]  Usage: /locale [en|ru][/]" current)
+                    else
+                        Console.Out.WriteLine(sprintf "Current locale: %s  Usage: /locale [en|ru]" current)
+                elif arg <> "en" && arg <> "ru" then
+                    if Render.isColorEnabled () then
+                        AnsiConsole.MarkupLine "[dim yellow]Supported locales: en, ru[/]"
+                    else
+                        Console.Out.WriteLine "Supported locales: en, ru"
+                else
+                    savedUi <- { savedUi with Locale = arg }
+                    liveStrings <- Fugue.Core.Localization.pick arg
+                    try
+                        Config.saveToFile { cfg with Ui = savedUi }
+                        if Render.isColorEnabled () then
+                            AnsiConsole.MarkupLine(sprintf "[dim green]Locale set to [cyan]%s[/] and saved.[/]" arg)
+                        else
+                            Console.Out.WriteLine(sprintf "Locale set to %s and saved." arg)
+                    with ex ->
+                        if Render.isColorEnabled () then
+                            AnsiConsole.MarkupLine(sprintf "[dim yellow]Could not save config: %s[/]" (Markup.Escape ex.Message))
+                        else
+                            Console.Out.WriteLine(sprintf "Could not save config: %s" ex.Message)
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/pin " ->
+                let msg = s.Substring("/pin ".Length).Trim()
+                if msg = "" then
+                    if pinnedMessages.IsEmpty then
+                        AnsiConsole.MarkupLine "[dim]No pinned messages. Usage: /pin <message>[/]"
+                    else
+                        AnsiConsole.MarkupLine "[bold]Pinned:[/]"
+                        pinnedMessages |> List.iteri (fun i m ->
+                            if Render.isColorEnabled () then AnsiConsole.MarkupLine(sprintf "  [cyan]%d.[/] %s" (i+1) (Markup.Escape m))
+                            else Console.Out.WriteLine(sprintf "  %d. %s" (i+1) m))
+                else
+                    pinnedMessages <- pinnedMessages @ [msg]
+                    if Render.isColorEnabled () then
+                        AnsiConsole.MarkupLine(sprintf "[dim green]Pinned (%d total): [/]%s" pinnedMessages.Length (Markup.Escape msg))
+                    else
+                        Console.Out.WriteLine(sprintf "Pinned (%d total): %s" pinnedMessages.Length msg)
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s = "/pin" ->
+                if pinnedMessages.IsEmpty then
+                    AnsiConsole.MarkupLine "[dim]No pinned messages. Usage: /pin <message>[/]"
+                else
+                    AnsiConsole.MarkupLine "[bold]Pinned messages:[/]"
+                    pinnedMessages |> List.iteri (fun i m ->
+                        if Render.isColorEnabled () then AnsiConsole.MarkupLine(sprintf "  [cyan]%d.[/] %s" (i+1) (Markup.Escape m))
+                        else Console.Out.WriteLine(sprintf "  %d. %s" (i+1) m))
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
             | Some s when s = "/compress" ->
                 // Compress context: ask AI to summarise history, then reset session and inject summary.
                 AnsiConsole.MarkupLine "[dim]Compressing context — summarising session history…[/]"
@@ -2644,6 +2778,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some userInput ->
+                let userInput = ReadLine.normalizeInput userInput
                 if ReadLine.hasZeroWidth userInput then
                     AnsiConsole.Write(Markup("[dim yellow]" + Markup.Escape liveStrings.ZeroWidthWarning + "[/]"))
                     AnsiConsole.WriteLine()
@@ -2662,9 +2797,14 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         "Yes, please proceed with the plan outlined above."
                     | _ -> expandedInput
                 let effectiveInput =
-                    match verbosityPrefix with
-                    | Some prefix -> prefix + expandedInput
-                    | None -> expandedInput
+                    let base' =
+                        match verbosityPrefix with
+                        | Some prefix -> prefix + expandedInput
+                        | None -> expandedInput
+                    if pinnedMessages.IsEmpty then base'
+                    else
+                        let pins = pinnedMessages |> List.mapi (fun i m -> sprintf "[pinned %d] %s" (i+1) m) |> String.concat "\n"
+                        pins + "\n\n" + base'
                 let sw = System.Diagnostics.Stopwatch.StartNew()
                 do! streamAndRender agent session effectiveInput cfg cancelSrc zenMode
                 StatusBar.refresh ()

@@ -62,6 +62,7 @@ let read
             | ".json" -> DataPreview.tryPreviewJson  rawContent
             | _ -> None
         else None
+    ReadTimeRegistry.recordRead full
     match preview with
     | Some p -> p + "\n\n---\n\n" + body + hint
     | None   -> body + hint
