@@ -665,14 +665,20 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 if args <> "" then psi.ArgumentList.Add args
                 psi.UseShellExecute <- false
                 psi.RedirectStandardOutput <- true
+                psi.RedirectStandardError <- true
                 psi.WorkingDirectory <- cwd
                 use proc = new System.Diagnostics.Process()
                 proc.StartInfo <- psi
                 try
                     proc.Start() |> ignore
                     let output = proc.StandardOutput.ReadToEnd()
+                    let errOut = proc.StandardError.ReadToEnd().Trim()
                     proc.WaitForExit()
-                    if System.String.IsNullOrWhiteSpace output then
+                    if proc.ExitCode <> 0 then
+                        let msg = if errOut <> "" then errOut else sprintf "git diff exited %d" proc.ExitCode
+                        AnsiConsole.Write(Render.errorLine strings msg)
+                        AnsiConsole.WriteLine()
+                    elif System.String.IsNullOrWhiteSpace output then
                         AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.NoDiff + "[/]"))
                         AnsiConsole.WriteLine()
                     else
