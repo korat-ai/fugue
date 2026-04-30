@@ -774,7 +774,10 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/http METHOD URL …", "inline HTTP client (HTTPie-style, -H/-d/--inject)"
                                   "/refactor pipeline [f:N-M]", "rewrite F# let-bindings as |> pipe chain"
                                   "/check exhaustive [dir]",     "find FS0025 incomplete-pattern warnings and fix"
-                                  "/compress",          "summarise session history and reset context window" ]
+                                  "/compress",          "summarise session history and reset context window"
+                                  "/rop <description>",  "generate ROP Result/Either chain from plain-English"
+                                  "/infer-type <expr>",  "infer and explain F# type signature of an expression"
+                                  "/pointfree <fn>",     "offer point-free rewrite of an F# function" ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
@@ -2254,6 +2257,45 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.Write(Render.userMessage cfg.Ui ("/summarize " + rawArg) 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session summarizePrompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/rop " || s = "/rop" ->
+                // /rop <description> — generate a railway-oriented Result/Either chain
+                let desc = if s = "/rop" then "" else s.Substring(5).Trim()
+                if desc = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /rop <plain-English description of multi-step operation>[/]"  )
+                    AnsiConsole.WriteLine()
+                else
+                    let prompt =
+                        sprintf "Generate a railway-oriented programming (ROP) pipeline for the following operation:\n\n\"%s\"\n\nRequirements:\n1. Use F# `Result<'ok, 'err>` types (or adapt for the target language).\n2. Define a discriminated union for all possible error cases.\n3. Compose steps with `Result.bind` (or `>>=`) — no exceptions, no `try/catch`.\n4. Unify error types across steps; if types differ, map to the common error DU.\n5. Include brief inline comments explaining each step.\n6. Return only the code (no prose preamble)." desc
+                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/rop %s" desc) 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/infer-type " || s = "/infer-type" ->
+                // /infer-type <expression> — explain the inferred F# type
+                let expr = if s = "/infer-type" then "" else s.Substring("/infer-type ".Length).Trim()
+                if expr = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /infer-type <F# expression or snippet>[/]")
+                    AnsiConsole.WriteLine()
+                else
+                    let prompt =
+                        sprintf "Infer and explain the type of the following F# expression:\n\n```fsharp\n%s\n```\n\nFormat your answer as:\n1. **Type signature** — in standard F# notation.\n2. **Parameter breakdown** — explain each type parameter, constraint, or variance annotation.\n3. **Plain-English summary** — one or two sentences explaining what this type means semantically.\n4. **Example usage** — a single concrete example showing it in action." expr
+                    AnsiConsole.Write(Render.userMessage cfg.Ui "/infer-type" 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/pointfree " || s = "/pointfree" ->
+                // /pointfree <function-definition> — offer point-free rewrite
+                let fn = if s = "/pointfree" then "" else s.Substring("/pointfree ".Length).Trim()
+                if fn = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /pointfree <F# function definition>[/]")
+                    AnsiConsole.WriteLine()
+                else
+                    let prompt =
+                        sprintf "Offer a point-free rewrite of the following F# function:\n\n```fsharp\n%s\n```\n\nFormat your answer as:\n1. **Original** — repeat the function as-is.\n2. **Point-free equivalent** — the rewritten version using partial application, `>>` / `<<`, or combinators.\n3. **Transformation steps** — explain each step of the rewrite.\n4. **Readability verdict** — note whether the point-free form is actually clearer, and when to prefer the explicit form.\n\nIf a point-free form is not natural or readable, say so and explain why." fn
+                    AnsiConsole.Write(Render.userMessage cfg.Ui "/pointfree" 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/refactor pipeline" ->
                 // /refactor pipeline [file:start-end] — rewrite let-bindings as |> pipe chain
