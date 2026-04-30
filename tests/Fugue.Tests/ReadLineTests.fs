@@ -344,3 +344,100 @@ let ``word_CtrlW_atZero_isNoOp`` () =
     act |> should equal Continue
     String(s.Buffer.ToArray()) |> should equal "hello"
     s.Cursor |> should equal 0
+
+// ── Undo / redo tests ─────────────────────────────────────────────────────────
+
+[<Fact>]
+let ``undo_CtrlZ_onEmptyStack_isNoOp`` () =
+    clearUndoRedo()
+    let s = mkState "hello" 5
+    let act = applyKey (special ConsoleKey.Z ConsoleModifiers.Control) s
+    act |> should equal Continue
+    String(s.Buffer.ToArray()) |> should equal "hello"
+    s.Cursor |> should equal 5
+
+[<Fact>]
+let ``undo_typingChar_pushesSnapshotOntoUndoStack`` () =
+    clearUndoRedo()
+    let s = mkState "ab" 2
+    let _ = applyKey (key 'c' ConsoleModifiers.None) s
+    undoStack.Count |> should equal 1
+    redoStack.Count |> should equal 0
+
+[<Fact>]
+let ``undo_CtrlZ_restoresPreviousBufferAndCursor`` () =
+    clearUndoRedo()
+    let s = mkState "ab" 2
+    let _ = applyKey (key 'c' ConsoleModifiers.None) s   // buffer = "abc", cursor = 3; snapshot "ab"/2 on undoStack
+    let act = applyKey (special ConsoleKey.Z ConsoleModifiers.Control) s
+    act |> should equal Continue
+    String(s.Buffer.ToArray()) |> should equal "ab"
+    s.Cursor |> should equal 2
+    undoStack.Count |> should equal 0
+
+[<Fact>]
+let ``undo_CtrlZ_pushesCurrentStateOntoRedoStack`` () =
+    clearUndoRedo()
+    let s = mkState "ab" 2
+    let _ = applyKey (key 'c' ConsoleModifiers.None) s   // "abc", cursor 3
+    let _ = applyKey (special ConsoleKey.Z ConsoleModifiers.Control) s
+    redoStack.Count |> should equal 1
+    let (redoBuf, redoCursor) = redoStack.[0]
+    String(redoBuf.ToArray()) |> should equal "abc"
+    redoCursor |> should equal 3
+
+[<Fact>]
+let ``redo_CtrlY_onEmptyStack_isNoOp`` () =
+    clearUndoRedo()
+    let s = mkState "hello" 5
+    let act = applyKey (special ConsoleKey.Y ConsoleModifiers.Control) s
+    act |> should equal Continue
+    String(s.Buffer.ToArray()) |> should equal "hello"
+    s.Cursor |> should equal 5
+
+[<Fact>]
+let ``redo_CtrlY_restoresRedoneStateAndPushesUndoViaPushBounded`` () =
+    clearUndoRedo()
+    let s = mkState "ab" 2
+    let _ = applyKey (key 'c' ConsoleModifiers.None) s   // "abc"/3 → undoStack: [("ab",2)]
+    let _ = applyKey (special ConsoleKey.Z ConsoleModifiers.Control) s  // back to "ab"/2 → redoStack: [("abc",3)]
+    let act = applyKey (special ConsoleKey.Y ConsoleModifiers.Control) s  // redo
+    act |> should equal Continue
+    String(s.Buffer.ToArray()) |> should equal "abc"
+    s.Cursor |> should equal 3
+    redoStack.Count |> should equal 0
+    undoStack.Count |> should equal 1
+
+[<Fact>]
+let ``redo_typingAfterUndo_clearsRedoStack`` () =
+    clearUndoRedo()
+    let s = mkState "ab" 2
+    let _ = applyKey (key 'c' ConsoleModifiers.None) s   // "abc"/3
+    let _ = applyKey (special ConsoleKey.Z ConsoleModifiers.Control) s  // back to "ab"/2
+    redoStack.Count |> should equal 1
+    let _ = applyKey (key 'x' ConsoleModifiers.None) s   // typing clears redo
+    redoStack.Count |> should equal 0
+
+[<Fact>]
+let ``undo_pushBounded_capsUndoStackAt100`` () =
+    clearUndoRedo()
+    let s = mkState "" 0
+    // Type 110 characters — each keystroke pushes one snapshot
+    for _ in 1 .. 110 do
+        let _ = applyKey (key 'a' ConsoleModifiers.None) s
+        ()
+    undoStack.Count |> should equal 100
+
+[<Fact>]
+let ``redo_pushBounded_capsRedoStackAt100`` () =
+    clearUndoRedo()
+    let s = mkState "" 0
+    // Build up 110 undo entries
+    for _ in 1 .. 110 do
+        let _ = applyKey (key 'a' ConsoleModifiers.None) s
+        ()
+    // Undo all 100 capped entries; each undo pushes onto redo via pushBounded
+    for _ in 1 .. 110 do
+        let _ = applyKey (special ConsoleKey.Z ConsoleModifiers.Control) s
+        ()
+    redoStack.Count |> should equal 100
