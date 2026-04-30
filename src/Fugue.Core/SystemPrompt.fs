@@ -104,12 +104,35 @@ let private detectPlatformHints (cwd: string) : string list =
         System.IO.Directory.Exists(System.IO.Path.Combine(cwd, "Assets")) &&
         System.IO.Directory.Exists(System.IO.Path.Combine(cwd, "ProjectSettings"))
 
+    let godot =
+        System.IO.File.Exists(System.IO.Path.Combine(cwd, "project.godot"))
+
+    let maui =
+        csprojs |> Array.exists (fun f ->
+            let txt = readProj f
+            txt.Contains "Sdk=\"Microsoft.NET.Sdk.Maui\"" || txt.Contains "-ios" || txt.Contains "-android" || txt.Contains "-maccatalyst")
+
+    let expo =
+        let isExpoFile name =
+            let p = System.IO.Path.Combine(cwd, name)
+            System.IO.File.Exists p &&
+            (try (System.IO.File.ReadAllText p).Contains "\"expo\"" with _ -> false)
+        isExpoFile "app.json" || isExpoFile "expo.json" ||
+        System.IO.File.Exists(System.IO.Path.Combine(cwd, "app.config.js")) ||
+        System.IO.File.Exists(System.IO.Path.Combine(cwd, "app.config.ts"))
+
     [ if blazor then
         yield "Platform: Blazor WebAssembly. Avoid Thread, blocking I/O, native P/Invoke, System.Threading.Mutex. Use async/await and HttpClient; JS interop via IJSRuntime."
       if nano then
         yield "Platform: .NET nanoFramework (MCU). BCL is a subset — no LINQ, no reflection, no Task. Use nanoFramework.CoreLibrary APIs. Memory-constrained: avoid large allocations."
       if unity then
-        yield "Platform: Unity. Prefer IEnumerator coroutines over async/Task in MonoBehaviour. Avoid per-frame allocations (GC pressure). Use Unity.Jobs for CPU-bound work. UnityEngine APIs are main-thread only." ]
+        yield "Platform: Unity. Prefer IEnumerator coroutines over async/Task in MonoBehaviour. Avoid per-frame allocations (GC pressure). Use Unity.Jobs for CPU-bound work. UnityEngine APIs are main-thread only."
+      if godot then
+        yield "Platform: Godot 4. Use GDScript or C# (GodotSharp). Reference nodes via $NodeName or GetNode<T>(\"Path\"). Signals use [Signal] attribute in C#. Resource paths use res:// prefix. Avoid blocking I/O on the main thread."
+      if maui then
+        yield "Platform: .NET MAUI. Use #if ANDROID / #if IOS / #if MACCATALYST / #if WINDOWS for platform-specific code. Avoid System.Windows, WinForms, WPF types. UI runs on main thread; use Dispatcher for cross-thread updates."
+      if expo then
+        yield "Platform: Expo / React Native. Use Expo SDK APIs (expo-*) over raw React Native when available. Config plugins go in app.json under 'plugins'. EAS Build for native modules. Avoid direct native module imports without expo-modules-core wrappers." ]
 
 let render (cwd: string) (toolNames: string list) (context: string option) : string =
     let os =

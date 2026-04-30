@@ -91,3 +91,39 @@ let ``render emits no platform section for plain project`` () =
         result |> should not' (haveSubstring "Platform constraints")
     finally
         Directory.Delete(tmpDir, true)
+
+[<Fact>]
+let ``render injects Godot platform hint when project.godot exists`` () =
+    let tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName())
+    Directory.CreateDirectory tmpDir |> ignore
+    try
+        File.WriteAllText(Path.Combine(tmpDir, "project.godot"), "; Godot Project\nconfig_version=5")
+        let result = render tmpDir ["Read"] None
+        result |> should haveSubstring "Godot"
+        result |> should haveSubstring "Platform constraints"
+    finally
+        Directory.Delete(tmpDir, true)
+
+[<Fact>]
+let ``render injects MAUI platform hint for MAUI csproj`` () =
+    let tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName())
+    Directory.CreateDirectory tmpDir |> ignore
+    try
+        File.WriteAllText(Path.Combine(tmpDir, "App.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk.Maui\"><PropertyGroup><TargetFrameworks>net10.0-ios;net10.0-android</TargetFrameworks></PropertyGroup></Project>")
+        let result = render tmpDir ["Read"] None
+        result |> should haveSubstring "MAUI"
+        result |> should haveSubstring "Platform constraints"
+    finally
+        Directory.Delete(tmpDir, true)
+
+[<Fact>]
+let ``render injects Expo platform hint for app.json with expo key`` () =
+    let tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName())
+    Directory.CreateDirectory tmpDir |> ignore
+    try
+        File.WriteAllText(Path.Combine(tmpDir, "app.json"), """{"expo":{"name":"MyApp","slug":"my-app","version":"1.0.0"}}""")
+        let result = render tmpDir ["Read"] None
+        result |> should haveSubstring "Expo"
+        result |> should haveSubstring "Platform constraints"
+    finally
+        Directory.Delete(tmpDir, true)
