@@ -16,6 +16,7 @@ open Fugue.Cli
 
 /// Try to find the git repository root starting from startDir.
 /// Runs `git rev-parse --show-toplevel` as a best-effort child process; returns None on any failure.
+/// Stderr is redirected and drained concurrently to suppress git's "not a git repository" message.
 let private findGitRoot (startDir: string) : string option =
     let psi = System.Diagnostics.ProcessStartInfo()
     psi.FileName <- "git"
@@ -23,17 +24,19 @@ let private findGitRoot (startDir: string) : string option =
     psi.ArgumentList.Add "--show-toplevel"
     psi.UseShellExecute <- false
     psi.RedirectStandardOutput <- true
+    psi.RedirectStandardError <- true
     psi.WorkingDirectory <- startDir
     try
         use proc = new System.Diagnostics.Process()
         proc.StartInfo <- psi
-        match proc.Start() with
-        | false -> None
-        | true ->
-            let out = proc.StandardOutput.ReadToEnd().Trim()
-            proc.WaitForExit()
-            if proc.ExitCode = 0 && not (String.IsNullOrWhiteSpace out) then Some out
-            else None
+        proc.Start() |> ignore
+        // Drain stderr concurrently — must happen before WaitForExit to prevent deadlock.
+        let errTask = Task.Run(fun () -> proc.StandardError.ReadToEnd() |> ignore)
+        let out = proc.StandardOutput.ReadToEnd().Trim()
+        proc.WaitForExit()
+        errTask.Wait()
+        if proc.ExitCode = 0 && not (String.IsNullOrWhiteSpace out) then Some out
+        else None
     with _ -> None
 
 /// Cheap heuristic — does the text contain markdown markers worth re-rendering?
