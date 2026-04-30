@@ -18,6 +18,14 @@ open Fugue.Cli
 /// Try to find the git repository root starting from startDir.
 /// Runs `git rev-parse --show-toplevel` as a best-effort child process; returns None on any failure.
 /// Stderr is redirected and drained concurrently to suppress git's "not a git repository" message.
+let private findGitRoot (startDir: string) : string option =
+    let psi = System.Diagnostics.ProcessStartInfo()
+    psi.FileName <- "git"
+    psi.ArgumentList.Add "rev-parse"
+    psi.ArgumentList.Add "--show-toplevel"
+    psi.UseShellExecute <- false
+    psi.RedirectStandardOutput <- true
+    psi.RedirectStandardError <- true
     psi.WorkingDirectory <- startDir
     try
         use proc = new System.Diagnostics.Process()
@@ -311,6 +319,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/ask <q>",        strings.CmdAskDesc
                                   "/clear",          strings.CmdClearDesc
                                   "/summary",         strings.CmdSummaryDesc
+                                  "/squash <N>",      strings.CmdSquashDesc
                                   "/short",           strings.CmdShortDesc
                                   "/long",            strings.CmdLongDesc
                                   "/clear-history",   strings.CmdClearHistoryDesc
@@ -360,6 +369,41 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s = "/squash" || s.StartsWith "/squash " ->
+                let rawArg = if s = "/squash" then "" else s.Substring(8).TrimStart()
+                let n = if String.IsNullOrWhiteSpace rawArg then 0 else (try int rawArg with _ -> 0)
+                if n <= 0 then
+                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.SquashUsage + "[/]"))
+                    AnsiConsole.WriteLine()
+                else
+                    let psi = System.Diagnostics.ProcessStartInfo()
+                    psi.FileName <- "git"
+                    psi.ArgumentList.Add "log"
+                    psi.ArgumentList.Add "--oneline"
+                    psi.ArgumentList.Add (sprintf "-%d" n)
+                    psi.UseShellExecute <- false
+                    psi.RedirectStandardOutput <- true
+                    psi.WorkingDirectory <- cwd
+                    try
+                        use proc = new System.Diagnostics.Process()
+                        proc.StartInfo <- psi
+                        match proc.Start() with
+                        | false ->
+                            AnsiConsole.Write(Render.errorLine strings strings.SquashNoRepo)
+                            AnsiConsole.WriteLine()
+                        | true ->
+                            let out = proc.StandardOutput.ReadToEnd()
+                            proc.WaitForExit()
+                            if proc.ExitCode <> 0 || String.IsNullOrWhiteSpace out then
+                                AnsiConsole.Write(Render.errorLine strings strings.SquashNoRepo)
+                                AnsiConsole.WriteLine()
+                            else
+                                let prompt = sprintf """Here are the last %d commits to be squashed:\n\n%s\n\nPlease generate a single conventional commit message that summarizes all these changes.\nFollow the format: type(scope): description\n\nAlso show the git command to execute the squash:\n  git reset --soft HEAD~%d && git commit -m "<your message>"\n\nDo NOT run the command — just show it for the user to review and run manually.""" n out n
+                                do! streamAndRender agent session prompt cfg cancelSrc
+                    with ex ->
+                        AnsiConsole.Write(Render.errorLine strings ex.Message)
+                        AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/short" ->
                 verbosityPrefix <- Some "[VERBOSITY: respond briefly, 1-2 sentences per point, no elaboration unless asked]\n\n"
