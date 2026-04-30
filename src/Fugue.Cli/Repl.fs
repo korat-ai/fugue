@@ -110,6 +110,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     StatusBar.start cwd cfg
 
     let strings = pick cfg.Ui.Locale
+    let mutable verbosityPrefix : string option = None
     try
         while not cancelSrc.QuitRequested do
             let! lineOpt = ReadLine.readAsync (Render.prompt cwd) strings cancelSrc.Token
@@ -124,6 +125,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 AnsiConsole.WriteLine()
                 let helpItems = [ "/help",  strings.CmdHelpDesc
                                   "/clear", strings.CmdClearDesc
+                                  "/short", strings.CmdShortDesc
+                                  "/long",  strings.CmdLongDesc
                                   "/exit",  strings.CmdExitDesc ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
@@ -132,10 +135,24 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
                 StatusBar.refresh ()
+            | Some s when s = "/short" ->
+                verbosityPrefix <- Some "[VERBOSITY: respond briefly, 1-2 sentences per point, no elaboration unless asked]\n\n"
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.VerbosityShortSet + "[/]"))
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s = "/long" ->
+                verbosityPrefix <- Some "[VERBOSITY: respond in detail, include explanations, examples, and context]\n\n"
+                AnsiConsole.Write(Markup("[dim]" + Markup.Escape strings.VerbosityLongSet + "[/]"))
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
             | Some userInput ->
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
                 AnsiConsole.WriteLine()
-                do! streamAndRender agent session userInput cfg cancelSrc
+                let effectiveInput =
+                    match verbosityPrefix with
+                    | Some prefix -> prefix + userInput
+                    | None -> userInput
+                do! streamAndRender agent session effectiveInput cfg cancelSrc
                 StatusBar.refresh ()
     finally
         Console.CancelKeyPress.RemoveHandler handler

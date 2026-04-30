@@ -7,7 +7,7 @@ open System.Threading.Tasks
 open Fugue.Core.Localization
 
 // Hardcoded — small list, easier than passing through state.
-let slashCommands : string list = [ "/help"; "/clear"; "/exit" ]
+let slashCommands : string list = [ "/help"; "/clear"; "/short"; "/long"; "/exit" ]
 
 /// Session history (REPL is single-threaded). Not private so tests can seed entries directly.
 let historyStore = ResizeArray<string>()
@@ -280,6 +280,8 @@ let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task
     let slashHelp =
         [ "/help",  strings.CmdHelpDesc
           "/clear", strings.CmdClearDesc
+          "/short", strings.CmdShortDesc
+          "/long",  strings.CmdLongDesc
           "/exit",  strings.CmdExitDesc ]
     let st : S =
         { Buffer          = ResizeArray<char>()

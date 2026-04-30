@@ -25,10 +25,16 @@ type Strings =
       DiscoveryPickProvider:  string
 
       // Slash commands
-      CmdHelpDesc:  string
-      CmdClearDesc: string
-      CmdExitDesc:  string
-      HelpHeader:   string }
+      CmdHelpDesc:       string
+      CmdClearDesc:      string
+      CmdExitDesc:       string
+      CmdShortDesc:      string
+      CmdLongDesc:       string
+      HelpHeader:        string
+
+      // Verbosity feedback
+      VerbosityShortSet: string
+      VerbosityLongSet:  string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -48,7 +54,11 @@ let en : Strings =
       CmdHelpDesc           = "show this help"
       CmdClearDesc          = "clear the screen"
       CmdExitDesc           = "exit Fugue"
-      HelpHeader            = "Available slash commands:" }
+      CmdShortDesc          = "switch to brief responses"
+      CmdLongDesc           = "switch to detailed responses"
+      HelpHeader            = "Available slash commands:"
+      VerbosityShortSet     = "Brevity mode on. Responses will be concise."
+      VerbosityLongSet      = "Detail mode on. Responses will be thorough." }
 
 let ru : Strings =
     { Cancelled            = "отменено"
@@ -68,7 +78,11 @@ let ru : Strings =
       CmdHelpDesc           = "показать эту справку"
       CmdClearDesc          = "очистить экран"
       CmdExitDesc           = "выйти из Fugue"
-      HelpHeader            = "Доступные команды:" }
+      CmdShortDesc          = "переключиться на краткие ответы"
+      CmdLongDesc           = "переключиться на подробные ответы"
+      HelpHeader            = "Доступные команды:"
+      VerbosityShortSet     = "Режим краткости включён. Ответы будут краткими."
+      VerbosityLongSet      = "Режим подробности включён. Ответы будут развёрнутыми." }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
 let pick (locale: string) : Strings =
