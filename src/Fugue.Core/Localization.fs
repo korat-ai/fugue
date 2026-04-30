@@ -33,6 +33,12 @@ type Strings =
       CmdOnboardDesc:    string
       HelpHeader:        string
 
+      // /issue command
+      CmdIssueDesc:  string
+      IssueNotFound: string
+      IssueFetched:  string
+      IssueUsage:    string
+
       // /model suggest
       ModelSuggestPrompt: string
       AskingModelRecommendation: string
@@ -67,6 +73,10 @@ let en : Strings =
       CmdReviewPrDesc       = "fetch PR diff and generate AI review"
       CmdOnboardDesc        = "generate developer onboarding checklist"
       HelpHeader            = "Available slash commands:"
+      CmdIssueDesc          = "fetch GitHub issue and inject context"
+      IssueNotFound         = "issue not found or gh not available: {0}"
+      IssueFetched          = "fetched issue #{0}: {1}"
+      IssueUsage            = "usage: /issue <number>"
       ModelSuggestPrompt    = "Based on our conversation so far, what Fugue model configuration would you recommend? Consider: task complexity, whether deep reasoning is needed, response speed requirements, and cost efficiency. Fugue supports any OpenAI-compatible endpoint — suggest a specific model name if appropriate."
       AskingModelRecommendation = "Asking for model recommendation…"
       ReviewPrUsage         = "Usage: /review pr <N>"
@@ -96,6 +106,10 @@ let ru : Strings =
       CmdReviewPrDesc       = "получить diff PR и сгенерировать AI-ревью"
       CmdOnboardDesc        = "сгенерировать чеклист онбординга разработчика"
       HelpHeader            = "Доступные команды:"
+      CmdIssueDesc          = "получить задачу GitHub и добавить контекст"
+      IssueNotFound         = "задача не найдена или gh недоступен: {0}"
+      IssueFetched          = "получена задача #{0}: {1}"
+      IssueUsage            = "использование: /issue <номер>"
       ModelSuggestPrompt    = "На основе нашего разговора, какую конфигурацию модели Fugue вы бы порекомендовали? Учтите: сложность задачи, необходимость глубокого рассуждения, требования к скорости ответа и эффективность по затратам. Fugue поддерживает любой OpenAI-совместимый эндпоинт — при необходимости предложите конкретное название модели."
       AskingModelRecommendation = "Запрашиваю рекомендацию по модели…"
       ReviewPrUsage         = "Использование: /review pr <N>"
