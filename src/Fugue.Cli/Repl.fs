@@ -200,9 +200,12 @@ let private expandClipboard (input: string) (strings: Strings) : string =
 type CancelSource() =
     let mutable streamCts : CancellationTokenSource option = None
     let mutable quit = false
+    let mutable childRunning = false
     member _.QuitRequested = quit
     member _.RequestQuit() = quit <- true
     member _.Token = CancellationToken.None
+    member _.EnterChild () = childRunning <- true
+    member _.ExitChild ()  = childRunning <- false
     member _.NewStreamCts() =
         let cts = new CancellationTokenSource()
         streamCts <- Some cts
@@ -216,8 +219,12 @@ type CancelSource() =
                 try cts.Cancel() with _ -> ()
                 a.Cancel <- true
             | None ->
-                quit <- true
-                a.Cancel <- true
+                if childRunning then
+                    // Child gets SIGINT via process group; suppress quit.
+                    a.Cancel <- true
+                else
+                    quit <- true
+                    a.Cancel <- true
     interface IDisposable with
         member _.Dispose() =
             streamCts |> Option.iter (fun c -> try c.Dispose() with _ -> ())
@@ -278,7 +285,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     use cancelSrc = new CancelSource()
     let handler = ConsoleCancelEventHandler(fun _ args -> cancelSrc.OnCtrlC args)
     Console.CancelKeyPress.AddHandler handler
-    let! session = agent.CreateSessionAsync(CancellationToken.None)
+    let! initialSession = agent.CreateSessionAsync(CancellationToken.None)
+    let mutable session : AgentSession | null = initialSession
     let providerName, modelName = providerInfo cfg.Provider
     DebugLog.sessionStart providerName modelName cwd
     StatusBar.start cwd cfg
@@ -286,7 +294,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
     let strings = pick cfg.Ui.Locale
     try
         while not cancelSrc.QuitRequested do
-            let! lineOpt = ReadLine.readAsync (Render.prompt cwd) strings cancelSrc.Token
+            let callbacks : ReadLine.ReadLineCallbacks = { OnClearScreen = StatusBar.refresh }
+            let! lineOpt = ReadLine.readAsync (Render.prompt cwd) strings callbacks cancelSrc.Token
             match lineOpt with
             | None ->
                 cancelSrc.RequestQuit()
@@ -299,6 +308,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 let helpItems = [ "/help",           strings.CmdHelpDesc
                                   "/ask <q>",        strings.CmdAskDesc
                                   "/clear",          strings.CmdClearDesc
+                                  "/new",             strings.CmdNewDesc
                                   "/diff",           strings.CmdDiffDesc
                                   "/init",           strings.CmdInitDesc
                                   "/git-log",        strings.CmdGitLogDesc
@@ -580,6 +590,49 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session initPrompt cfg cancelSrc
                     StatusBar.refresh ()
+            | Some s when s = "/new" ->
+                AnsiConsole.Clear()
+                match box session with
+                | :? IAsyncDisposable as d ->
+                    try do! d.DisposeAsync().AsTask() with _ -> ()
+                | _ -> ()
+                try
+                    let! newSession = agent.CreateSessionAsync(CancellationToken.None)
+                    session <- newSession
+                with ex ->
+                    session <- null
+                    AnsiConsole.Write(Render.errorLine strings ex.Message)
+                    AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "!" ->
+                let cmd = s.Substring(1).Trim()
+                if not (String.IsNullOrWhiteSpace cmd) then
+                    let shell =
+                        System.Environment.GetEnvironmentVariable "SHELL"
+                        |> Option.ofObj
+                        |> Option.filter (fun s -> s <> "")
+                        |> Option.defaultValue "/bin/sh"
+                    let psi = System.Diagnostics.ProcessStartInfo()
+                    psi.FileName <- shell
+                    psi.ArgumentList.Add "-c"
+                    psi.ArgumentList.Add cmd
+                    psi.UseShellExecute <- false
+                    psi.WorkingDirectory <- cwd
+                    use proc = new System.Diagnostics.Process()
+                    proc.StartInfo <- psi
+                    cancelSrc.EnterChild ()
+                    StatusBar.stop ()
+                    try
+                        try
+                            proc.Start() |> ignore
+                            proc.WaitForExit()
+                        with ex ->
+                            AnsiConsole.Write(Render.errorLine strings ex.Message)
+                            AnsiConsole.WriteLine()
+                    finally
+                        cancelSrc.ExitChild ()
+                        StatusBar.start cwd cfg
+                StatusBar.refresh ()
             | Some userInput ->
                 if ReadLine.hasZeroWidth userInput then
                     AnsiConsole.Write(Markup("[dim yellow]" + Markup.Escape strings.ZeroWidthWarning + "[/]"))

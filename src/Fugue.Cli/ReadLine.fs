@@ -29,7 +29,7 @@ let hasZeroWidth (s: string) = InputSanitize.hasZeroWidth s
 let normalizeInput (s: string) = InputSanitize.normalize s
 
 // Hardcoded — small list, easier than passing through state.
-let slashCommands : string list = [ "/help"; "/clear"; "/init"; "/exit"; "/diff"; "/diff --staged" ]
+let slashCommands : string list = [ "/help"; "/clear"; "/new"; "/init"; "/exit"; "/diff"; "/diff --staged" ]
 
 /// Session history (REPL is single-threaded). Not private so tests can seed entries directly.
 let historyStore = ResizeArray<string>()
@@ -51,6 +51,9 @@ let clearUndoRedo () =
 let private pushBounded (stack: ResizeArray<_>) item =
     stack.Add item
     if stack.Count > 100 then stack.RemoveAt 0
+
+type ReadLineCallbacks = { OnClearScreen: unit -> unit }
+let defaultCallbacks : ReadLineCallbacks = { OnClearScreen = ignore }
 
 /// Internal mutable line state. Public only because tests construct it directly.
 type S = {
@@ -74,6 +77,7 @@ type Action =
     | Submit of string
     | Quit
     | Wipe
+    | ClearScreen
 
 let private isCtrl (k: ConsoleKeyInfo) (key: ConsoleKey) : bool =
     k.Modifiers.HasFlag ConsoleModifiers.Control && k.Key = key
@@ -225,6 +229,9 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
         while i < s.Buffer.Count && s.Buffer.[i] <> '\n' do i <- i + 1
         s.Cursor <- i
         Continue
+    elif isCtrl k ConsoleKey.L then
+        s.ExitArmed <- false
+        ClearScreen
     elif isCtrl k ConsoleKey.Z then
         exitHistoryMode ()
         s.ExitArmed <- false
@@ -328,7 +335,7 @@ let private redraw (st: S) =
     else writeRaw "\r"
     st.RowsBelowCursor <- upBy   // save for next redraw's erase pass
 
-let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task<string option> = task {
+let readAsync (prompt: string) (strings: Strings) (callbacks: ReadLineCallbacks) (ct: CancellationToken) : Task<string option> = task {
     // Strip ANSI escapes for visible-length calc (rough — assumes only \x1b[...m sequences).
     let visLen =
         let mutable n = 0
@@ -344,6 +351,7 @@ let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task
     let slashHelp =
         [ "/help",         strings.CmdHelpDesc
           "/clear",        strings.CmdClearDesc
+          "/new",          strings.CmdNewDesc
           "/init",         strings.CmdInitDesc
           "/exit",         strings.CmdExitDesc
           "/diff",         strings.CmdDiffDesc
@@ -378,6 +386,13 @@ let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task
             match applyKey k st with
             | Continue -> redraw st
             | Wipe     -> redraw st
+            | ClearScreen ->
+                eraseRendered ()
+                writeRaw "\x1b[2J\x1b[H"
+                st.LinesRendered <- 0
+                st.RowsBelowCursor <- 0
+                callbacks.OnClearScreen ()
+                redraw st
             | Submit s ->
                 eraseRendered ()
                 let normalized = InputSanitize.normalize s
