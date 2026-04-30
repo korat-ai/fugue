@@ -9,9 +9,9 @@ open System.ComponentModel
 let bash
     ([<Description("Working directory.")>] cwd: string)
     ([<Description("Command line to execute (shell syntax allowed).")>] command: string)
-    ([<Description("Timeout in milliseconds (default 120000).")>] timeoutMs: int option)
+    ([<Description("Timeout in milliseconds (default 60000 = 60s).")>] timeoutMs: int option)
     : string =
-    let timeout = timeoutMs |> Option.defaultValue 120_000
+    let timeout = timeoutMs |> Option.defaultValue 60_000
 
     let psi = ProcessStartInfo("/bin/zsh", "-lc " + "\"" + command.Replace("\"", "\\\"") + "\"")
     psi.WorkingDirectory <- cwd
@@ -34,7 +34,10 @@ let bash
 
     let finished = proc.WaitForExit timeout
     if not finished then
-        try proc.Kill(true) with _ -> ()
+        // SIGTERM the process tree first, then escalate to SIGKILL after 3s
+        try proc.Kill(entireProcessTree = true) with _ -> ()
+        if not (proc.WaitForExit 3000) then
+            try proc.Kill() with _ -> ()
         "<timeout> after " + string timeout + " ms\nstdout:\n" + string stdout + "\nstderr:\n" + string stderr
     else
         proc.WaitForExit()

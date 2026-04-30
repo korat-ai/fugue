@@ -14,6 +14,10 @@ let private jsonStr (s: string) : obj | null =
     use doc = JsonDocument.Parse(JsonSerializer.Serialize s)
     box (doc.RootElement.Clone())
 
+let private jsonInt (n: int) : obj | null =
+    use doc = JsonDocument.Parse(string n)
+    box (doc.RootElement.Clone())
+
 [<Fact>]
 let ``BashFn runs echo and returns stdout`` () =
     let fn = BashFn.create "/tmp"
@@ -29,3 +33,13 @@ let ``BashFn schema requires command`` () =
         |> Seq.map (fun e -> e.GetString())
         |> Set.ofSeq
     req |> should contain "command"
+
+[<Fact>]
+let ``BashFn timeout_ms causes timeout result`` () =
+    let fn = BashFn.create "/tmp"
+    let args = mkArgs [
+        "command",    jsonStr "sleep 5"
+        "timeout_ms", jsonInt 200
+    ]
+    let out = (fn.InvokeAsync(args, CancellationToken.None).AsTask()).Result |> string
+    out |> should haveSubstring "<timeout>"

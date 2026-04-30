@@ -7,7 +7,7 @@ let private schema = DelegatedFn.parseSchema """{
   "type":"object",
   "properties":{
     "command":    {"type":"string","description":"Shell command to run via /bin/zsh -lc"},
-    "timeout_ms": {"type":"integer","description":"Optional timeout in milliseconds"}
+    "timeout_ms": {"type":"integer","description":"Timeout in milliseconds (default 60000 = 60s). Process killed after timeout."}
   },
   "required":["command"]
 }"""

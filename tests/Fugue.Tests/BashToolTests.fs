@@ -24,3 +24,14 @@ let ``Bash reports non-zero exit code`` () =
 let ``Bash respects timeout`` () =
     let result = Fugue.Tools.BashTool.bash (Path.GetTempPath()) "sleep 5" (Some 200)
     result |> should haveSubstring "<timeout>"
+
+[<Fact>]
+let ``Bash timeout message includes elapsed ms`` () =
+    let result = Fugue.Tools.BashTool.bash (Path.GetTempPath()) "sleep 5" (Some 150)
+    result |> should haveSubstring "150 ms"
+
+[<Fact>]
+let ``Bash completes normally within explicit timeout`` () =
+    let result = Fugue.Tools.BashTool.bash (Path.GetTempPath()) "echo done" (Some 5000)
+    result |> should haveSubstring "exit_code=0"
+    result |> should haveSubstring "done"
