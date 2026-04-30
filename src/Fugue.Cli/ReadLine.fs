@@ -9,6 +9,11 @@ open Fugue.Core.Localization
 // Hardcoded — small list, easier than passing through state.
 let slashCommands : string list = [ "/help"; "/clear"; "/exit" ]
 
+let historyStore = ResizeArray<string>()
+
+/// For test isolation only.
+let clearHistory () = historyStore.Clear()
+
 /// Internal mutable line state. Public only because tests construct it directly.
 type S = {
     mutable Buffer:          ResizeArray<char>
@@ -16,6 +21,8 @@ type S = {
     mutable LinesRendered:   int
     mutable ExitArmed:       bool
     mutable RowsBelowCursor: int   // # of rows from cursor's final position down to last rendered row
+    mutable HistoryIdx:      int                        // -1 = not browsing; 0..n-1 = browsing
+    mutable SavedBuffer:     ResizeArray<char> option   // snapshot before first Up press
     PromptText:              string
     PromptVisLen:            int
     HintWhenArmed:           string
@@ -36,9 +43,26 @@ let private isCtrl (k: ConsoleKeyInfo) (key: ConsoleKey) : bool =
 let private isShift (k: ConsoleKeyInfo) (key: ConsoleKey) : bool =
     k.Modifiers.HasFlag ConsoleModifiers.Shift && k.Key = key
 
+let private prevWordStart (buf: ResizeArray<char>) (pos: int) : int =
+    let mutable i = pos - 1
+    while i >= 0 && (buf.[i] = ' ' || buf.[i] = '\t') do i <- i - 1
+    while i >= 0 && buf.[i] <> ' ' && buf.[i] <> '\t' do i <- i - 1
+    i + 1
+
+let private nextWordEnd (buf: ResizeArray<char>) (pos: int) : int =
+    let mutable i = pos
+    while i < buf.Count && (buf.[i] = ' ' || buf.[i] = '\t') do i <- i + 1
+    while i < buf.Count && buf.[i] <> ' ' && buf.[i] <> '\t' do i <- i + 1
+    i
+
 /// Pure key dispatch. Mutates `s`; returns Action telling the loop what's next.
 let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
+    let exitHistoryMode () =
+        s.HistoryIdx <- -1
+        s.SavedBuffer <- None
+
     if isCtrl k ConsoleKey.C then
+        exitHistoryMode ()
         if s.Buffer.Count = 0 && s.ExitArmed then
             Quit
         elif s.Buffer.Count = 0 then
@@ -52,39 +76,102 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
     elif isCtrl k ConsoleKey.D then
         if s.Buffer.Count = 0 then Quit
         else
+            exitHistoryMode ()
             s.ExitArmed <- false
             // delete char at cursor (bash behaviour)
             if s.Cursor < s.Buffer.Count then
                 s.Buffer.RemoveAt s.Cursor
             Continue
     elif isShift k ConsoleKey.Enter then
+        exitHistoryMode ()
         s.ExitArmed <- false
         s.Buffer.Insert(s.Cursor, '\n')
         s.Cursor <- s.Cursor + 1
         Continue
     elif k.Key = ConsoleKey.Enter then
+        exitHistoryMode ()
         s.ExitArmed <- false
         Submit (String(s.Buffer.ToArray()))
     elif k.Key = ConsoleKey.Backspace then
+        exitHistoryMode ()
         s.ExitArmed <- false
         if s.Cursor > 0 then
             s.Buffer.RemoveAt(s.Cursor - 1)
             s.Cursor <- s.Cursor - 1
         Continue
     elif k.Key = ConsoleKey.Delete then
+        exitHistoryMode ()
         s.ExitArmed <- false
         if s.Cursor < s.Buffer.Count then
             s.Buffer.RemoveAt s.Cursor
         Continue
+    elif k.Key = ConsoleKey.UpArrow then
+        s.ExitArmed <- false
+        if historyStore.Count = 0 then
+            Continue
+        else
+            if s.HistoryIdx = -1 then
+                s.SavedBuffer <- Some (ResizeArray<char>(s.Buffer))
+                s.HistoryIdx <- historyStore.Count - 1
+            elif s.HistoryIdx > 0 then
+                s.HistoryIdx <- s.HistoryIdx - 1
+            s.Buffer.Clear()
+            s.Buffer.AddRange(historyStore.[s.HistoryIdx].ToCharArray())
+            s.Cursor <- s.Buffer.Count
+            Continue
+    elif k.Key = ConsoleKey.DownArrow then
+        s.ExitArmed <- false
+        if s.HistoryIdx = -1 then
+            Continue
+        else
+            s.HistoryIdx <- s.HistoryIdx + 1
+            if s.HistoryIdx >= historyStore.Count then
+                s.HistoryIdx <- -1
+                s.Buffer.Clear()
+                match s.SavedBuffer with
+                | Some saved -> s.Buffer.AddRange(saved)
+                | None -> ()
+                s.SavedBuffer <- None
+                s.Cursor <- s.Buffer.Count
+            else
+                s.Buffer.Clear()
+                s.Buffer.AddRange(historyStore.[s.HistoryIdx].ToCharArray())
+                s.Cursor <- s.Buffer.Count
+            Continue
+    elif k.Key = ConsoleKey.LeftArrow && k.Modifiers.HasFlag ConsoleModifiers.Control then
+        exitHistoryMode ()
+        s.ExitArmed <- false
+        s.Cursor <- prevWordStart s.Buffer s.Cursor
+        Continue
+    elif k.Key = ConsoleKey.RightArrow && k.Modifiers.HasFlag ConsoleModifiers.Control then
+        exitHistoryMode ()
+        s.ExitArmed <- false
+        s.Cursor <- nextWordEnd s.Buffer s.Cursor
+        Continue
+    elif isCtrl k ConsoleKey.W then
+        exitHistoryMode ()
+        s.ExitArmed <- false
+        if s.Cursor > 0 then
+            let mutable p = prevWordStart s.Buffer s.Cursor
+            // If everything before p is whitespace, consume it too (leading whitespace deletion)
+            let mutable j = p - 1
+            while j >= 0 && (s.Buffer.[j] = ' ' || s.Buffer.[j] = '\t') do j <- j - 1
+            if j < 0 then p <- 0
+            s.Buffer.RemoveRange(p, s.Cursor - p)
+            s.Cursor <- p
+        Continue
     elif k.Key = ConsoleKey.LeftArrow then
+        exitHistoryMode ()
         s.ExitArmed <- false
         if s.Cursor > 0 then s.Cursor <- s.Cursor - 1
         Continue
     elif k.Key = ConsoleKey.RightArrow then
+        exitHistoryMode ()
         s.ExitArmed <- false
         if s.Cursor < s.Buffer.Count then s.Cursor <- s.Cursor + 1
         Continue
     elif k.Key = ConsoleKey.Home then
+        exitHistoryMode ()
         s.ExitArmed <- false
         // beginning of current visual line (= last \n before cursor + 1, or 0)
         let mutable i = s.Cursor - 1
@@ -92,6 +179,7 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
         s.Cursor <- i + 1
         Continue
     elif k.Key = ConsoleKey.End then
+        exitHistoryMode ()
         s.ExitArmed <- false
         // end of current visual line
         let mutable i = s.Cursor
@@ -99,6 +187,7 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
         s.Cursor <- i
         Continue
     elif not (Char.IsControl k.KeyChar) then
+        exitHistoryMode ()
         s.ExitArmed <- false
         s.Buffer.Insert(s.Cursor, k.KeyChar)
         s.Cursor <- s.Cursor + 1
@@ -196,6 +285,8 @@ let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task
           LinesRendered   = 0
           ExitArmed       = false
           RowsBelowCursor = 0
+          HistoryIdx      = -1
+          SavedBuffer     = None
           PromptText      = prompt
           PromptVisLen    = visLen
           HintWhenArmed   = strings.ExitHint
@@ -220,6 +311,11 @@ let readAsync (prompt: string) (strings: Strings) (ct: CancellationToken) : Task
             | Wipe     -> redraw st
             | Submit s ->
                 eraseRendered ()
+                if not (String.IsNullOrWhiteSpace s) then
+                    if historyStore.Count = 0 || historyStore.[historyStore.Count - 1] <> s then
+                        historyStore.Add s
+                st.HistoryIdx <- -1
+                st.SavedBuffer <- None
                 result <- ValueSome (Some s)
             | Quit ->
                 eraseRendered ()
