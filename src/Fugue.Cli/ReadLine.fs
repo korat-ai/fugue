@@ -37,6 +37,21 @@ let historyStore = ResizeArray<string>()
 /// For test isolation only.
 let clearHistory () = historyStore.Clear()
 
+/// Undo/redo stacks — module-level, REPL is single-threaded.
+/// Not private so tests can inspect and seed them directly.
+let undoStack = ResizeArray<ResizeArray<char> * int>()
+let redoStack = ResizeArray<ResizeArray<char> * int>()
+
+/// For test isolation only.
+let clearUndoRedo () =
+    undoStack.Clear()
+    redoStack.Clear()
+
+/// Push item onto stack, evicting the oldest entry when the cap is exceeded.
+let private pushBounded (stack: ResizeArray<_>) item =
+    stack.Add item
+    if stack.Count > 100 then stack.RemoveAt 0
+
 /// Internal mutable line state. Public only because tests construct it directly.
 type S = {
     mutable Buffer:          ResizeArray<char>
@@ -210,9 +225,36 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
         while i < s.Buffer.Count && s.Buffer.[i] <> '\n' do i <- i + 1
         s.Cursor <- i
         Continue
+    elif isCtrl k ConsoleKey.Z then
+        exitHistoryMode ()
+        s.ExitArmed <- false
+        if undoStack.Count > 0 then
+            let snapshot = ResizeArray<char>(s.Buffer)
+            pushBounded redoStack (snapshot, s.Cursor)
+            let (prevBuf, prevCursor) = undoStack.[undoStack.Count - 1]
+            undoStack.RemoveAt(undoStack.Count - 1)
+            s.Buffer.Clear()
+            s.Buffer.AddRange prevBuf
+            s.Cursor <- prevCursor
+        Continue
+    elif isCtrl k ConsoleKey.Y then
+        exitHistoryMode ()
+        s.ExitArmed <- false
+        if redoStack.Count > 0 then
+            let snapshot = ResizeArray<char>(s.Buffer)
+            pushBounded undoStack (snapshot, s.Cursor)
+            let (nextBuf, nextCursor) = redoStack.[redoStack.Count - 1]
+            redoStack.RemoveAt(redoStack.Count - 1)
+            s.Buffer.Clear()
+            s.Buffer.AddRange nextBuf
+            s.Cursor <- nextCursor
+        Continue
     elif not (Char.IsControl k.KeyChar) then
         exitHistoryMode ()
         s.ExitArmed <- false
+        let snapshot = ResizeArray<char>(s.Buffer)
+        pushBounded undoStack (snapshot, s.Cursor)
+        redoStack.Clear()
         s.Buffer.Insert(s.Cursor, k.KeyChar)
         s.Cursor <- s.Cursor + 1
         Continue
