@@ -28,6 +28,8 @@ type Strings =
       CmdHelpDesc:  string
       CmdClearDesc: string
       CmdExitDesc:  string
+      CmdTodoDesc:  string
+      TodoNone:     string
       HelpHeader:   string }
 
 let en : Strings =
@@ -48,6 +50,8 @@ let en : Strings =
       CmdHelpDesc           = "show this help"
       CmdClearDesc          = "clear the screen"
       CmdExitDesc           = "exit Fugue"
+      CmdTodoDesc           = "scan workspace for TODO/FIXME/HACK comments"
+      TodoNone              = "no TODO/FIXME/HACK comments found in workspace"
       HelpHeader            = "Available slash commands:" }
 
 let ru : Strings =
@@ -68,6 +72,8 @@ let ru : Strings =
       CmdHelpDesc           = "показать эту справку"
       CmdClearDesc          = "очистить экран"
       CmdExitDesc           = "выйти из Fugue"
+      CmdTodoDesc           = "найти TODO/FIXME/HACK комментарии в проекте"
+      TodoNone              = "TODO/FIXME/HACK комментарии не найдены"
       HelpHeader            = "Доступные команды:" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.

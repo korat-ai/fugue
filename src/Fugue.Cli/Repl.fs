@@ -124,13 +124,60 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 AnsiConsole.WriteLine()
                 let helpItems = [ "/help",  strings.CmdHelpDesc
                                   "/clear", strings.CmdClearDesc
-                                  "/exit",  strings.CmdExitDesc ]
+                                  "/exit",  strings.CmdExitDesc
+                                  "/todo",  strings.CmdTodoDesc ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 AnsiConsole.Clear()
+                StatusBar.refresh ()
+            | Some s when s = "/todo" ->
+                let tryRun (exe: string) (args: string[]) =
+                    try
+                        let psi = System.Diagnostics.ProcessStartInfo()
+                        psi.FileName <- exe
+                        for a in args do psi.ArgumentList.Add a
+                        psi.UseShellExecute <- false
+                        psi.RedirectStandardOutput <- true
+                        psi.RedirectStandardError <- true
+                        psi.WorkingDirectory <- cwd
+                        use proc = new System.Diagnostics.Process()
+                        proc.StartInfo <- psi
+                        match proc.Start() with
+                        | false -> None
+                        | true ->
+                            let out = proc.StandardOutput.ReadToEnd()
+                            proc.WaitForExit()
+                            if proc.ExitCode = 0 && not (String.IsNullOrWhiteSpace out) then Some out
+                            elif proc.ExitCode = 1 then Some ""  // grep/rg return 1 for no matches
+                            else None
+                    with _ -> None
+                let results =
+                    match tryRun "rg" [| "--line-number"; "--with-filename"; "--no-heading";
+                                         "-e"; "TODO"; "-e"; "FIXME"; "-e"; "HACK"; "." |] with
+                    | Some r -> Some r
+                    | None ->
+                        tryRun "grep" [| "-rn"; "-E"; "TODO|FIXME|HACK"; "." |]
+                match results with
+                | None ->
+                    AnsiConsole.Write(Render.errorLine strings "rg and grep unavailable")
+                    AnsiConsole.WriteLine()
+                | Some "" ->
+                    AnsiConsole.MarkupLine("[dim]" + Markup.Escape strings.TodoNone + "[/]")
+                    AnsiConsole.WriteLine()
+                | Some output ->
+                    let lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    let truncated, note =
+                        if lines.Length > 200 then
+                            Array.take 200 lines, sprintf "\n\n[truncated — showing 200 of %d matches]" lines.Length
+                        else lines, ""
+                    let body = String.concat "\n" truncated
+                    let summary =
+                        sprintf "Found %d TODO/FIXME/HACK items in workspace:\n\n%s%s\n\nPlease review these and suggest which ones are worth addressing now."
+                            lines.Length body note
+                    do! streamAndRender agent session summary cfg cancelSrc
                 StatusBar.refresh ()
             | Some userInput ->
                 AnsiConsole.Write(Render.userMessage cfg.Ui userInput)
