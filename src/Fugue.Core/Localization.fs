@@ -207,6 +207,11 @@ type Strings =
       CmdHistoryDesc:      string
       SessionResuming:     string  // "{0}" = first sentence of last summary
 
+      // /bench command
+      CmdBenchDesc:  string
+      BenchRunning:  string   // "{0}" = attempt, "{1}" = total
+      BenchAborted:  string
+
       // /rate command
       CmdRateDesc:   string
       RateUsage:     string
@@ -340,6 +345,9 @@ let en : Strings =
       ThemeTypewriterOn     = "typewriter effect on — responses fade in line by line"
       ThemeTypewriterOff    = "typewriter effect off"
       ThemeUsage            = "usage: /theme bubbles|typewriter"
+      CmdBenchDesc          = "latency benchmark: /bench [n] — runs n probe calls and shows p50/p90/p99"
+      BenchRunning          = "run {0}/{1}…"
+      BenchAborted          = "benchmark aborted"
       CmdCompatDesc         = "show terminal capability matrix"
       CmdHistoryDesc        = "show past session summaries"
       SessionResuming       = "▸ Last session: {0}…"
@@ -473,6 +481,9 @@ let ru : Strings =
       ThemeTypewriterOn     = "эффект машинки включён — ответы появляются построчно"
       ThemeTypewriterOff    = "эффект машинки выключен"
       ThemeUsage            = "использование: /theme bubbles|typewriter"
+      CmdBenchDesc          = "бенчмарк задержки: /bench [n] — n запросов, показывает p50/p90/p99"
+      BenchRunning          = "запрос {0}/{1}…"
+      BenchAborted          = "бенчмарк прерван"
       CmdCompatDesc         = "показать матрицу возможностей терминала"
       CmdHistoryDesc        = "показать историю прошлых сессий"
       SessionResuming       = "▸ Прошлая сессия: {0}…"

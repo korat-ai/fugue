@@ -572,6 +572,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/onboard",        strings.CmdOnboardDesc
                                   "/watch <p> <cmd>", strings.CmdWatchDesc
                                   "/macro …",        strings.CmdMacroDesc
+                                  "/bench [n]",      strings.CmdBenchDesc
                                   "/compat",         strings.CmdCompatDesc
                                   "/history [n]",    strings.CmdHistoryDesc
                                   "/rate up|down [n]", strings.CmdRateDesc
@@ -854,6 +855,12 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                 let osc8       = kitty || iterm2 || wezterm
                 let ansiColor  = Render.isColorEnabled ()
                 let termW      = Console.WindowWidth
+                let inDocker   =
+                    System.IO.File.Exists "/.dockerenv"
+                    || (try
+                            let cg = System.IO.File.ReadAllText "/proc/1/cgroup"
+                            cg.Contains "docker" || cg.Contains "kubepods" || cg.Contains "containerd"
+                        with _ -> false)
                 let check ok   = if ok then "[green]✓[/]" else "[red]✗[/]"
                 if Render.isColorEnabled () then
                     let tbl = Table()
@@ -871,6 +878,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     row "Kitty protocol"   kitty      (sprintf "TERM_PROGRAM=%s" termProg)
                     row "OSC 8 hyperlinks" osc8       (if kitty then "kitty" elif iterm2 then "iTerm2" elif wezterm then "WezTerm" else "—")
                     row (sprintf "Terminal width = %d" termW) true "Console.WindowWidth"
+                    row "Docker / container" inDocker   (if inDocker then "/.dockerenv or cgroup" else "not detected")
                     AnsiConsole.Write tbl
                 else
                     let yn ok = if ok then "yes" else "no"
@@ -882,6 +890,73 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     Console.Out.WriteLine(sprintf "Kitty protocol:  %s" (yn kitty))
                     Console.Out.WriteLine(sprintf "OSC 8:           %s" (yn osc8))
                     Console.Out.WriteLine(sprintf "Terminal width:  %d" termW)
+                    Console.Out.WriteLine(sprintf "Docker:          %s" (yn inDocker))
+                StatusBar.refresh ()
+            | Some s when s = "/bench" || s.StartsWith "/bench " ->
+                let nArg = if s = "/bench" then 3 else
+                               let rest = s.Substring(6).Trim()
+                               match System.Int32.TryParse rest with
+                               | true, n when n >= 1 -> min n 10
+                               | _ -> 3
+                let probePrompt = "Reply with exactly one word: ping"
+                let ttfts = System.Collections.Generic.List<int64>()
+                let totals = System.Collections.Generic.List<int64>()
+                let mutable benchAborted = false
+                for attempt in 1..nArg do
+                    if not benchAborted then
+                        if Render.isColorEnabled () then
+                            AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(strings.BenchRunning, string attempt, string nArg))))
+                        else
+                            Console.Out.WriteLine(String.Format(strings.BenchRunning, string attempt, string nArg))
+                        try
+                            use benchCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds 30.0)
+                            let! probeSession = agent.CreateSessionAsync(benchCts.Token)
+                            let sw = System.Diagnostics.Stopwatch.StartNew()
+                            let mutable ttft = -1L
+                            let stream = Conversation.run agent probeSession probePrompt benchCts.Token
+                            let en = stream.GetAsyncEnumerator(benchCts.Token)
+                            let mutable running = true
+                            while running do
+                                let! stepped = en.MoveNextAsync().AsTask()
+                                if stepped then
+                                    match en.Current with
+                                    | Conversation.TextChunk _ ->
+                                        if ttft < 0L then ttft <- sw.ElapsedMilliseconds
+                                    | Conversation.Finished -> running <- false
+                                    | Conversation.Failed _ -> running <- false
+                                    | _ -> ()
+                                else running <- false
+                            let total = sw.ElapsedMilliseconds
+                            if ttft >= 0L then
+                                ttfts.Add ttft
+                                totals.Add total
+                        with _ ->
+                            benchAborted <- true
+                if benchAborted then
+                    AnsiConsole.Write(Render.errorLine strings strings.BenchAborted)
+                    AnsiConsole.WriteLine()
+                elif ttfts.Count > 0 then
+                    let pct (data: System.Collections.Generic.List<int64>) (p: int) =
+                        let sorted = data |> Seq.sort |> Seq.toArray
+                        sorted.[int (float (sorted.Length - 1) * float p / 100.0)]
+                    if Render.isColorEnabled () then
+                        let tbl = Table()
+                        tbl.Border <- TableBorder.Rounded
+                        tbl.AddColumn(TableColumn("[bold]Metric[/]").LeftAligned()) |> ignore
+                        tbl.AddColumn(TableColumn("[bold]TTFT[/]").RightAligned())  |> ignore
+                        tbl.AddColumn(TableColumn("[bold]Total[/]").RightAligned()) |> ignore
+                        let addRow label ttftVal totalVal =
+                            tbl.AddRow([| label; sprintf "%dms" ttftVal; sprintf "%dms" totalVal |]) |> ignore
+                        addRow "min"  (pct ttfts 0)   (pct totals 0)
+                        addRow "p50"  (pct ttfts 50)  (pct totals 50)
+                        addRow "p90"  (pct ttfts 90)  (pct totals 90)
+                        addRow "p99"  (pct ttfts 99)  (pct totals 99)
+                        addRow "max"  (pct ttfts 100) (pct totals 100)
+                        AnsiConsole.Write tbl
+                    else
+                        Console.Out.WriteLine(sprintf "%-6s  %-8s  %-8s" "metric" "TTFT" "Total")
+                        let pr label p = Console.Out.WriteLine(sprintf "%-6s  %-6dms  %-6dms" label (pct ttfts p) (pct totals p))
+                        pr "min" 0; pr "p50" 50; pr "p90" 90; pr "p99" 99; pr "max" 100
                 StatusBar.refresh ()
             | Some s when s = "/history" || s.StartsWith "/history " ->
                 let nArg = if s = "/history" then 5 else
