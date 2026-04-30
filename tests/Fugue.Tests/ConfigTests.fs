@@ -151,6 +151,109 @@ let ``loadProfile returns None when profile file does not exist`` () =
     result |> should equal (None: string option)
 
 [<Fact>]
+let ``load reads emojiMode=always from config`` () =
+    let tmpHome = IO.Path.Combine(IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    let dir = IO.Path.Combine(tmpHome, ".fugue")
+    IO.Directory.CreateDirectory dir |> ignore
+    let path = IO.Path.Combine(dir, "config.json")
+    IO.File.WriteAllText(path, """{
+        "provider":"ollama","model":"llama","apiKey":"","ollamaEndpoint":"http://localhost:11434",
+        "maxIterations":30,"ui":{"userAlignment":"left","emojiMode":"always"}
+    }""")
+    Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null)
+    Environment.SetEnvironmentVariable("OPENAI_API_KEY", null)
+    Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    match load [||] with
+    | Ok cfg -> cfg.Ui.EmojiMode |> should equal "always"
+    | Error e -> failwithf "expected Ok, got %A" e
+
+[<Fact>]
+let ``load reads emojiMode=never from config`` () =
+    let tmpHome = IO.Path.Combine(IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    let dir = IO.Path.Combine(tmpHome, ".fugue")
+    IO.Directory.CreateDirectory dir |> ignore
+    let path = IO.Path.Combine(dir, "config.json")
+    IO.File.WriteAllText(path, """{
+        "provider":"ollama","model":"llama","apiKey":"","ollamaEndpoint":"http://localhost:11434",
+        "maxIterations":30,"ui":{"userAlignment":"left","emojiMode":"never"}
+    }""")
+    Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null)
+    Environment.SetEnvironmentVariable("OPENAI_API_KEY", null)
+    Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    match load [||] with
+    | Ok cfg -> cfg.Ui.EmojiMode |> should equal "never"
+    | Error e -> failwithf "expected Ok, got %A" e
+
+[<Fact>]
+let ``load defaults emojiMode=auto when field absent`` () =
+    let tmpHome = IO.Path.Combine(IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    let dir = IO.Path.Combine(tmpHome, ".fugue")
+    IO.Directory.CreateDirectory dir |> ignore
+    let path = IO.Path.Combine(dir, "config.json")
+    IO.File.WriteAllText(path, """{
+        "provider":"ollama","model":"llama","apiKey":"","ollamaEndpoint":"http://localhost:11434",
+        "maxIterations":30,"ui":{"userAlignment":"left"}
+    }""")
+    Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null)
+    Environment.SetEnvironmentVariable("OPENAI_API_KEY", null)
+    Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    match load [||] with
+    | Ok cfg -> cfg.Ui.EmojiMode |> should equal "auto"
+    | Error e -> failwithf "expected Ok, got %A" e
+
+[<Fact>]
+let ``saveToFile round-trips emojiMode=never`` () =
+    let tmpHome = IO.Path.Combine(IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    IO.Directory.CreateDirectory tmpHome |> ignore
+    Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null)
+    Environment.SetEnvironmentVariable("OPENAI_API_KEY", null)
+    Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    let cfg = { Provider = Anthropic("key", "model"); SystemPrompt = None; ProfileContent = None
+                MaxIterations = 10; MaxTokens = None; BaseUrl = None
+                Ui = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false; Theme = ""; EmojiMode = "never" } }
+    saveToFile cfg
+    match load [||] with
+    | Ok loaded -> loaded.Ui.EmojiMode |> should equal "never"
+    | Error e -> failwithf "expected Ok, got %A" e
+
+[<Fact>]
+let ``saveToFile omits emojiMode when auto (default)`` () =
+    let tmpHome = IO.Path.Combine(IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    IO.Directory.CreateDirectory tmpHome |> ignore
+    Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null)
+    Environment.SetEnvironmentVariable("OPENAI_API_KEY", null)
+    Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    let cfg = { Provider = Anthropic("key", "model"); SystemPrompt = None; ProfileContent = None
+                MaxIterations = 10; MaxTokens = None; BaseUrl = None
+                Ui = { UserAlignment = Left; Locale = "en"; PromptTemplate = "♩ "; Bell = false; Theme = ""; EmojiMode = "auto" } }
+    saveToFile cfg
+    let json = IO.File.ReadAllText(IO.Path.Combine(tmpHome, ".fugue", "config.json"))
+    json.Contains "emojiMode" |> should equal false
+
+[<Fact>]
+let ``load treats unknown emojiMode value as auto`` () =
+    let tmpHome = IO.Path.Combine(IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    let dir = IO.Path.Combine(tmpHome, ".fugue")
+    IO.Directory.CreateDirectory dir |> ignore
+    let path = IO.Path.Combine(dir, "config.json")
+    IO.File.WriteAllText(path, """{
+        "provider":"ollama","model":"llama","apiKey":"","ollamaEndpoint":"http://localhost:11434",
+        "maxIterations":30,"ui":{"userAlignment":"left","emojiMode":"bogus"}
+    }""")
+    Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null)
+    Environment.SetEnvironmentVariable("OPENAI_API_KEY", null)
+    Environment.SetEnvironmentVariable("FUGUE_PROVIDER", null)
+    Environment.SetEnvironmentVariable("HOME", tmpHome)
+    match load [||] with
+    | Ok cfg -> cfg.Ui.EmojiMode |> should equal "auto"
+    | Error e -> failwithf "expected Ok, got %A" e
+
+[<Fact>]
 let ``AppConfig ProfileContent is None after load when no profile passed`` () =
     let tmpHome = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
     Directory.CreateDirectory tmpHome |> ignore
