@@ -85,6 +85,7 @@ let private formatElapsed (e: TimeSpan) =
 
 let private renderToolBody (output: string) : IRenderable =
     let w = max 20 (termWidth () - 4)  // 2 col PadLeft + 2 col margin
+    let maxLines = if Console.WindowHeight < 24 then 10 else 20
     if colorEnabled then
         if DiffRender.looksLikeDiff output then DiffRender.toRenderable output
         elif output.Contains "```" || output.Contains "**" || output.StartsWith "#" then
@@ -92,18 +93,18 @@ let private renderToolBody (output: string) : IRenderable =
         else
             let wrapped = output.Split('\n') |> Array.collect (softWrap w >> List.toArray)
             let trimmed =
-                if wrapped.Length > 20 then
-                    Array.append (Array.truncate 20 wrapped)
-                        [| sprintf "+ %d more lines" (wrapped.Length - 20) |]
+                if wrapped.Length > maxLines then
+                    Array.append (Array.truncate maxLines wrapped)
+                        [| sprintf "+ %d more lines" (wrapped.Length - maxLines) |]
                 else wrapped
             let rows = trimmed |> Array.map (fun l -> Markup(sprintf "[dim]%s[/]" (Markup.Escape l)) :> IRenderable)
             Padder(Rows(rows)).PadLeft(2) :> _
     else
         let wrapped = output.Split('\n') |> Array.collect (softWrap w >> List.toArray)
         let trimmed =
-            if wrapped.Length > 20 then
-                Array.append (Array.truncate 20 wrapped)
-                    [| sprintf "+ %d more lines" (wrapped.Length - 20) |]
+            if wrapped.Length > maxLines then
+                Array.append (Array.truncate maxLines wrapped)
+                    [| sprintf "+ %d more lines" (wrapped.Length - maxLines) |]
             else wrapped
         Padder(Rows(trimmed |> Array.map (fun l -> Text(l) :> IRenderable))).PadLeft(2) :> _
 

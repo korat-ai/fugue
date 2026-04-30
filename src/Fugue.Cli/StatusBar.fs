@@ -13,6 +13,7 @@ let private writeRaw (s: string) =
 let mutable private cwd: string = "."
 let mutable private cfg: AppConfig option = None
 let mutable private active = false
+let mutable private compactMode = false
 let mutable private branchCache : string * DateTime = "", DateTime.MinValue
 let mutable private streamingSince : DateTime option = None
 let mutable private spinnerFrame  = 0
@@ -106,7 +107,7 @@ let stopStreaming () =
     | None   -> ()
 
 let refresh () =
-    if not active || not (Render.isColorEnabled ()) then () else
+    if not active || compactMode || not (Render.isColorEnabled ()) then () else
     let height = Console.WindowHeight
     let strings =
         match cfg with
@@ -146,21 +147,26 @@ let start (initialCwd: string) (initialCfg: AppConfig) : unit =
     cfg <- Some initialCfg
     active <- true
     onTick <- refresh
-    // reserve two bottom lines: emit two newlines, then set scroll region 1..(h-2)
     let height = Console.WindowHeight
-    Console.WriteLine()
-    Console.WriteLine()
-    writeRaw ("\x1b[1;" + string (height - 2) + "r")
-    writeRaw ("\x1b[" + string (height - 2) + ";1H")
-    refresh ()
+    let width = Console.WindowWidth
+    compactMode <- height < 24 || width < 60
+    if not compactMode then
+        // reserve two bottom lines: emit two newlines, then set scroll region 1..(h-2)
+        Console.WriteLine()
+        Console.WriteLine()
+        writeRaw ("\x1b[1;" + string (height - 2) + "r")
+        writeRaw ("\x1b[" + string (height - 2) + ";1H")
+        refresh ()
 
 let stop () : unit =
     if not active || not (Render.isColorEnabled ()) then () else
-    let height = Console.WindowHeight
-    writeRaw "\x1b[r"          // reset scroll region
-    writeRaw ("\x1b[" + string (height - 1) + ";1H")
-    writeRaw "\x1b[2K"
-    writeRaw ("\x1b[" + string height + ";1H")
-    writeRaw "\x1b[2K"
-    writeRaw "\x1b[u"
+    if not compactMode then
+        let height = Console.WindowHeight
+        writeRaw "\x1b[r"          // reset scroll region
+        writeRaw ("\x1b[" + string (height - 1) + ";1H")
+        writeRaw "\x1b[2K"
+        writeRaw ("\x1b[" + string height + ";1H")
+        writeRaw "\x1b[2K"
+        writeRaw "\x1b[u"
     active <- false
+    compactMode <- false
