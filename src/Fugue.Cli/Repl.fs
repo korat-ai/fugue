@@ -789,7 +789,10 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/translate comments <file>","translate code comments to English"
                                   "/port <file> [lang]",       "idiomatic cross-language code translation"
                                   "/scaffold <type> <name>",   "language-aware project scaffolding"
-                                  "/complexity [file/dir]",    "cyclomatic complexity analysis and refactoring hints" ]
+                                  "/complexity [file/dir]",    "cyclomatic complexity analysis and refactoring hints"
+                                  "/breaking-changes <args>",  "detect breaking API changes and list call sites"
+                                  "/idiomatic <file>",         "suggest idiomatic style improvements for the language"
+                                  "/incremental <desc>",       "add a new function in-place without rewriting files" ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
@@ -2269,6 +2272,45 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.Write(Render.userMessage cfg.Ui ("/summarize " + rawArg) 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session summarizePrompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/breaking-changes " || s = "/breaking-changes" ->
+                // /breaking-changes <old-file> <new-file> — scan for breaking changes
+                let arg = if s = "/breaking-changes" then "" else s.Substring("/breaking-changes ".Length).Trim()
+                if arg = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /breaking-changes <old-signature-file-or-symbol> <new-version>[/]")
+                    AnsiConsole.WriteLine()
+                else
+                    let prompt =
+                        sprintf "Analyse the following for breaking API changes: \"%s\"\n\nCheck:\n1. Renamed or removed public functions, types, or module members.\n2. Changed parameter types or return types.\n3. Added required parameters (non-optional).\n4. Changed DU cases that callers must pattern-match on.\n5. Removed interface members.\n\nFor each breaking change:\n- Quote the old signature vs new signature.\n- List all known call sites (use Grep tool).\n- Suggest a deprecation path (default argument, type alias, or wrapper).\n\nUse Read/Grep tools to discover call sites." arg
+                    AnsiConsole.Write(Render.userMessage cfg.Ui "/breaking-changes" 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/idiomatic " || s = "/idiomatic" ->
+                // /idiomatic [file] — post-generation idiomatic rewrite suggestion
+                let arg = if s = "/idiomatic" then "" else s.Substring("/idiomatic ".Length).Trim()
+                if arg = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /idiomatic <file>[/]")
+                    AnsiConsole.WriteLine()
+                else
+                    let prompt =
+                        sprintf "Review \"%s\" for idiomatic style improvements.\n\nFor F#: flag non-idiomatic patterns and suggest pipe-based, DU-based, or computation-expression rewrites.\nFor Elixir: flag imperative loops (use Enum/Stream pipelines instead) and missing pattern match clauses.\nFor Kotlin: flag nullable handling that should use `?.let`/`?:` and unnecessary `!!`.\nFor TypeScript: flag mutation where `const` + spread is preferred and callback nesting that should be Promise chains.\n\nFor each suggestion: quote the original, show the idiomatic alternative, and explain why it's preferred.\n\nRead the file first, then provide structured feedback." arg
+                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/idiomatic %s" arg) 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/incremental " || s = "/incremental" ->
+                // /incremental <description> — generate only the new function and Edit it in place
+                let desc = if s = "/incremental" then "" else s.Substring("/incremental ".Length).Trim()
+                if desc = "" then
+                    AnsiConsole.Write(Markup "[dim]Usage: /incremental <description of what to add>[/]")
+                    AnsiConsole.WriteLine()
+                else
+                    let prompt =
+                        sprintf "Add the following functionality incrementally to the existing codebase: \"%s\"\n\nRules:\n1. Generate ONLY the new function(s) or type(s) — no file rewrites.\n2. Find the best insertion point using Read and Grep tools.\n3. Apply changes using the Edit tool to insert at the exact location.\n4. Do not modify existing functions unless absolutely required.\n5. Ensure the new code compiles by running `dotnet build --no-restore` after editing." desc
+                    AnsiConsole.Write(Render.userMessage cfg.Ui "/incremental" 0)
+                    AnsiConsole.WriteLine()
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/port " || s = "/port" ->
                 // /port <file> [target-lang] — idiomatic cross-language code translation
