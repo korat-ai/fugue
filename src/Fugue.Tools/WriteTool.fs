@@ -17,6 +17,7 @@ let write
         raise (UnauthorizedAccessException(sprintf "path outside working directory: %s" path))
     let dir = Path.GetDirectoryName full |> Option.ofObj |> Option.defaultValue "."
     if dir <> "." || not (Directory.Exists dir) then Directory.CreateDirectory dir |> ignore
+    Fugue.Core.Checkpoint.snapshot full
     File.WriteAllText(full, content, UTF8Encoding(false))
     let bytes = Encoding.UTF8.GetByteCount content
     "wrote " + string bytes + " bytes to " + full

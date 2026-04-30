@@ -34,5 +34,6 @@ let edit
             $"old_string occurs {count} times in {full}; pass replace_all=true or pick a unique snippet")
 
     let updated = original.Replace(oldString, newString)
+    Fugue.Core.Checkpoint.snapshot full
     File.WriteAllText(full, updated)
     "edited " + full + " (" + string count + " replacement" + (if count = 1 then "" else "s") + ")"

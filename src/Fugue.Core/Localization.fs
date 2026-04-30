@@ -103,6 +103,12 @@ type Strings =
       // /summarize command
       CmdSummarizeDesc: string
 
+      // /undo command
+      CmdUndoDesc:      string
+      UndoNothingToUndo: string
+      UndoRestored:     string
+      UndoDeleted:      string
+
       // /find command
       CmdFindDesc:    string
       FindNoResults:  string
@@ -177,6 +183,10 @@ let en : Strings =
       CmdTodoDesc           = "scan workspace for TODO/FIXME/HACK comments"
       TodoNone              = "no TODO/FIXME/HACK comments found in workspace"
       CmdSummarizeDesc      = "summarize a file or directory"
+      CmdUndoDesc           = "undo the most recent AI file write or edit"
+      UndoNothingToUndo     = "nothing to undo"
+      UndoRestored          = "restored"
+      UndoDeleted           = "deleted (was new file)"
       CmdFindDesc           = "fuzzy-search workspace files by name or content"
       FindNoResults         = "no matches"
       FindInjectHint        = "type @<path> to inject a file into your next prompt"
@@ -244,6 +254,10 @@ let ru : Strings =
       CmdTodoDesc           = "найти TODO/FIXME/HACK комментарии в проекте"
       TodoNone              = "TODO/FIXME/HACK комментарии не найдены"
       CmdSummarizeDesc      = "резюме файла или директории"
+      CmdUndoDesc           = "отменить последнее изменение файла ИИ"
+      UndoNothingToUndo     = "нечего отменять"
+      UndoRestored          = "восстановлен"
+      UndoDeleted           = "удалён (был новым файлом)"
       CmdFindDesc           = "нечёткий поиск файлов по имени или содержимому"
       FindNoResults         = "совпадений не найдено"
       FindInjectHint        = "введите @<путь> чтобы добавить файл в следующее сообщение"

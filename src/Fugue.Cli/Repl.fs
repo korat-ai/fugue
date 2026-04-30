@@ -367,6 +367,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/clear-history",   strings.CmdClearHistoryDesc
                                   "/tools",           strings.CmdToolsDesc
                                   "/todo",            strings.CmdTodoDesc
+                                  "/undo",            strings.CmdUndoDesc
                                   "/find <query>",    strings.CmdFindDesc
                                   "/summarize <p>",   strings.CmdSummarizeDesc
                                   "/new",             strings.CmdNewDesc
@@ -752,6 +753,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.Write(Render.errorLine strings ex.Message)
                     AnsiConsole.WriteLine()
                 turnNumber <- 0
+                Fugue.Core.Checkpoint.clear ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "!" ->
                 let cmd = s.Substring(1).Trim()
@@ -792,6 +794,16 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 AnsiConsole.Write(Render.userMessage cfg.Ui "/summary" 0)
                 AnsiConsole.WriteLine()
                 do! streamAndRender agent session summaryPrompt cfg cancelSrc
+                StatusBar.refresh ()
+            | Some s when s = "/undo" ->
+                match Fugue.Core.Checkpoint.undo () with
+                | Fugue.Core.Checkpoint.NothingToUndo ->
+                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.UndoNothingToUndo))
+                | Fugue.Core.Checkpoint.Restored path ->
+                    AnsiConsole.MarkupLine(sprintf "[green]✓[/] %s: [dim]%s[/]" (Markup.Escape strings.UndoRestored) (Markup.Escape path))
+                | Fugue.Core.Checkpoint.Deleted path ->
+                    AnsiConsole.MarkupLine(sprintf "[yellow]✓[/] %s: [dim]%s[/]" (Markup.Escape strings.UndoDeleted) (Markup.Escape path))
+                AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/todo" ->
                 let tryRun (exe: string) (args: string[]) =
