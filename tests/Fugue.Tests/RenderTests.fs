@@ -75,3 +75,12 @@ let ``toolBullet failed shows elapsed`` () =
     let out = toolBullet strings state |> toStr
     out |> should haveSubstring "Bash"
     out |> should haveSubstring "5ms"
+
+[<Fact>]
+let ``toolBullet failed suppresses stack trace`` () =
+    let s = pick "en"
+    let raw = "File not found: foo.txt\n   at System.IO.File.ReadAllText(String path)\n   at Fugue.Tools.ReadTool.run()"
+    let state = Failed("Read", "foo.txt", raw, System.TimeSpan.FromMilliseconds 1.0)
+    let out = toolBullet s state |> toStr
+    out |> should haveSubstring "File not found"
+    out |> should not' (haveSubstring "at System.IO")
