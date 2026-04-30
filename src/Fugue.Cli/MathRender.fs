@@ -157,8 +157,9 @@ let private subMap =
     ]
 
 /// Replace ^X and _X sequences (single char or {group}) with super/subscript chars.
-/// Only processes single-character targets outside braces; {group} is left as (group)
-/// with a super/sub indicator when no per-char map exists.
+/// Single chars that have a Unicode super/sub form are emitted directly.
+/// Braced groups where all chars map are emitted char-by-char.
+/// Braced groups with unmapped chars are wrapped as ^(inner) or _(inner).
 let private replaceScripts (s: string) : string =
     let sb = System.Text.StringBuilder(s.Length)
     let mutable i = 0
@@ -177,12 +178,15 @@ let private replaceScripts (s: string) : string =
                     elif s.[j] = '}' then depth <- depth - 1
                     j <- j + 1
                 let inner = s.[i + 2 .. j - 2]
-                // Try to map every char; if all map, emit directly; else wrap
+                // Try to map every char; if all map, emit directly; else wrap with indicator
                 let allMap = inner |> Seq.forall (fun ch -> map.ContainsKey(ch))
                 if allMap then
                     for ch in inner do sb.Append(map.[ch]) |> ignore
                 else
+                    sb.Append(c)     |> ignore   // ^ or _
+                    sb.Append('(')   |> ignore
                     sb.Append(inner) |> ignore
+                    sb.Append(')')   |> ignore
                 i <- j
             else
                 let mutable found = false

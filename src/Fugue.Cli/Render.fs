@@ -144,6 +144,9 @@ let private renderToolBody (output: string) : IRenderable =
         elif output.Contains "```" || output.Contains "**" || output.StartsWith "#" then
             MarkdownRender.toRenderable output
         else
+        match StackTraceRender.tryRender output with
+        | Some r -> r
+        | None ->
             let wrapped = output.Split('\n') |> Array.collect (softWrap w >> List.toArray)
             let trimmed =
                 if wrapped.Length > maxLines then

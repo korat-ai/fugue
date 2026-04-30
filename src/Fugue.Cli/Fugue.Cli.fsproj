@@ -34,6 +34,7 @@
     <Compile Include="MathRender.fs" />
     <Compile Include="MarkdownRender.fs" />
     <Compile Include="DiffRender.fs" />
+    <Compile Include="StackTraceRender.fs" />
     <Compile Include="Render.fs" />
     <Compile Include="StatusBar.fs" />
     <Compile Include="FileWatcher.fs" />
