@@ -32,7 +32,7 @@ type DryRunFunction(inner: AIFunction) =
                     first <- false
                 sb.ToString()
             with _ -> "…"
-        let preview = sprintf "[dry-run] #%d %s(%s)" callCount inner.Name argStr
+        let preview = $"[dry-run] #{callCount} {inner.Name}({argStr})"
         ValueTask<obj | null>(Task.FromResult<obj | null>(box preview))
 
 /// Wrap all tools for dry-run mode.

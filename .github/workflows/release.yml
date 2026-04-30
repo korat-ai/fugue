@@ -181,4 +181,6 @@ jobs:
           brew install fugue
 
       - name: Smoke test
-        run: fugue --version
+        run: |
+          fugue --version
+          fugue --help

@@ -37,18 +37,19 @@ let rec private renderInline (sb: StringBuilder) (inl: Inline) : unit =
             | 1 -> "italic"
             | 2 -> "bold"
             | _ -> "bold italic"
-        sb.Append(sprintf "[%s]" tag) |> ignore
+        sb.Append($"[{tag}]") |> ignore
         for child in (em :> seq<Inline>) do renderInline sb child
         sb.Append "[/]" |> ignore
     | :? CodeInline as ci ->
         let color = if activeTheme = "nocturne" then "#4a90d9" else "teal"
-        sb.Append(sprintf "[%s]%s[/]" color (escape ci.Content)) |> ignore
+        sb.Append($"[{color}]{escape ci.Content}[/]") |> ignore
     | :? LinkInline as li ->
         let label =
             let inner = StringBuilder()
             for child in (li :> seq<Inline>) do renderInline inner child
             inner.ToString()
-        sb.Append(sprintf "[link=%s]%s[/]" (escape (li.Url |> Option.ofObj |> Option.defaultValue "")) label) |> ignore
+        let url = li.Url |> Option.ofObj |> Option.defaultValue ""
+        sb.Append($"[link={escape url}]{label}[/]") |> ignore
     | :? LineBreakInline ->
         sb.Append '\n' |> ignore
     | :? ContainerInline as ci ->
@@ -81,7 +82,7 @@ let rec private renderBlock (block: Block) : IRenderable =
                 | 2 -> "bold"
                 | _ -> "bold dim"
         let body = inlineToMarkupOpt h.Inline
-        Markup(sprintf "[%s]%s[/]" style body) :> IRenderable
+        Markup($"[{style}]{body}[/]") :> IRenderable
     | :? ParagraphBlock as p ->
         Markup(inlineToMarkupOpt p.Inline) :> IRenderable
     | :? FencedCodeBlock as f ->
@@ -105,12 +106,12 @@ let rec private renderBlock (block: Block) : IRenderable =
             |> String.concat "\n"
         let codeBlock = Padder(Markup(body)).PadLeft(2) :> IRenderable
         if lang <> "" then
-            let badge = Markup(sprintf "[dim]╭─ %s ─[/]" (escape lang)) :> IRenderable
+            let badge = Markup($"[dim]╭─ {escape lang} ─[/]") :> IRenderable
             Rows([| badge; codeBlock |]) :> IRenderable
         else codeBlock
     | :? Markdig.Syntax.CodeBlock as c ->
         let txt = c.Lines.ToString()
-        Padder(Markup(sprintf "[dim]%s[/]" (escape txt))).PadLeft(2) :> IRenderable
+        Padder(Markup($"[dim]{escape txt}[/]")).PadLeft(2) :> IRenderable
     | :? Markdig.Syntax.QuoteBlock as q ->
         let inner =
             q

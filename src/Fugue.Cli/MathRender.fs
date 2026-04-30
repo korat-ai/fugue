@@ -126,11 +126,11 @@ let private replaceFrac (s: string) : string =
                         k <- k + 1
                     let denEnd = k - 1
                     let denominator = s.[denStart .. denEnd - 1]
-                    acc.Append(sprintf "(%s/%s)" numerator denominator) |> ignore
+                    acc.Append($"({numerator}/{denominator})") |> ignore
                     loop acc k
                 else
                     // Malformed — emit as-is starting from numStart
-                    acc.Append(sprintf "(%s/...)" numerator) |> ignore
+                    acc.Append($"({numerator}/...)") |> ignore
                     loop acc j
     loop (System.Text.StringBuilder()) 0
 

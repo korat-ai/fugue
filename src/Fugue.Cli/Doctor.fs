@@ -13,7 +13,7 @@ let private checkShell () =
     let shell = Environment.GetEnvironmentVariable "SHELL" |> Option.ofObj |> Option.defaultValue ""
     if shell = "" then Fail "SHELL not set"
     elif File.Exists shell then Pass shell
-    else Fail (sprintf "%s not found" shell)
+    else Fail $"{shell} not found"
 
 let private checkGit () =
     let psi = ProcessStartInfo("git", "--version")
@@ -31,8 +31,8 @@ let private checkGit () =
     with _ -> Fail "git not found in PATH"
 
 let private checkCwd (cwd: string) =
-    if Directory.Exists cwd then Pass (sprintf "%s (readable)" cwd)
-    else Fail (sprintf "directory not found: %s" cwd)
+    if Directory.Exists cwd then Pass $"{cwd} (readable)"
+    else Fail $"directory not found: {cwd}"
 
 let private checkFugueMd (cwd: string) =
     if File.Exists(Path.Combine(cwd, "FUGUE.md")) then Info "found"
@@ -47,13 +47,13 @@ let private providerSummary (cfg: AppConfig) =
         match cfg.Provider with
         | Anthropic(_, model) ->
             let baseUrl = cfg.BaseUrl |> Option.defaultValue "https://api.anthropic.com"
-            sprintf "anthropic model=%s at %s" model baseUrl
+            $"anthropic model={model} at {baseUrl}"
         | OpenAI(_, model) ->
             let baseUrl = cfg.BaseUrl |> Option.defaultValue "https://api.openai.com"
-            sprintf "openai-compat model=%s at %s" model baseUrl
+            $"openai-compat model={model} at {baseUrl}"
         | Ollama(ep, model) ->
-            sprintf "ollama model=%s at %s" model (string ep)
-    sprintf "%s (%s)" displayPath providerDesc
+            $"ollama model={model} at {ep}"
+    $"{displayPath} ({providerDesc})"
 
 [<RequiresUnreferencedCode("Calls Config.load which uses STJ reflection; preserved via TrimmerRootAssembly")>]
 [<RequiresDynamicCode("Calls Config.load which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
@@ -65,9 +65,9 @@ let private checkConfig () =
     | Ok cfg ->
         Pass (providerSummary cfg)
     | Error (NoConfigFound _) ->
-        Fail (sprintf "%s not found" displayPath)
+        Fail $"{displayPath} not found"
     | Error (InvalidConfig reason) ->
-        Fail (sprintf "invalid: %s" reason)
+        Fail $"invalid: {reason}"
 
 [<RequiresUnreferencedCode("Calls Config.load which uses STJ reflection; preserved via TrimmerRootAssembly")>]
 [<RequiresDynamicCode("Calls Config.load which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
@@ -87,15 +87,12 @@ let run (cwd: string) =
         match result with
         | Pass msg ->
             AnsiConsole.MarkupLine(
-                sprintf "[green]✓[/] [bold]%s:[/] %s"
-                    (Markup.Escape name) (Markup.Escape msg))
+                $"[green]✓[/] [bold]{Markup.Escape name}:[/] {Markup.Escape msg}")
         | Info msg ->
             AnsiConsole.MarkupLine(
-                sprintf "[blue]ℹ[/] [bold]%s:[/] %s"
-                    (Markup.Escape name) (Markup.Escape msg))
+                $"[blue]ℹ[/] [bold]{Markup.Escape name}:[/] {Markup.Escape msg}")
         | Fail msg ->
             AnsiConsole.MarkupLine(
-                sprintf "[red]✗[/] [bold]%s:[/] %s"
-                    (Markup.Escape name) (Markup.Escape msg))
+                $"[red]✗[/] [bold]{Markup.Escape name}:[/] {Markup.Escape msg}")
             allPass <- false
     allPass

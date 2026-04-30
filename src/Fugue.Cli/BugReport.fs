@@ -26,26 +26,26 @@ let format (fugueVersion: string) (os: string) (provider: string) (model: string
     let sb = StringBuilder()
     let r  = redact projectRoot
     sb.AppendLine "## Environment"   |> ignore
-    sb.AppendLine(sprintf "- Fugue: `%s`" fugueVersion) |> ignore
-    sb.AppendLine(sprintf "- OS: `%s`"    os)           |> ignore
-    sb.AppendLine(sprintf "- Provider/Model: `%s` / `%s`" provider model) |> ignore
+    sb.AppendLine($"- Fugue: `{fugueVersion}`") |> ignore
+    sb.AppendLine($"- OS: `{os}`")              |> ignore
+    sb.AppendLine($"- Provider/Model: `{provider}` / `{model}`") |> ignore
     sb.AppendLine() |> ignore
     sb.AppendLine "## User prompt" |> ignore
-    sb.AppendLine(sprintf "```\n%s\n```" (r turn.UserPrompt)) |> ignore
+    sb.AppendLine($"```\n{r turn.UserPrompt}\n```") |> ignore
     sb.AppendLine() |> ignore
     if turn.ToolCalls.Length > 0 then
         sb.AppendLine "## Tool calls" |> ignore
         for (name, args, result) in turn.ToolCalls do
-            sb.AppendLine(sprintf "**%s** args: `%s`" name (r args)) |> ignore
-            sb.AppendLine(sprintf "<details><summary>Result</summary>\n\n```\n%s\n```\n</details>" (r result)) |> ignore
+            sb.AppendLine($"**{name}** args: `{r args}`") |> ignore
+            sb.AppendLine($"<details><summary>Result</summary>\n\n```\n{r result}\n```\n</details>") |> ignore
             sb.AppendLine() |> ignore
     match turn.ErrorText with
     | Some err ->
         sb.AppendLine "## Error" |> ignore
-        sb.AppendLine(sprintf "```\n%s\n```" (r err)) |> ignore
+        sb.AppendLine($"```\n{r err}\n```") |> ignore
     | None -> ()
     sb.AppendLine() |> ignore
     sb.AppendLine "## AI response (truncated to 500 chars)" |> ignore
     let trunc = if turn.AiResponse.Length > 500 then turn.AiResponse.[..499] + "…" else turn.AiResponse
-    sb.AppendLine(sprintf "```\n%s\n```" (r trunc)) |> ignore
+    sb.AppendLine($"```\n{r trunc}\n```") |> ignore
     sb.ToString()

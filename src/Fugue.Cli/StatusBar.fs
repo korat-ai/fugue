@@ -82,8 +82,8 @@ let private providerLabel (cfg: AppConfig) : string =
     | Ollama(_, m)    -> "ollama:" + friendlyModel m
 
 let internal formatElapsed (t: TimeSpan) : string =
-    if t.TotalSeconds < 60.0 then sprintf "%.1fs" t.TotalSeconds
-    else sprintf "%dm %ds" (int t.TotalMinutes) t.Seconds
+    if t.TotalSeconds < 60.0 then $"{t.TotalSeconds:F1}s"
+    else $"{int t.TotalMinutes}m {t.Seconds}s"
 
 /// Accumulate words from a user input + assistant response pair.
 let recordWords (n: int) = sessionWords <- sessionWords + n
@@ -166,7 +166,7 @@ let refresh () =
             spinnerFrame <- spinnerFrame + 1
             let dots = [| "·"; "··"; "···" |].[(spinnerFrame / 2) % 3]
             let bpm = cadenceTokPerSec ()
-            let cad = if bpm > 0 then sprintf " · ♩=%d" bpm else ""
+            let cad = if bpm > 0 then $" · ♩={bpm}" else ""
             " · " + formatElapsed elapsed, frame + " " + strings.Thinking + dots + " ", cad
         | None -> "", "", ""
     let sshBadge = if isSSH then " · SSH" else ""
@@ -184,13 +184,13 @@ let refresh () =
                     if pct >= 80 then "\x1b[31m"      // red
                     elif pct >= 50 then "\x1b[33m"    // yellow
                     else "\x1b[32m"                   // green
-                sprintf " · %sctx %d%%\x1b[0m%s" color pct dimEsc2
+                $" · {color}ctx {pct}%%\x1b[0m{dimEsc2}"
         | None -> ""
     let annotBadge =
         if annotUpCount = 0 && annotDownCount = 0 then ""
-        else sprintf " · \x1b[32m↑%d\x1b[0m%s \x1b[31m↓%d\x1b[0m%s" annotUpCount dimEsc2 annotDownCount dimEsc2
+        else $" · \x1b[32m↑{annotUpCount}\x1b[0m{dimEsc2} \x1b[31m↓{annotDownCount}\x1b[0m{dimEsc2}"
     let lowBwBadge = if lowBandwidthMode then " · \x1b[33mlow-bw\x1b[0m" + dimEsc2 else ""
-    let tmplBadge = templateName |> Option.map (fun n -> " · \x1b[36mtmpl:" + n + "\x1b[0m" + dimEsc2) |> Option.defaultValue ""
+    let tmplBadge = templateName |> Option.map (fun n -> $" · \x1b[36mtmpl:{n}\x1b[0m{dimEsc2}") |> Option.defaultValue ""
     let line2 =
         match cfg with
         | Some c ->

@@ -45,15 +45,15 @@ let tryRender (text: string) : IRenderable option =
                         if m.Success then
                             let file    = m.Groups.[1].Value
                             let lineNum = m.Groups.[2].Value
-                            let uri     = sprintf "file://%s" file
+                            let uri     = $"file://{file}"
                             let before  = line.[..line.Length - m.Value.Length - 1]
-                            sprintf "%s [link=%s]in %s:line %s[/]" (escapeMarkup before) uri (escapeMarkup file) lineNum
+                            $"{escapeMarkup before} [link={uri}]in {escapeMarkup file}:line {lineNum}[/]"
                         else escapeMarkup line
-                    if   isFrameworkFrame line then sprintf "[grey]%s[/]" linkedLine
-                    elif isAsyncFrame     line then sprintf "[dim]%s[/]" linkedLine
-                    else sprintf "[bold yellow]%s[/]" linkedLine
+                    if   isFrameworkFrame line then $"[grey]{linkedLine}[/]"
+                    elif isAsyncFrame     line then $"[dim]{linkedLine}[/]"
+                    else $"[bold yellow]{linkedLine}[/]"
                 elif line.TrimStart().StartsWith("---") then
-                    sprintf "[grey]%s[/]" (escapeMarkup line)
+                    $"[grey]{escapeMarkup line}[/]"
                 else
                     escapeMarkup line
             renderables.Add(Markup(markup) :> IRenderable)

@@ -38,7 +38,7 @@ let diffArgs (prevJson: string) (nextJson: string) : DiffLine list =
 let formatDiff (diff: DiffLine list) : string =
     diff
     |> List.map (function
-        | Added   (k, nv)      -> sprintf "+ %s: %s" k nv
-        | Removed (k, pv)      -> sprintf "- %s: %s" k pv
-        | Changed (k, pv, nv)  -> sprintf "~ %s: %s → %s" k pv nv)
+        | Added   (k, nv)      -> $"+ {k}: {nv}"
+        | Removed (k, pv)      -> $"- {k}: {pv}"
+        | Changed (k, pv, nv)  -> $"~ {k}: {pv} → {nv}")
     |> String.concat "\n"

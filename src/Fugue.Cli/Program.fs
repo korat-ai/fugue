@@ -213,11 +213,11 @@ SEE ALSO
             try
                 System.IO.Directory.CreateDirectory manDir |> ignore
                 System.IO.File.WriteAllText(manFile, manContent)
-                Console.WriteLine(sprintf "✓ Installed to %s" manFile)
+                Console.WriteLine($"✓ Installed to {manFile}")
                 Console.WriteLine "  Run: man fugue"
                 0
             with ex ->
-                Console.Error.WriteLine(sprintf "Failed to install man page (try sudo): %s" ex.Message)
+                Console.Error.WriteLine($"Failed to install man page (try sudo): {ex.Message}")
                 1
         else
             let pager =
@@ -259,10 +259,10 @@ SEE ALSO
             elif hasFile "pyproject.toml" || hasFile "setup.py" then "Python"
             else "Unknown"
         let template =
-            sprintf "# Project context\n\n## Stack\n%s\n\n## Purpose\n<!-- Describe what this project does -->\n\n## Key constraints\n<!-- Performance, security, platform, team rules -->\n\n## Common tasks\n<!-- What does the AI help you with most often? -->\n" stack
+            $"# Project context\n\n## Stack\n{stack}\n\n## Purpose\n<!-- Describe what this project does -->\n\n## Key constraints\n<!-- Performance, security, platform, team rules -->\n\n## Common tasks\n<!-- What does the AI help you with most often? -->\n"
         System.IO.File.WriteAllText(fugueMd, template)
-        Console.WriteLine(sprintf "Detected: %s" stack)
-        Console.WriteLine(sprintf "✓ Created FUGUE.md (%d bytes)" (System.IO.File.ReadAllBytes(fugueMd).Length))
+        Console.WriteLine($"Detected: {stack}")
+        Console.WriteLine($"✓ Created FUGUE.md ({System.IO.File.ReadAllBytes(fugueMd).Length} bytes)")
         // Add to .gitignore if it exists and doesn't already include it
         let gitignore = System.IO.Path.Combine(cwd, ".gitignore")
         if System.IO.File.Exists gitignore then
@@ -284,7 +284,7 @@ SEE ALSO
                 (attr.[0] :?> System.Reflection.AssemblyInformationalVersionAttribute).InformationalVersion
             else
                 match asm.GetName().Version |> Option.ofObj with
-                | Some v -> sprintf "%d.%d.%d" v.Major v.Minor v.Build
+                | Some v -> $"{v.Major}.{v.Minor}.{v.Build}"
                 | None   -> "0.0.0"
         let verbose = argv |> Array.contains "--verbose"
         if verbose then
@@ -295,15 +295,16 @@ SEE ALSO
             let home    = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
             let profDir = System.IO.Path.Combine(home, ".fugue", "profiles")
             let tmplDir = System.IO.Path.Combine(home, ".fugue", "templates")
-            Console.WriteLine(sprintf "fugue %s" ver)
-            Console.WriteLine(sprintf "  Target RID:    %s" rid)
-            Console.WriteLine(sprintf "  .NET runtime:  %s" rtVer)
-            Console.WriteLine(sprintf "  Binary:        %s" (if asmPath = "" then "(AOT native)" else asmPath))
-            Console.WriteLine(sprintf "  Config file:   %s" cfgPath)
-            Console.WriteLine(sprintf "  Profiles dir:  %s" profDir)
-            Console.WriteLine(sprintf "  Templates dir: %s" tmplDir)
+            Console.WriteLine($"fugue {ver}")
+            Console.WriteLine($"  Target RID:    {rid}")
+            Console.WriteLine($"  .NET runtime:  {rtVer}")
+            let binaryDisplay = if asmPath = "" then "(AOT native)" else asmPath
+            Console.WriteLine($"  Binary:        {binaryDisplay}")
+            Console.WriteLine($"  Config file:   {cfgPath}")
+            Console.WriteLine($"  Profiles dir:  {profDir}")
+            Console.WriteLine($"  Templates dir: {tmplDir}")
         else
-            Console.WriteLine(sprintf "fugue %s" ver)
+            Console.WriteLine($"fugue {ver}")
         0
     elif argv |> Array.contains "env" then
         let maskKey (v: string) =
@@ -314,7 +315,7 @@ SEE ALSO
             "FUGUE_NO_COLOR";   "ANTHROPIC_API_KEY"; "OPENAI_API_KEY"
             "ANTHROPIC_BASE_URL"; "OPENAI_BASE_URL";  "OLLAMA_ENDPOINT"
             "TERM";              "NO_COLOR";           "PAGER" ]
-        let header = sprintf "%-30s %-35s %s" "Variable" "Value" "Status"
+        let header = String.Format("{0,-30} {1,-35} {2}", "Variable", "Value", "Status")
         Console.WriteLine header
         Console.WriteLine(String.replicate 75 "─")
         let cfg0 = Fugue.Core.Config.load [||]
@@ -332,9 +333,9 @@ SEE ALSO
                     match cfg0, name with
                     | Ok c, "FUGUE_PROVIDER" ->
                         let cfgProv = match c.Provider with Anthropic _ -> "anthropic" | OpenAI _ -> "openai" | Ollama _ -> "ollama"
-                        sprintf "env (config: %s)" cfgProv
+                        $"env (config: {cfgProv})"
                     | _ -> "env"
-            Console.WriteLine(sprintf "%-30s %-35s %s" name display status)
+            Console.WriteLine($"{name,-30} {display,-35} {status}")
         0
     elif argv |> Array.contains "aliases" then
         let install = argv |> Array.contains "--install"
@@ -351,8 +352,8 @@ SEE ALSO
                 if System.IO.File.Exists zshrc then zshrc else bashrc
             let block = "\n" + (lines |> String.concat "\n") + "\n"
             System.IO.File.AppendAllText(shellRc, block)
-            Console.WriteLine(sprintf "✓ Appended %d aliases to %s" (lines.Length - 1) shellRc)
-            Console.WriteLine(sprintf "  Reload with: source %s" shellRc)
+            Console.WriteLine($"✓ Appended {lines.Length - 1} aliases to {shellRc}")
+            Console.WriteLine($"  Reload with: source {shellRc}")
         else
             for l in lines do Console.WriteLine l
             Console.WriteLine()
@@ -378,16 +379,16 @@ SEE ALSO
         match argv.[1] with
         | "validate" ->
             if not (System.IO.File.Exists cfgPath) then
-                Console.Error.WriteLine(sprintf "No config file at %s" cfgPath); 1
+                Console.Error.WriteLine($"No config file at {cfgPath}"); 1
             else
             match Fugue.Core.Config.load [||] with
             | Ok cfg ->
                 let prov = match cfg.Provider with
                            | Anthropic _ -> "anthropic" | OpenAI _ -> "openai" | Ollama _ -> "ollama"
-                Console.WriteLine(sprintf "✓ config.json is valid")
-                Console.WriteLine(sprintf "  provider:  %s" prov)
-                Console.WriteLine(sprintf "  model:     %s" (Fugue.Core.Config.modelDisplayName (match cfg.Provider with Anthropic(_,m)|OpenAI(_,m)|Ollama(_,m)->m)))
-                Console.WriteLine(sprintf "  path:      %s" cfgPath)
+                Console.WriteLine("✓ config.json is valid")
+                Console.WriteLine($"  provider:  {prov}")
+                Console.WriteLine($"  model:     {Fugue.Core.Config.modelDisplayName (match cfg.Provider with Anthropic(_,m)|OpenAI(_,m)|Ollama(_,m)->m)}")
+                Console.WriteLine($"  path:      {cfgPath}")
                 0
             | Error (Fugue.Core.Config.InvalidConfig reason) ->
                 // Parse the JSON ourselves and give detailed hints.
@@ -399,17 +400,17 @@ SEE ALSO
                     match str "provider" with
                     | None -> errors <- errors @ ["[provider] missing — set to \"anthropic\", \"openai\", or \"ollama\""]
                     | Some p when p <> "anthropic" && p <> "openai" && p <> "ollama" ->
-                        errors <- errors @ [sprintf "[provider] \"%s\" is not valid — use: anthropic, openai, ollama" p]
+                        errors <- errors @ [$"[provider] \"{p}\" is not valid — use: anthropic, openai, ollama"]
                     | _ -> ()
                     match str "model" with
                     | None -> errors <- errors @ ["[model] missing — set to a model ID (e.g. claude-opus-4-7)"]
                     | _ -> ()
                     if errors.IsEmpty then errors <- [reason]
-                    Console.Error.WriteLine(sprintf "✗ config.json has %d error(s):" errors.Length)
-                    for e in errors do Console.Error.WriteLine(sprintf "  %s" e)
+                    Console.Error.WriteLine($"✗ config.json has {errors.Length} error(s):")
+                    for e in errors do Console.Error.WriteLine($"  {e}")
                     1
                 with _ ->
-                    Console.Error.WriteLine(sprintf "✗ %s" reason); 1
+                    Console.Error.WriteLine($"✗ {reason}"); 1
             | Error (Fugue.Core.Config.NoConfigFound _) ->
                 Console.Error.WriteLine "✗ No config found"; 1
         | "list" ->
@@ -427,7 +428,7 @@ SEE ALSO
                 use _ = doc
                 match getVal doc argv.[2] with
                 | Some v -> Console.WriteLine v; 0
-                | None -> Console.Error.WriteLine(sprintf "Key not found: %s" argv.[2]); 1
+                | None -> Console.Error.WriteLine($"Key not found: {argv.[2]}"); 1
         | "set" when argv.Length >= 4 ->
             let key   = argv.[2]
             let value = argv.[3]
@@ -440,15 +441,17 @@ SEE ALSO
             try
                 let jsonVal =
                     match System.Int32.TryParse value with
-                    | true, n -> sprintf "%d" n
+                    | true, n -> $"{n}"
                     | _ ->
                         match System.Boolean.TryParse value with
                         | true, b -> (if b then "true" else "false")
-                        | _ -> sprintf "\"%s\"" (value.Replace("\"", "\\\""))
+                        | _ ->
+                            let escaped = value.Replace("\"", "\\\"")
+                            $"\"{escaped}\""
                 // Simple regex-style replacement: if key exists, replace; else append before closing brace.
                 let escapedKey = System.Text.RegularExpressions.Regex.Escape key
-                let pattern = sprintf "\"(%s)\"\\s*:\\s*(?:\"[^\"]*\"|[^,}\\s]+)" escapedKey
-                let newPair = sprintf "\"%s\": %s" key jsonVal
+                let pattern = $"\"({escapedKey})\"\\s*:\\s*(?:\"[^\"]*\"|[^,}}\\s]+)"
+                let newPair = $"\"{key}\": {jsonVal}"
                 let newJson =
                     if System.Text.RegularExpressions.Regex.IsMatch(json, pattern) then
                         System.Text.RegularExpressions.Regex.Replace(json, pattern, newPair)
@@ -457,15 +460,15 @@ SEE ALSO
                         if trimmed.EndsWith '}' then
                             let body = trimmed.[..trimmed.Length - 2].TrimEnd()
                             let sep = if body.TrimEnd().EndsWith ',' || body.TrimEnd() = "{" then "" else ","
-                            body + sep + sprintf "\n  %s\n}" newPair
+                            $"{body}{sep}\n  {newPair}\n}}"
                         else json
                 System.IO.File.WriteAllText(cfgPath, newJson)
-                Console.WriteLine(sprintf "Set %s = %s" key value)
+                Console.WriteLine($"Set {key} = {value}")
                 0
             with ex ->
-                Console.Error.WriteLine(sprintf "Failed to set %s: %s" key ex.Message); 1
+                Console.Error.WriteLine($"Failed to set {key}: {ex.Message}"); 1
         | sub ->
-            Console.Error.WriteLine(sprintf "Unknown config subcommand: %s. Use: fugue config list | get <key> | set <key> <value>" sub)
+            Console.Error.WriteLine($"Unknown config subcommand: {sub}. Use: fugue config list | get <key> | set <key> <value>")
             1
     else
     match Fugue.Core.Config.load argv with

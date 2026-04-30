@@ -183,7 +183,7 @@ let expandAtFiles (cwd: string) (strings: Fugue.Core.Localization.Strings) (inpu
                             let text = System.IO.File.ReadAllText f
                             if text.Length > 3000 then text.[..2999] + "\n[truncated]" else text
                         with _ -> "[unreadable]"
-                    sprintf "[contents of %s]:\n%s" rel content)
+                    $"[contents of {rel}]:\n{content}")
                 |> String.concat "\n\n"
             input.Substring(0, m.Index) + injection + input.Substring(m.Index + m.Length)
     let tokens = findAtTokens input
@@ -203,22 +203,23 @@ let expandAtFiles (cwd: string) (strings: Fugue.Core.Localization.Strings) (inpu
             if not (Fugue.Tools.PathSafety.isUnder cwd fullPath) then
                 ()  // silently skip paths outside cwd
             elif not (System.IO.File.Exists fullPath) then
-                AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (System.String.Format(strings.AtFileNotFound, pathPart))))
+                AnsiConsole.MarkupLine($"[dim]{Markup.Escape (System.String.Format(strings.AtFileNotFound, pathPart))}[/]")
             else
                 try
                     let content = System.IO.File.ReadAllText fullPath
                     let truncated = content.Length > 4000
                     let body = if truncated then content.[..3999] else content
-                    let header = sprintf "[contents of %s]%s:\n" pathPart (if truncated then " " + strings.AtFileTooBig else "")
+                    let tooBig = if truncated then " " + strings.AtFileTooBig else ""
+                    let header = $"[contents of {pathPart}]{tooBig}:\n"
                     let hint =
                         match tryFindTestFile cwd fullPath with
                         | Some testRel ->
                             let msg = System.String.Format(strings.TestFileHint, testRel, testRel)
-                            sprintf "\n\n%s" msg
+                            $"\n\n{msg}"
                         | None -> ""
                     result <- result.[0 .. start - 1] + header + body + hint + result.[start + length ..]
                 with _ ->
-                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (System.String.Format(strings.AtFileNotFound, pathPart))))
+                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape (System.String.Format(strings.AtFileNotFound, pathPart))}[/]")
         result
 
 let private providerInfo (p: ProviderConfig) : string * string =
@@ -337,9 +338,9 @@ let private expandClipRing (input: string) : string =
         let mutable result = input
         // Numbered slots first to avoid partial replacement of @clip in @clip1..@clip10
         for n in ClipRing.Capacity .. -1 .. 1 do
-            let token = sprintf "@clip%d" n
+            let token = $"@clip{n}"
             if result.Contains token then
-                let replacement = ClipRing.get n |> Option.defaultValue (sprintf "[clip%d empty]" n)
+                let replacement = ClipRing.get n |> Option.defaultValue $"[clip{n} empty]"
                 let truncated = if replacement.Length > 4000 then replacement.[..3999] + " …" else replacement
                 result <- result.Replace(token, truncated)
         // Plain @clip = @clip1
@@ -425,12 +426,12 @@ let private streamAndRender
                             if not diff.IsEmpty && not zen then
                                 let formatted = ToolRetryDiff.formatDiff diff
                                 if Render.isColorEnabled () then
-                                    AnsiConsole.MarkupLine(sprintf "[dim]↻ retry diff:[/]")
+                                    AnsiConsole.MarkupLine("[dim]↻ retry diff:[/]")
                                     for line in formatted.Split('\n') do
                                         let color = if line.StartsWith "+" then "green" elif line.StartsWith "-" then "red" else "yellow"
-                                        AnsiConsole.MarkupLine(sprintf "  [%s]%s[/]" color (Markup.Escape line))
+                                        AnsiConsole.MarkupLine($"  [{color}]{Markup.Escape line}[/]")
                                 else
-                                    Console.Out.WriteLine(sprintf "↻ retry diff:\n%s" formatted)
+                                    Console.Out.WriteLine($"↻ retry diff:\n{formatted}")
                         | _ -> ()
                         // Track last accessed file for @last expansion
                         if name = "Read" || name = "Write" || name = "Edit" then
@@ -447,7 +448,7 @@ let private streamAndRender
                             if cfg.LowBandwidth && not isErr then
                                 let lines = output.Split('\n')
                                 if lines.Length > 500 then
-                                    String.concat "\n" lines.[..499] + sprintf "\n… [low-bandwidth: %d lines truncated]" (lines.Length - 500)
+                                    String.concat "\n" lines.[..499] + $"\n… [low-bandwidth: {lines.Length - 500} lines truncated]"
                                 else output
                             else output
                         let name, args, elapsed =
@@ -456,10 +457,10 @@ let private streamAndRender
                             | false, _ -> "?", "?", TimeSpan.Zero
                         // Track file edits for /activity heatmap
                         if not isErr && (name = "Write" || name = "Edit") then
-                            let key = "\"path\":"
-                            let idx = args.IndexOf key
+                            let key' = "\"path\":"
+                            let idx = args.IndexOf key'
                             if idx >= 0 then
-                                let rest = args.Substring(idx + key.Length).TrimStart()
+                                let rest = args.Substring(idx + key'.Length).TrimStart()
                                 if rest.StartsWith '"' then
                                     let endIdx = rest.IndexOf('"', 1)
                                     if endIdx > 1 then
@@ -498,7 +499,7 @@ let private streamAndRender
                             let l = line.Length
                             if l = 0 then 1 else (l + termW - 1) / termW)
                     if rawLines > 0 then
-                        Console.Out.Write(sprintf "\x1b[%dA\x1b[J" rawLines)
+                        Console.Out.Write($"\x1b[{rawLines}A\x1b[J")
                         Console.Out.Flush()
                     if Render.isTypewriterMode () then
                         // Render to ANSI string, then write line-by-line with async delay.
@@ -514,18 +515,18 @@ let private streamAndRender
                 StatusBar.recordWords wordCount
                 if wordCount >= 20 then
                     let mins = max 1 (int (Math.Round(float wordCount / 220.0)))
-                    let timeStr = if mins = 1 then "~1 min read" else sprintf "~%d min read" mins
-                    let footer = sprintf "[~%d words · %s]" wordCount timeStr
+                    let timeStr = if mins = 1 then "~1 min read" else $"~{mins} min read"
+                    let footer = $"[~{wordCount} words · {timeStr}]"
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape footer))
+                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape footer}[/]")
                     else
                         Console.Out.WriteLine footer
                 if toolCallsThisTurn >= 10 then
                     let msg = strings.ToolCallsWarning.Replace("{0}", string toolCallsThisTurn)
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine(sprintf "[dim yellow]⚠️ %s[/]" (Markup.Escape msg))
+                        AnsiConsole.MarkupLine($"[dim yellow]⚠️ {Markup.Escape msg}[/]")
                     else
-                        Console.Out.WriteLine(sprintf "⚠️ %s" msg)
+                        Console.Out.WriteLine($"⚠️ {msg}")
                 if errorToolCalls.Count > 0 then
                     lastFailedTurn <- Some { BugReport.UserPrompt = input; BugReport.ToolCalls = errorToolCalls |> Seq.toList; BugReport.AiResponse = responseText.ToString(); BugReport.ErrorText = None }
                 lastResponseWasPlan <- Fugue.Core.ConversationIntent.looksLikePlan (responseText.ToString())
@@ -587,16 +588,16 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
         let first = let i = s.IndexOf('.') in if i > 0 && i < 120 then s.[..i - 1] else s.[..min 119 (s.Length - 1)]
         let msg = strings0.SessionResuming.Replace("{0}", first)
         if Render.isColorEnabled () then
-            AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape msg))
+            AnsiConsole.MarkupLine($"[dim]{Markup.Escape msg}[/]")
         else
             Console.Out.WriteLine msg
         AnsiConsole.WriteLine())
     // Show template badge on startup
     cfg.TemplateName |> Option.iter (fun name ->
         if Render.isColorEnabled () then
-            AnsiConsole.MarkupLine(sprintf "[dim cyan]▸ template: %s[/]" (Markup.Escape name))
+            AnsiConsole.MarkupLine($"[dim cyan]▸ template: {Markup.Escape name}[/]")
         else
-            Console.Out.WriteLine(sprintf "template: %s" name)
+            Console.Out.WriteLine($"template: {name}")
         AnsiConsole.WriteLine())
     prelude cfg
     Console.Out.Write "\x1b[?2004h"   // enable bracketed paste
@@ -615,9 +616,9 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                 suspiciousPrefixes |> Array.exists (fun p -> v.StartsWith p))
         let badge = if hasSecrets then " [yellow]⚠ contains secrets[/]" else ""
         if Render.isColorEnabled () then
-            AnsiConsole.MarkupLine(sprintf "[dim]▸ .env detected (%d vars)%s — /env load to import[/]" lines.Length badge)
+            AnsiConsole.MarkupLine($"[dim]▸ .env detected ({lines.Length} vars){badge} — /env load to import[/]")
         else
-            Console.Out.WriteLine(sprintf ".env detected (%d vars) — /env load to import" lines.Length)
+            Console.Out.WriteLine($".env detected ({lines.Length} vars) — /env load to import")
         AnsiConsole.WriteLine()
 
     // Load .fugue/ignore patterns (lines starting with # are comments)
@@ -693,7 +694,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                 StatusBar.recordAnnotation rating
                 StatusBar.refresh ()
                 let sym = match rating with Fugue.Core.Annotation.Up -> "↑" | Fugue.Core.Annotation.Down -> "↓"
-                AnsiConsole.MarkupLine(sprintf "[dim]%s turn %d[/]" sym idx)
+                AnsiConsole.MarkupLine($"[dim]{sym} turn {idx}[/]")
             let callbacks : ReadLine.ReadLineCallbacks =
                 { OnClearScreen  = StatusBar.refresh
                   OnAnnotateUp   = fun () -> doAnnotate Fugue.Core.Annotation.Up
@@ -701,10 +702,10 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
             // Drain file-watch triggers from background FileSystemWatcher
             let watchTriggers = FileWatcher.drain ()
             for wcmd in watchTriggers do
-                AnsiConsole.Write(Markup(sprintf "[dim]⟳ watch → %s[/]" (Markup.Escape wcmd)))
+                AnsiConsole.Write(Markup($"[dim]⟳ watch → {Markup.Escape wcmd}[/]"))
                 AnsiConsole.WriteLine()
                 turnNumber <- turnNumber + 1
-                AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "[watch] %s" wcmd) turnNumber)
+                AnsiConsole.Write(Render.userMessage cfg.Ui $"[watch] {wcmd}" turnNumber)
                 AnsiConsole.WriteLine()
                 prelude cfg
                 do! streamAndRender agent session wcmd cfg cancelSrc zenMode
@@ -718,7 +719,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
             let! lineOpt =
                 match Macros.dequeueStep() with
                 | Some step ->
-                    AnsiConsole.Write(Markup(sprintf "[dim]▶ %s[/]" (Markup.Escape step)))
+                    AnsiConsole.Write(Markup($"[dim]▶ {Markup.Escape step}[/]"))
                     AnsiConsole.WriteLine()
                     System.Threading.Tasks.Task.FromResult(Some step)
                 | None ->
@@ -732,7 +733,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     | "n"       -> "/new"
                     | "h" | "?" -> "/help"
                     | "s"       -> "/scratch send"
-                    | rest when rest.StartsWith "e " -> rest.Substring(2).Trim() |> sprintf "@%s"
+                    | rest when rest.StartsWith "e " -> $"@{rest.Substring(2).Trim()}"
                     | _ -> s
             // Alias expansion: /aliasname → stored expansion
             let aliasExpand (s: string) =
@@ -874,7 +875,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     psi.FileName <- "git"
                     psi.ArgumentList.Add "log"
                     psi.ArgumentList.Add "--oneline"
-                    psi.ArgumentList.Add (sprintf "-%d" n)
+                    psi.ArgumentList.Add $"-{n}"
                     psi.UseShellExecute <- false
                     psi.RedirectStandardOutput <- true
                     psi.WorkingDirectory <- cwd
@@ -892,7 +893,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                 AnsiConsole.Write(Render.errorLine liveStrings liveStrings.SquashNoRepo)
                                 AnsiConsole.WriteLine()
                             else
-                                let prompt = sprintf """Here are the last %d commits to be squashed:\n\n%s\n\nPlease generate a single conventional commit message that summarizes all these changes.\nFollow the format: type(scope): description\n\nAlso show the git command to execute the squash:\n  git reset --soft HEAD~%d && git commit -m "<your message>"\n\nDo NOT run the command — just show it for the user to review and run manually.""" n out n
+                                let prompt = $"""Here are the last {n} commits to be squashed:\n\n{out}\n\nPlease generate a single conventional commit message that summarizes all these changes.\nFollow the format: type(scope): description\n\nAlso show the git command to execute the squash:\n  git reset --soft HEAD~{n} && git commit -m "<your message>"\n\nDo NOT run the command — just show it for the user to review and run manually."""
                                 do! streamAndRender agent session prompt cfg cancelSrc zenMode
                     with ex ->
                         AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
@@ -928,7 +929,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     else
                         for KeyValue(name, (lang, code, src)) in snippetStore do
                             let preview = code.Split('\n').[0].[..60].Trim()
-                            AnsiConsole.Write(Markup(sprintf "  [cyan]%s[/] [dim](%s · %s)[/]  %s" (Markup.Escape name) (Markup.Escape lang) (Markup.Escape src) (Markup.Escape preview)))
+                            AnsiConsole.Write(Markup($"  [cyan]{Markup.Escape name}[/] [dim]({Markup.Escape lang} · {Markup.Escape src})[/]  {Markup.Escape preview}"))
                             AnsiConsole.WriteLine()
                     AnsiConsole.WriteLine()
                     StatusBar.refresh ()
@@ -977,7 +978,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     | Some(lang, code, _) ->
                         AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetInjected, query)) + "[/]"))
                         AnsiConsole.WriteLine()
-                        let block = sprintf "```%s\n%s\n```" lang code
+                        let block = $"```{lang}\n{code}\n```"
                         do! streamAndRender agent session block cfg cancelSrc zenMode
                     StatusBar.refresh ()
                 | "remove" when parts.Length >= 3 ->
@@ -1003,7 +1004,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                         AnsiConsole.WriteLine()
                     else
                         for (i, (name, file, s1, e1)) in bookmarks |> List.indexed do
-                            AnsiConsole.Write(Markup(sprintf "  [cyan]%d.[/] [bold]%s[/] [dim]%s:%d-%d[/]" (i+1) (Markup.Escape name) (Markup.Escape file) s1 e1))
+                            AnsiConsole.Write(Markup($"  [cyan]{i+1}.[/] [bold]{Markup.Escape name}[/] [dim]{Markup.Escape file}:{s1}-{e1}[/]"))
                             AnsiConsole.WriteLine()
                     StatusBar.refresh ()
                 elif isRemove then
@@ -1039,7 +1040,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                     | _ -> None
                         | None ->
                             // Grep for the symbol in the workspace
-                            let grepArgs = [| "--include=*.fs"; "--include=*.cs"; "--include=*.ts"; "-rn"; sprintf "\\b%s\\b" name; cwd |]
+                            let grepArgs = [| "--include=*.fs"; "--include=*.cs"; "--include=*.ts"; "-rn"; $"\\b{name}\\b"; cwd |]
                             match runCmd "grep" grepArgs cwd with
                             | Some output ->
                                 let firstLine = output.Split('\n') |> Array.tryHead |> Option.defaultValue ""
@@ -1137,20 +1138,20 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                             let status = int resp.StatusCode
                             let statusColor = if status >= 500 then "red" elif status >= 400 then "yellow" elif status >= 200 then "green" else "dim"
                             if Render.isColorEnabled () then
-                                AnsiConsole.MarkupLine(sprintf "[bold][%s]HTTP %d %s[/][/]" statusColor status (string resp.StatusCode))
+                                AnsiConsole.MarkupLine($"[bold][{statusColor}]HTTP {status} {resp.StatusCode}[/][/]")
                             else
-                                Console.Out.WriteLine(sprintf "HTTP %d %s" status (string resp.StatusCode))
-                            let preview = if respBody.Length > 4096 then respBody.[..4095] + sprintf "\n… [%d chars total]" respBody.Length else respBody
+                                Console.Out.WriteLine($"HTTP {status} {resp.StatusCode}")
+                            let preview = if respBody.Length > 4096 then respBody.[..4095] + $"\n… [{respBody.Length} chars total]" else respBody
                             AnsiConsole.Write(Render.assistantFinal preview)
                             AnsiConsole.WriteLine()
                             if inject then
-                                let ctx = sprintf "[HTTP response from %s %s — status %d]\n%s" method' url status respBody
+                                let ctx = $"[HTTP response from {method'} {url} — status {status}]\n{respBody}"
                                 turnNumber <- turnNumber + 1
-                                AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "[injected HTTP response from %s %s]" method' url) turnNumber)
+                                AnsiConsole.Write(Render.userMessage cfg.Ui $"[injected HTTP response from {method'} {url}]" turnNumber)
                                 AnsiConsole.WriteLine()
                                 do! streamAndRender agent session ctx cfg cancelSrc zenMode
                         with ex ->
-                            AnsiConsole.Write(Render.errorLine liveStrings (sprintf "HTTP error: %s" ex.Message))
+                            AnsiConsole.Write(Render.errorLine liveStrings $"HTTP error: {ex.Message}")
                             AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/tools" ->
@@ -1191,28 +1192,29 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     tbl.AddColumn(TableColumn("[bold]Status[/]").Centered())    |> ignore
                     tbl.AddColumn(TableColumn("[dim]Source[/]").LeftAligned())  |> ignore
                     let row feat ok src =
-                        tbl.AddRow([| Markup.Escape feat; check ok; sprintf "[dim]%s[/]" (Markup.Escape src) |]) |> ignore
+                        tbl.AddRow([| Markup.Escape feat; check ok; $"[dim]{Markup.Escape src}[/]" |]) |> ignore
                     row "ANSI color"        ansiColor  "--color flag"
-                    row "True color (24-bit)" trueColor (sprintf "COLORTERM=%s" colorTerm)
-                    row "256 colors"        colors256  (sprintf "TERM=%s" term)
-                    row "UTF-8"            utf8       (sprintf "LANG=%s" (if lang <> "" then lang else lcAll))
-                    row "Emoji"            emoji      (sprintf "TERM_PROGRAM=%s" termProg)
-                    row "Kitty protocol"   kitty      (sprintf "TERM_PROGRAM=%s" termProg)
+                    row "True color (24-bit)" trueColor $"COLORTERM={colorTerm}"
+                    row "256 colors"        colors256  $"TERM={term}"
+                    let langDisplay = if lang <> "" then lang else lcAll
+                    row "UTF-8"            utf8       $"LANG={langDisplay}"
+                    row "Emoji"            emoji      $"TERM_PROGRAM={termProg}"
+                    row "Kitty protocol"   kitty      $"TERM_PROGRAM={termProg}"
                     row "OSC 8 hyperlinks" osc8       (if kitty then "kitty" elif iterm2 then "iTerm2" elif wezterm then "WezTerm" else "—")
-                    row (sprintf "Terminal width = %d" termW) true "Console.WindowWidth"
+                    row $"Terminal width = {termW}" true "Console.WindowWidth"
                     row "Docker / container" inDocker   (if inDocker then "/.dockerenv or cgroup" else "not detected")
                     AnsiConsole.Write tbl
                 else
                     let yn ok = if ok then "yes" else "no"
-                    Console.Out.WriteLine(sprintf "ANSI color:      %s" (yn ansiColor))
-                    Console.Out.WriteLine(sprintf "True color:      %s  COLORTERM=%s" (yn trueColor) colorTerm)
-                    Console.Out.WriteLine(sprintf "256 colors:      %s  TERM=%s" (yn colors256) term)
-                    Console.Out.WriteLine(sprintf "UTF-8:           %s  LANG=%s" (yn utf8) lang)
-                    Console.Out.WriteLine(sprintf "Emoji:           %s" (yn emoji))
-                    Console.Out.WriteLine(sprintf "Kitty protocol:  %s" (yn kitty))
-                    Console.Out.WriteLine(sprintf "OSC 8:           %s" (yn osc8))
-                    Console.Out.WriteLine(sprintf "Terminal width:  %d" termW)
-                    Console.Out.WriteLine(sprintf "Docker:          %s" (yn inDocker))
+                    Console.Out.WriteLine($"ANSI color:      {yn ansiColor}")
+                    Console.Out.WriteLine($"True color:      {yn trueColor}  COLORTERM={colorTerm}")
+                    Console.Out.WriteLine($"256 colors:      {yn colors256}  TERM={term}")
+                    Console.Out.WriteLine($"UTF-8:           {yn utf8}  LANG={lang}")
+                    Console.Out.WriteLine($"Emoji:           {yn emoji}")
+                    Console.Out.WriteLine($"Kitty protocol:  {yn kitty}")
+                    Console.Out.WriteLine($"OSC 8:           {yn osc8}")
+                    Console.Out.WriteLine($"Terminal width:  {termW}")
+                    Console.Out.WriteLine($"Docker:          {yn inDocker}")
                 StatusBar.refresh ()
             | Some s when s = "/bench" || s.StartsWith "/bench " ->
                 let nArg = if s = "/bench" then 3 else
@@ -1227,7 +1229,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                 for attempt in 1..nArg do
                     if not benchAborted then
                         if Render.isColorEnabled () then
-                            AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.BenchRunning, string attempt, string nArg))))
+                            AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.BenchRunning, string attempt, string nArg))}[/]")
                         else
                             Console.Out.WriteLine(String.Format(liveStrings.BenchRunning, string attempt, string nArg))
                         try
@@ -1268,7 +1270,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                         tbl.AddColumn(TableColumn("[bold]TTFT[/]").RightAligned())  |> ignore
                         tbl.AddColumn(TableColumn("[bold]Total[/]").RightAligned()) |> ignore
                         let addRow label ttftVal totalVal =
-                            tbl.AddRow([| label; sprintf "%dms" ttftVal; sprintf "%dms" totalVal |]) |> ignore
+                            tbl.AddRow([| label; $"{ttftVal}ms"; $"{totalVal}ms" |]) |> ignore
                         addRow "min"  (pct ttfts 0)   (pct totals 0)
                         addRow "p50"  (pct ttfts 50)  (pct totals 50)
                         addRow "p90"  (pct ttfts 90)  (pct totals 90)
@@ -1276,8 +1278,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                         addRow "max"  (pct ttfts 100) (pct totals 100)
                         AnsiConsole.Write tbl
                     else
-                        Console.Out.WriteLine(sprintf "%-6s  %-8s  %-8s" "metric" "TTFT" "Total")
-                        let pr label p = Console.Out.WriteLine(sprintf "%-6s  %-6dms  %-6dms" label (pct ttfts p) (pct totals p))
+                        Console.Out.WriteLine(String.Format("{0,-6}  {1,-8}  {2,-8}", "metric", "TTFT", "Total"))
+                        let pr label p = Console.Out.WriteLine($"{label,-6}  {pct ttfts p,-6}ms  {pct totals p,-6}ms")
                         pr "min" 0; pr "p50" 50; pr "p90" 90; pr "p99" 99; pr "max" 100
                 StatusBar.refresh ()
             | Some s when s = "/history" || s.StartsWith "/history " ->
@@ -1294,15 +1296,15 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     for (idx, (ts, summary)) in records |> List.mapi (fun i r -> i, r) do
                         let ago =
                             let diff = DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds ts
-                            if diff.TotalDays >= 1.0 then sprintf "%dd ago" (int diff.TotalDays)
-                            elif diff.TotalHours >= 1.0 then sprintf "%dh ago" (int diff.TotalHours)
-                            else sprintf "%dm ago" (max 1 (int diff.TotalMinutes))
+                            if diff.TotalDays >= 1.0 then $"{int diff.TotalDays}d ago"
+                            elif diff.TotalHours >= 1.0 then $"{int diff.TotalHours}h ago"
+                            else $"{max 1 (int diff.TotalMinutes)}m ago"
                         if Render.isColorEnabled () then
-                            AnsiConsole.MarkupLine(sprintf "[dim]#%d (%s)[/]" (idx + 1) ago)
+                            AnsiConsole.MarkupLine($"[dim]#{idx + 1} ({ago})[/]")
                             AnsiConsole.Write(MarkdownRender.toRenderable summary)
                             AnsiConsole.WriteLine()
                         else
-                            Console.Out.WriteLine(sprintf "#%d (%s)" (idx + 1) ago)
+                            Console.Out.WriteLine($"#{idx + 1} ({ago})")
                             Console.Out.WriteLine summary
                             Console.Out.WriteLine()
                 StatusBar.refresh ()
@@ -1320,25 +1322,25 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                         for f in files |> Array.sort do
                             let name = System.IO.Path.GetFileNameWithoutExtension f |> Option.ofObj |> Option.defaultValue ""
                             if name <> "" then
-                                AnsiConsole.MarkupLine(sprintf "  [cyan]%s[/]" (Markup.Escape name))
+                                AnsiConsole.MarkupLine($"  [cyan]{Markup.Escape name}[/]")
                 StatusBar.refresh ()
             | Some s when s = "/gen" || s.StartsWith "/gen " ->
                 let kind = (if s = "/gen" then "" else s.Substring(4)).Trim().ToLowerInvariant()
                 match kind with
                 | "uuid" | "" ->
                     let v = System.Guid.NewGuid().ToString()
-                    AnsiConsole.MarkupLine(sprintf "[green]%s[/]" v)
+                    AnsiConsole.MarkupLine($"[green]{v}[/]")
                     ClipRing.push v
                 | "ulid" ->
                     let v = generateUlid ()
-                    AnsiConsole.MarkupLine(sprintf "[green]%s[/]" v)
+                    AnsiConsole.MarkupLine($"[green]{v}[/]")
                     ClipRing.push v
                 | "nanoid" ->
                     let v = generateNanoid ()
-                    AnsiConsole.MarkupLine(sprintf "[green]%s[/]" v)
+                    AnsiConsole.MarkupLine($"[green]{v}[/]")
                     ClipRing.push v
                 | other ->
-                    AnsiConsole.MarkupLine(sprintf "[red]Unknown generator '[/][bold red]%s[/][red]'. Use: /gen uuid|ulid|nanoid[/]" (Markup.Escape other))
+                    AnsiConsole.MarkupLine($"[red]Unknown generator '[/][bold red]{Markup.Escape other}[/][red]'. Use: /gen uuid|ulid|nanoid[/]")
                 StatusBar.refresh ()
             | Some s when s = "/rate" || s.StartsWith "/rate " ->
                 let parts = (if s = "/rate" then "" else s.Substring(6)).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)
@@ -1361,11 +1363,11 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     let msg = String.Format(liveStrings.RateSaved, string targetTurn, ratingArg)
                     if Render.isColorEnabled () then
                         let color = if ratingArg = "up" then "green" else "red"
-                        AnsiConsole.MarkupLine(sprintf "[%s]%s[/]" color (Markup.Escape msg))
+                        AnsiConsole.MarkupLine($"[{color}]{Markup.Escape msg}[/]")
                     else Console.Out.WriteLine msg
                 | _ ->
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.RateUsage))
+                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.RateUsage}[/]")
                     else Console.Out.WriteLine liveStrings.RateUsage
                 StatusBar.refresh ()
             | Some s when s = "/annotate" || s.StartsWith "/annotate " ->
@@ -1391,7 +1393,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     if idx < tokens.Length then Some (String.concat " " tokens.[idx..])
                     else None
                 if rating = None && note = None then
-                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.AnnotateUsage))
+                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.AnnotateUsage}[/]")
                 else
                     let ann : Fugue.Core.Annotation.TurnAnnotation =
                         { TurnIndex   = targetTurn
@@ -1403,9 +1405,9 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                     | Some r -> StatusBar.recordAnnotation r
                     | None   -> ()
                     let ratingStr = rating |> Option.map (fun r -> match r with Fugue.Core.Annotation.Up -> " ↑" | Fugue.Core.Annotation.Down -> " ↓") |> Option.defaultValue ""
-                    let noteStr   = note |> Option.map (fun n -> sprintf " \"%s\"" n) |> Option.defaultValue ""
-                    let msg = sprintf "turn %d%s%s" targetTurn ratingStr noteStr
-                    AnsiConsole.MarkupLine(sprintf "[dim]annotated: %s[/]" (Markup.Escape msg))
+                    let noteStr   = note |> Option.map (fun n -> $" \"{n}\"") |> Option.defaultValue ""
+                    let msg = $"turn {targetTurn}{ratingStr}{noteStr}"
+                    AnsiConsole.MarkupLine($"[dim]annotated: {Markup.Escape msg}[/]")
                 StatusBar.refresh ()
             | Some s when s = "/issue" || s.StartsWith "/issue " ->
                 let rawArg = if s = "/issue" then "" else s.Substring(7).TrimStart()
@@ -1441,7 +1443,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                             else
                                 // Extract a string field from compact gh JSON output (AOT-safe, no JsonSerializer)
                                 let extractField (field: string) (json: string) =
-                                    let key = sprintf "\"%s\":" field
+                                    let key = $"\"{field}\":"
                                     let idx = json.IndexOf key
                                     if idx < 0 then ""
                                     else
@@ -1465,8 +1467,8 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                             if j < 0 then rest else rest.Substring(0, j)
                                 let title = extractField "title" output
                                 let body  = extractField "body"  output
-                                let issueContext = sprintf "Issue #%s: %s\n\n%s" rawArg title body
-                                AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.IssueFetched, rawArg, title))))
+                                let issueContext = $"Issue #{rawArg}: {title}\n\n{body}"
+                                AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.IssueFetched, rawArg, title))}[/]")
                                 AnsiConsole.WriteLine()
                                 // Best-effort branch creation
                                 let slugify (src: string) =
@@ -1478,7 +1480,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                     |> Array.truncate 5
                                     |> Array.map slugify
                                     |> String.concat "-"
-                                let branchName = sprintf "feat/issue-%s-%s" rawArg words
+                                let branchName = $"feat/issue-{rawArg}-{words}"
                                 let gitPsi = System.Diagnostics.ProcessStartInfo()
                                 gitPsi.FileName <- "git"
                                 gitPsi.ArgumentList.Add "checkout"
@@ -1493,7 +1495,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                     if gitProc.Start() then
                                         gitProc.WaitForExit()
                                         if gitProc.ExitCode = 0 then
-                                            AnsiConsole.MarkupLine(sprintf "[dim]created branch %s[/]" (Markup.Escape branchName))
+                                            AnsiConsole.MarkupLine($"[dim]created branch {Markup.Escape branchName}[/]")
                                             AnsiConsole.WriteLine()
                                 with _ -> ()   // git unavailable or not a repo — silent
                                 // Inject issue context into conversation
@@ -1537,16 +1539,17 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                           let trimmed =
                               if content.Length > 4000 then content.[..3999] + "\n...(truncated)"
                               else content
-                          yield sprintf "=== FUGUE.md ===\n%s" trimmed
+                          yield $"=== FUGUE.md ===\n{trimmed}"
                       | None -> yield "(no FUGUE.md found)"
-                      yield sprintf "=== Top-level directory contents of %s ===\n%s" cwd treeOutput ]
+                      yield $"=== Top-level directory contents of {cwd} ===\n{treeOutput}" ]
                 let onboardPrompt =
-                    sprintf """Based on the following project context, generate a developer onboarding checklist.
+                    let ctx = String.concat "\n\n" contextParts
+                    $"""Based on the following project context, generate a developer onboarding checklist.
 Include: setup steps, key files to read, how to build/test, coding conventions, and first tasks to attempt.
 
-%s
+{ctx}
 
-Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\n" contextParts)
+Please generate a clear, actionable onboarding checklist."""
                 do! streamAndRender agent session onboardPrompt cfg cancelSrc zenMode
             | Some s when s = "/review pr" || s = "/review pr " ->
                 AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrUsage + "[/]"))
@@ -1578,7 +1581,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                                 .Replace("{0}", string prNum)
                                 .Replace("{1}", titleBody)
                                 .Replace("{2}", truncatedDiff)
-                        AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "Reviewing PR #%d…" prNum) 0)
+                        AnsiConsole.Write(Render.userMessage cfg.Ui $"Reviewing PR #{prNum}…" 0)
                         AnsiConsole.WriteLine()
                         do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
@@ -1588,7 +1591,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AskUsage + "[/]"))
                     AnsiConsole.WriteLine()
                 else
-                    let augmented = sprintf "[System: answer from your training knowledge only — do not invoke any tools, do not read files, do not run commands]\n\nUser: %s" question
+                    let augmented = $"[System: answer from your training knowledge only — do not invoke any tools, do not read files, do not run commands]\n\nUser: {question}"
                     AnsiConsole.Write(Render.userMessage cfg.Ui question 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session augmented cfg cancelSrc zenMode
@@ -1628,7 +1631,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     // git diff --no-index exits 1 when files differ — that is a success case
                     let isTwoFile = match parts with [| _; _ |] -> true | _ -> false
                     if proc.ExitCode <> 0 && not (isTwoFile && proc.ExitCode = 1) then
-                        let msg = if errOut <> "" then errOut else sprintf "git diff exited %d" proc.ExitCode
+                        let msg = if errOut <> "" then errOut else $"git diff exited {proc.ExitCode}"
                         AnsiConsole.Write(Render.errorLine liveStrings msg)
                         AnsiConsole.WriteLine()
                     elif System.String.IsNullOrWhiteSpace output then
@@ -1743,11 +1746,11 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     let tmpPath = IO.Path.GetTempFileName() + ".md"
                     IO.File.WriteAllText(tmpPath, body)
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine(sprintf "[dim]Bug report saved to %s[/]" tmpPath)
-                        AnsiConsole.MarkupLine(sprintf "[dim]To file: gh issue create -R korat-ai/fugue --title '...' --body-file %s[/]" tmpPath)
+                        AnsiConsole.MarkupLine($"[dim]Bug report saved to {tmpPath}[/]")
+                        AnsiConsole.MarkupLine($"[dim]To file: gh issue create -R korat-ai/fugue --title '...' --body-file {tmpPath}[/]")
                     else
-                        Console.Out.WriteLine(sprintf "Bug report saved to %s" tmpPath)
-                        Console.Out.WriteLine(sprintf "To file: gh issue create -R korat-ai/fugue --title '...' --body-file %s" tmpPath)
+                        Console.Out.WriteLine($"Bug report saved to {tmpPath}")
+                        Console.Out.WriteLine($"To file: gh issue create -R korat-ai/fugue --title '...' --body-file {tmpPath}")
                 AnsiConsole.WriteLine()
             | Some s when s = "/summary" ->
                 let summaryPrompt =
@@ -1769,7 +1772,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         let clean = arg.TrimStart('/')
                         if clean.StartsWith "docs/" then clean else "docs/" + clean
                 let docPrompt = System.String.Format(liveStrings.DocumentPrompt, docPath)
-                AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/document %s" docPath) 0)
+                AnsiConsole.Write(Render.userMessage cfg.Ui $"/document {docPath}" 0)
                 AnsiConsole.WriteLine()
                 do! streamAndRender agent session docPrompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
@@ -1790,7 +1793,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         let bar = String.replicate barLen "█"
                         let label = System.IO.Path.GetFileName(path) |> Option.ofObj |> Option.defaultValue path
                         if Render.isColorEnabled () then
-                            AnsiConsole.MarkupLine(sprintf "  [cyan]%s[/] [dim]%s[/] [grey]%dx[/]" heat (Markup.Escape label) count)
+                            AnsiConsole.MarkupLine($"  [cyan]{heat}[/] [dim]{Markup.Escape label}[/] [grey]{count}x[/]")
                         else
                             printfn "  %s %s %dx" bar label count
                     AnsiConsole.WriteLine()
@@ -1803,37 +1806,37 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 | "record" when not (String.IsNullOrWhiteSpace arg) ->
                     if Macros.isRecording() then Macros.stopRecording() |> ignore
                     Macros.startRecording arg
-                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.MacroRecording, arg))))
+                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroRecording, arg))}[/]")
                 | "stop" ->
                     match Macros.stopRecording() with
                     | Some name ->
                         let cnt = Macros.list() |> List.tryFind (fun (n, _) -> n = name) |> Option.map snd |> Option.defaultValue 0
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.MacroSaved, name, cnt))))
+                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroSaved, name, cnt))}[/]")
                     | None ->
                         AnsiConsole.MarkupLine("[dim]no recording in progress[/]")
                 | "play" when not (String.IsNullOrWhiteSpace arg) ->
                     match Macros.list() |> List.tryFind (fun (n, _) -> n = arg) with
                     | Some (_, cnt) ->
                         if Macros.enqueuePlay arg then
-                            AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.MacroPlaying, arg, cnt))))
+                            AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroPlaying, arg, cnt))}[/]")
                         else
-                            AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.MacroNotFound, arg))))
+                            AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroNotFound, arg))}[/]")
                     | None ->
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.MacroNotFound, arg))))
+                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroNotFound, arg))}[/]")
                 | "list" | "" ->
                     let macros = Macros.list()
                     if macros.IsEmpty then
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.MacroNone))
+                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.MacroNone}[/]")
                     else
                         for (name, cnt) in macros do
-                            AnsiConsole.MarkupLine(sprintf "  [cyan]%s[/] [dim](%d steps)[/]" (Markup.Escape name) cnt)
+                            AnsiConsole.MarkupLine($"  [cyan]{Markup.Escape name}[/] [dim]({cnt} steps)[/]")
                 | "remove" when not (String.IsNullOrWhiteSpace arg) ->
                     if Macros.remove arg then
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.MacroRemoved, arg))))
+                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroRemoved, arg))}[/]")
                     else
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape (String.Format(liveStrings.MacroNotFound, arg))))
+                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroNotFound, arg))}[/]")
                 | _ ->
-                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.MacroUsage))
+                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.MacroUsage}[/]")
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/theme" ->
@@ -1843,22 +1846,22 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     Render.toggleBubbles ()
                     let on = Render.isBubblesMode ()
                     if on then
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.ThemeBubblesOn))
+                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.ThemeBubblesOn}[/]")
                     else
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.ThemeBubblesOff))
+                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.ThemeBubblesOff}[/]")
                     savedUi <- { savedUi with BubblesMode = on }
                     try Config.saveToFile { cfg with Ui = savedUi } with _ -> ()
                 | "typewriter" ->
                     Render.toggleTypewriter ()
                     let on = Render.isTypewriterMode ()
                     if on then
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.ThemeTypewriterOn))
+                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.ThemeTypewriterOn}[/]")
                     else
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.ThemeTypewriterOff))
+                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.ThemeTypewriterOff}[/]")
                     savedUi <- { savedUi with TypewriterMode = on }
                     try Config.saveToFile { cfg with Ui = savedUi } with _ -> ()
                 | _ ->
-                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.ThemeUsage))
+                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.ThemeUsage}[/]")
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/alias" ->
@@ -1870,7 +1873,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AliasNone + "[/]"))
                     else
                         for KeyValue(name, expansion) in aliasStore do
-                            AnsiConsole.Write(Markup(sprintf "  [cyan]/%s[/] [dim]→ %s[/]" (Markup.Escape name) (Markup.Escape expansion)))
+                            AnsiConsole.Write(Markup($"  [cyan]/{Markup.Escape name}[/] [dim]→ {Markup.Escape expansion}[/]"))
                             AnsiConsole.WriteLine()
                     AnsiConsole.WriteLine()
                 | "remove" when parts.Length >= 3 ->
@@ -1929,31 +1932,31 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         elif desc.Contains "every day" || desc.Contains "daily" then
                             let h = extractHour () |> Option.defaultValue 0
                             let min = extractMinute () |> Option.defaultValue 0
-                            Some (sprintf "%d %d * * *" min h)
+                            Some $"{min} {h} * * *"
                         elif desc.Contains "weekday" || desc.Contains "working day" then
                             let h = extractHour () |> Option.defaultValue 9
                             let min = extractMinute () |> Option.defaultValue 0
-                            Some (sprintf "%d %d * * 1-5" min h)
+                            Some $"{min} {h} * * 1-5"
                         elif desc.Contains "weekend" then
                             let h = extractHour () |> Option.defaultValue 10
                             let min = extractMinute () |> Option.defaultValue 0
-                            Some (sprintf "%d %d * * 0,6" min h)
+                            Some $"{min} {h} * * 0,6"
                         elif desc.Contains "every week" || (dayNames |> Array.exists (fun d -> desc.Contains d)) then
                             let dow = dayNames |> Array.tryFindIndex (fun d -> desc.Contains d) |> Option.defaultValue 1
                             let h = extractHour () |> Option.defaultValue 0
                             let min = extractMinute () |> Option.defaultValue 0
-                            Some (sprintf "%d %d * * %d" min h dow)
+                            Some $"{min} {h} * * {dow}"
                         else
                             match extractN "minute" |> Option.orElse (extractN "minutes") with
-                            | Some n -> Some (sprintf "*/%d * * * *" n)
+                            | Some n -> Some $"*/{n} * * * *"
                             | None ->
                                 match extractN "hour" |> Option.orElse (extractN "hours") with
-                                | Some n -> Some (sprintf "0 */%d * * *" n)
+                                | Some n -> Some $"0 */{n} * * *"
                                 | None -> None
                     match cronExpr with
                     | None -> AnsiConsole.MarkupLine "[red]Could not parse cron expression. Try: \"every day at 9am\", \"every 5 minutes\", \"every weekday at 17:00\"[/]"
                     | Some expr ->
-                        AnsiConsole.MarkupLine(sprintf "[bold cyan]%s[/]" (Markup.Escape expr))
+                        AnsiConsole.MarkupLine($"[bold cyan]{Markup.Escape expr}[/]")
                         // Compute next 5 fire times
                         let mutable t = DateTimeOffset.UtcNow.AddMinutes 1.0
                         let mutable count = 0
@@ -1981,7 +1984,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         AnsiConsole.MarkupLine "[dim]Next 5 fire times (UTC):[/]"
                         while count < 5 do
                             if matchField t.Minute minPart && matchField t.Hour hourPart && matchField (int t.DayOfWeek) dowPart then
-                                AnsiConsole.MarkupLine(sprintf "  [dim]%s[/]" (t.ToString "yyyy-MM-dd HH:mm"))
+                                let tStr = t.ToString("yyyy-MM-dd HH:mm")
+                                AnsiConsole.MarkupLine($"  [dim]{tStr}[/]")
                                 count <- count + 1
                             t <- t.AddMinutes 1.0
                 StatusBar.refresh ()
@@ -2010,27 +2014,27 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         if matches.Count = 0 then
                             AnsiConsole.MarkupLine "[dim]No matches[/]"
                         else
-                            AnsiConsole.MarkupLine(sprintf "[dim]%d match(es) for [/][cyan]%s[/]" matches.Count (Markup.Escape pattern))
+                            AnsiConsole.MarkupLine($"[dim]{matches.Count} match(es) for [/][cyan]{Markup.Escape pattern}[/]")
                             for m in matches do
-                                AnsiConsole.MarkupLine(sprintf "  index=[bold]%d[/] length=[bold]%d[/] value=[green]%s[/]" m.Index m.Length (Markup.Escape m.Value))
+                                AnsiConsole.MarkupLine($"  index=[bold]{m.Index}[/] length=[bold]{m.Length}[/] value=[green]{Markup.Escape m.Value}[/]")
                                 for g in rx.GetGroupNames() do
                                     if g <> "0" then
                                         let grp = m.Groups.[g]
                                         if grp.Success then
-                                            AnsiConsole.MarkupLine(sprintf "    [cyan]%s[/]=[green]%s[/]" (Markup.Escape g) (Markup.Escape grp.Value))
+                                            AnsiConsole.MarkupLine($"    [cyan]{Markup.Escape g}[/]=[green]{Markup.Escape grp.Value}[/]")
                     with ex ->
-                        AnsiConsole.MarkupLine(sprintf "[red]Regex error: %s[/]" (Markup.Escape ex.Message))
+                        AnsiConsole.MarkupLine($"[red]Regex error: {Markup.Escape ex.Message}[/]")
                 StatusBar.refresh ()
 
             | Some s when s = "/rename" || s.StartsWith "/rename " ->
                 let title = (if s = "/rename" then "" else s.Substring(7)).Trim().Trim('"').Trim('\'')
                 if String.IsNullOrWhiteSpace title then
                     match sessionTitle with
-                    | Some t -> AnsiConsole.MarkupLine(sprintf "[dim]Session title: [/][bold]%s[/]" (Markup.Escape t))
+                    | Some t -> AnsiConsole.MarkupLine($"[dim]Session title: [/][bold]{Markup.Escape t}[/]")
                     | None   -> AnsiConsole.MarkupLine "[dim]No session title set. Usage: /rename <title>[/]"
                 else
                     sessionTitle <- Some title
-                    AnsiConsole.MarkupLine(sprintf "[dim]Session renamed to: [/][bold cyan]%s[/]" (Markup.Escape title))
+                    AnsiConsole.MarkupLine($"[dim]Session renamed to: [/][bold cyan]{Markup.Escape title}[/]")
                 StatusBar.refresh ()
 
             | Some s when s = "/env" || s.StartsWith "/env " ->
@@ -2043,7 +2047,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         AnsiConsole.MarkupLine "[dim]Session env vars:[/]"
                         for name in sessionEnvVars do
                             let v = Environment.GetEnvironmentVariable name |> Option.ofObj |> Option.defaultValue ""
-                            AnsiConsole.MarkupLine(sprintf "  [cyan]%s[/]=[green]%s[/]" (Markup.Escape name) (Markup.Escape v))
+                            AnsiConsole.MarkupLine($"  [cyan]{Markup.Escape name}[/]=[green]{Markup.Escape v}[/]")
                 | cmd when cmd.StartsWith "set " ->
                     let pair = cmd.Substring(4).Trim()
                     let eqIdx = pair.IndexOf '='
@@ -2054,12 +2058,12 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         let value = pair.[eqIdx + 1..]
                         Environment.SetEnvironmentVariable(name, value)
                         sessionEnvVars <- sessionEnvVars |> Set.add name
-                        AnsiConsole.MarkupLine(sprintf "[dim]Set [cyan]%s[/]=[green]%s[/][/]" (Markup.Escape name) (Markup.Escape value))
+                        AnsiConsole.MarkupLine($"[dim]Set [cyan]{Markup.Escape name}[/]=[green]{Markup.Escape value}[/][/]")
                 | cmd when cmd.StartsWith "unset " ->
                     let name = cmd.Substring(6).Trim()
                     Environment.SetEnvironmentVariable(name, null)
                     sessionEnvVars <- sessionEnvVars |> Set.remove name
-                    AnsiConsole.MarkupLine(sprintf "[dim]Unset [cyan]%s[/][/]" (Markup.Escape name))
+                    AnsiConsole.MarkupLine($"[dim]Unset [cyan]{Markup.Escape name}[/][/]")
                 | "load" ->
                     let dotEnvPath = System.IO.Path.Combine(cwd, ".env")
                     if not (System.IO.File.Exists dotEnvPath) then
@@ -2076,9 +2080,9 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                                     Environment.SetEnvironmentVariable(name, value)
                                     sessionEnvVars <- sessionEnvVars |> Set.add name
                                     loaded <- loaded + 1
-                        AnsiConsole.MarkupLine(sprintf "[dim]Loaded %d vars from .env[/]" loaded)
+                        AnsiConsole.MarkupLine($"[dim]Loaded {loaded} vars from .env[/]")
                 | other ->
-                    AnsiConsole.MarkupLine(sprintf "[red]Unknown /env subcommand: %s. Use: /env list | /env load | /env set NAME=value | /env unset NAME[/]" (Markup.Escape other))
+                    AnsiConsole.MarkupLine($"[red]Unknown /env subcommand: {Markup.Escape other}. Use: /env list | /env load | /env set NAME=value | /env unset NAME[/]")
                 StatusBar.refresh ()
 
             | Some s when s.StartsWith "/scratch" ->
@@ -2123,7 +2127,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     for (path, cmd) in ws do
-                        AnsiConsole.Write(Markup(sprintf "  [cyan]%s[/] → [dim]%s[/]" (Markup.Escape path) (Markup.Escape cmd)))
+                        AnsiConsole.Write(Markup($"  [cyan]{Markup.Escape path}[/] → [dim]{Markup.Escape cmd}[/]"))
                         AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/unwatch " ->
@@ -2144,7 +2148,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     let cmd  = rest.Substring(spaceIdx + 1).Trim()
                     let absPath = System.IO.Path.GetFullPath(path)
                     if not (System.IO.File.Exists absPath) then
-                        AnsiConsole.Write(Markup(sprintf "[dim]%s[/]" (Markup.Escape (System.String.Format(liveStrings.AtFileNotFound, path)))))
+                        AnsiConsole.Write(Markup($"[dim]{Markup.Escape (System.String.Format(liveStrings.AtFileNotFound, path))}[/]"))
                         AnsiConsole.WriteLine()
                     else
                         FileWatcher.add absPath cmd
@@ -2155,28 +2159,28 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 let text = s.Substring("/note ".Length).Trim()
                 if not (String.IsNullOrWhiteSpace text) then
                     sessionNotes <- sessionNotes @ [(turnNumber, text)]
-                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.NoteAdded))
+                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.NoteAdded}[/]")
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/notes" ->
                 if sessionNotes.IsEmpty then
-                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.NoteNone))
+                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.NoteNone}[/]")
                 else
                     for (turn, text) in sessionNotes do
                         if Render.isColorEnabled () then
-                            AnsiConsole.MarkupLine(sprintf "[dim][[turn %d]][/] %s" turn (Markup.Escape text))
+                            AnsiConsole.MarkupLine($"[dim][[turn {turn}]][/] {Markup.Escape text}")
                         else
-                            Console.Out.WriteLine(sprintf "[turn %d] %s" turn text)
+                            Console.Out.WriteLine($"[turn {turn}] {text}")
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/undo" ->
                 match Fugue.Core.Checkpoint.undo () with
                 | Fugue.Core.Checkpoint.NothingToUndo ->
-                    AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.UndoNothingToUndo))
+                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.UndoNothingToUndo}[/]")
                 | Fugue.Core.Checkpoint.Restored path ->
-                    AnsiConsole.MarkupLine(sprintf "[green]✓[/] %s: [dim]%s[/]" (Markup.Escape liveStrings.UndoRestored) (Markup.Escape path))
+                    AnsiConsole.MarkupLine($"[green]✓[/] {Markup.Escape liveStrings.UndoRestored}: [dim]{Markup.Escape path}[/]")
                 | Fugue.Core.Checkpoint.Deleted path ->
-                    AnsiConsole.MarkupLine(sprintf "[yellow]✓[/] %s: [dim]%s[/]" (Markup.Escape liveStrings.UndoDeleted) (Markup.Escape path))
+                    AnsiConsole.MarkupLine($"[yellow]✓[/] {Markup.Escape liveStrings.UndoDeleted}: [dim]{Markup.Escape path}[/]")
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/todo" ->
@@ -2217,12 +2221,11 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     let lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                     let truncated, note =
                         if lines.Length > 200 then
-                            Array.take 200 lines, sprintf "\n\n[truncated — showing 200 of %d matches]" lines.Length
+                            Array.take 200 lines, $"\n\n[truncated — showing 200 of {lines.Length} matches]"
                         else lines, ""
                     let body = String.concat "\n" truncated
                     let summary =
-                        sprintf "Found %d TODO/FIXME/HACK items in workspace:\n\n%s%s\n\nPlease review these and suggest which ones are worth addressing now."
-                            lines.Length body note
+                        $"Found {lines.Length} TODO/FIXME/HACK items in workspace:\n\n{body}{note}\n\nPlease review these and suggest which ones are worth addressing now."
                     do! streamAndRender agent session summary cfg cancelSrc zenMode
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/find " ->
@@ -2273,18 +2276,18 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         |> List.sortByDescending (fun (score, _, _) -> score)
                         |> List.truncate 10
                     if results.IsEmpty then
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.FindNoResults))
+                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.FindNoResults}[/]")
                     else
                         for (_score, rel, snippet) in results do
                             let snipStr =
                                 match snippet with
-                                | Some s -> sprintf "  → %s" (s.Trim())
+                                | Some s -> $"  → {s.Trim()}"
                                 | None   -> ""
                             if Render.isColorEnabled () then
-                                AnsiConsole.MarkupLine(sprintf "[cyan]%s[/]%s" (Markup.Escape rel) (Markup.Escape snipStr))
+                                AnsiConsole.MarkupLine($"[cyan]{Markup.Escape rel}[/]{Markup.Escape snipStr}")
                             else
-                                Console.Out.WriteLine(sprintf "%s%s" rel snipStr)
-                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape liveStrings.FindInjectHint))
+                                Console.Out.WriteLine($"{rel}{snipStr}")
+                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.FindInjectHint}[/]")
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/summarize" ->
@@ -2298,11 +2301,11 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         else System.IO.Path.GetFullPath(System.IO.Path.Combine(cwd, rawArg))
                     let summarizePrompt =
                         if System.IO.Directory.Exists targetPath then
-                            sprintf "Please summarize the directory '%s'.\n\nProvide a structured summary:\n1. Purpose — what does this module/package do?\n2. Public API — key functions, types, or entry points\n3. Key dependencies — what does it depend on?\n4. Notable design decisions — any interesting patterns or constraints\n\nBe concise (2–4 sentences per section). Use the Read and Glob tools to explore the files." rawArg
+                            $"Please summarize the directory '{rawArg}'.\n\nProvide a structured summary:\n1. Purpose — what does this module/package do?\n2. Public API — key functions, types, or entry points\n3. Key dependencies — what does it depend on?\n4. Notable design decisions — any interesting patterns or constraints\n\nBe concise (2–4 sentences per section). Use the Read and Glob tools to explore the files."
                         elif System.IO.File.Exists targetPath then
-                            sprintf "Please summarize the file '%s'.\n\nProvide a structured summary:\n1. Purpose — what does this file do?\n2. Public API — exported functions or types\n3. Key dependencies — what modules/libraries does it use?\n4. Notable design decisions — any interesting patterns or constraints\n\nBe concise (2–4 sentences per section). Use the Read tool to examine the file." rawArg
+                            $"Please summarize the file '{rawArg}'.\n\nProvide a structured summary:\n1. Purpose — what does this file do?\n2. Public API — exported functions or types\n3. Key dependencies — what modules/libraries does it use?\n4. Notable design decisions — any interesting patterns or constraints\n\nBe concise (2–4 sentences per section). Use the Read tool to examine the file."
                         else
-                            sprintf "The path '%s' does not exist. Please let me know." rawArg
+                            $"The path '{rawArg}' does not exist. Please let me know."
                     AnsiConsole.Write(Render.userMessage cfg.Ui ("/summarize " + rawArg) 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session summarizePrompt cfg cancelSrc zenMode
@@ -2315,7 +2318,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let prompt =
-                        sprintf "Analyse the following for breaking API changes: \"%s\"\n\nCheck:\n1. Renamed or removed public functions, types, or module members.\n2. Changed parameter types or return types.\n3. Added required parameters (non-optional).\n4. Changed DU cases that callers must pattern-match on.\n5. Removed interface members.\n\nFor each breaking change:\n- Quote the old signature vs new signature.\n- List all known call sites (use Grep tool).\n- Suggest a deprecation path (default argument, type alias, or wrapper).\n\nUse Read/Grep tools to discover call sites." arg
+                        $"Analyse the following for breaking API changes: \"{arg}\"\n\nCheck:\n1. Renamed or removed public functions, types, or module members.\n2. Changed parameter types or return types.\n3. Added required parameters (non-optional).\n4. Changed DU cases that callers must pattern-match on.\n5. Removed interface members.\n\nFor each breaking change:\n- Quote the old signature vs new signature.\n- List all known call sites (use Grep tool).\n- Suggest a deprecation path (default argument, type alias, or wrapper).\n\nUse Read/Grep tools to discover call sites."
                     AnsiConsole.Write(Render.userMessage cfg.Ui "/breaking-changes" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
@@ -2328,8 +2331,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let prompt =
-                        sprintf "Review \"%s\" for idiomatic style improvements.\n\nFor F#: flag non-idiomatic patterns and suggest pipe-based, DU-based, or computation-expression rewrites.\nFor Elixir: flag imperative loops (use Enum/Stream pipelines instead) and missing pattern match clauses.\nFor Kotlin: flag nullable handling that should use `?.let`/`?:` and unnecessary `!!`.\nFor TypeScript: flag mutation where `const` + spread is preferred and callback nesting that should be Promise chains.\n\nFor each suggestion: quote the original, show the idiomatic alternative, and explain why it's preferred.\n\nRead the file first, then provide structured feedback." arg
-                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/idiomatic %s" arg) 0)
+                        $"Review \"{arg}\" for idiomatic style improvements.\n\nFor F#: flag non-idiomatic patterns and suggest pipe-based, DU-based, or computation-expression rewrites.\nFor Elixir: flag imperative loops (use Enum/Stream pipelines instead) and missing pattern match clauses.\nFor Kotlin: flag nullable handling that should use `?.let`/`?:` and unnecessary `!!`.\nFor TypeScript: flag mutation where `const` + spread is preferred and callback nesting that should be Promise chains.\n\nFor each suggestion: quote the original, show the idiomatic alternative, and explain why it's preferred.\n\nRead the file first, then provide structured feedback."
+                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/idiomatic {arg}" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
@@ -2341,7 +2344,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let prompt =
-                        sprintf "Add the following functionality incrementally to the existing codebase: \"%s\"\n\nRules:\n1. Generate ONLY the new function(s) or type(s) — no file rewrites.\n2. Find the best insertion point using Read and Grep tools.\n3. Apply changes using the Edit tool to insert at the exact location.\n4. Do not modify existing functions unless absolutely required.\n5. Ensure the new code compiles by running `dotnet build --no-restore` after editing." desc
+                        $"Add the following functionality incrementally to the existing codebase: \"{desc}\"\n\nRules:\n1. Generate ONLY the new function(s) or type(s) — no file rewrites.\n2. Find the best insertion point using Read and Grep tools.\n3. Apply changes using the Edit tool to insert at the exact location.\n4. Do not modify existing functions unless absolutely required.\n5. Ensure the new code compiles by running `dotnet build --no-restore` after editing."
                     AnsiConsole.Write(Render.userMessage cfg.Ui "/incremental" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
@@ -2361,8 +2364,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         if IO.File.Exists fullPath then IO.File.ReadAllText fullPath, (if target = "" then "F#" else target)
                         else file, (if target = "" then "F#" else target)
                     let prompt =
-                        sprintf "Port the following code to idiomatic %s:\n\n```\n%s\n```\n\nRequirements:\n1. Use the target language's idiomatic patterns — not a literal transliteration.\n2. For OOP→FP: use DUs/sealed traits, immutable records, pattern matching.\n3. For FP→OOP: map to classes, interfaces, exception handling.\n4. Annotate each non-obvious translation decision with a brief inline comment.\n5. Return the full translated file ready to use." targetLang code
-                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/port %s → %s" file targetLang) 0)
+                        $"Port the following code to idiomatic {targetLang}:\n\n```\n{code}\n```\n\nRequirements:\n1. Use the target language's idiomatic patterns — not a literal transliteration.\n2. For OOP→FP: use DUs/sealed traits, immutable records, pattern matching.\n3. For FP→OOP: map to classes, interfaces, exception handling.\n4. Annotate each non-obvious translation decision with a brief inline comment.\n5. Return the full translated file ready to use."
+                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/port {file} → {targetLang}" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
@@ -2374,8 +2377,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let prompt =
-                        sprintf "Generate a project scaffold for \"%s\".\n\nInspect the project structure first (use Glob/Read tools) to understand:\n1. Language and framework in use.\n2. Naming conventions, folder layout, and existing patterns.\n3. Test framework and tooling.\n\nThen generate the scaffold files following project conventions. Include:\n- Main implementation file(s)\n- Unit test skeleton\n- Any registration/wiring needed in existing entry points\n\nWrite each file using the Write tool." arg
-                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/scaffold %s" arg) 0)
+                        $"Generate a project scaffold for \"{arg}\".\n\nInspect the project structure first (use Glob/Read tools) to understand:\n1. Language and framework in use.\n2. Naming conventions, folder layout, and existing patterns.\n3. Test framework and tooling.\n\nThen generate the scaffold files following project conventions. Include:\n- Main implementation file(s)\n- Unit test skeleton\n- Any registration/wiring needed in existing entry points\n\nWrite each file using the Write tool."
+                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/scaffold {arg}" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
@@ -2384,8 +2387,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 let arg = if s = "/complexity" then "" else s.Substring("/complexity ".Length).Trim()
                 let target = if arg = "" then "." else arg
                 let prompt =
-                    sprintf "Analyse cyclomatic complexity of the code in \"%s\".\n\nFor each function/method:\n1. Compute approximate cyclomatic complexity (count decision points: if/match/loop/exception handlers).\n2. Flag functions with complexity > 10 as high-risk.\n3. Suggest refactorings for the top 3 most complex functions (extract method, simplify conditions, etc.).\n\nPresent results as a table: Function | Complexity | Risk | Refactoring suggestion.\n\nUse Glob and Read tools to discover and examine the source files." target
-                AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/complexity %s" target) 0)
+                    $"Analyse cyclomatic complexity of the code in \"{target}\".\n\nFor each function/method:\n1. Compute approximate cyclomatic complexity (count decision points: if/match/loop/exception handlers).\n2. Flag functions with complexity > 10 as high-risk.\n3. Suggest refactorings for the top 3 most complex functions (extract method, simplify conditions, etc.).\n\nPresent results as a table: Function | Complexity | Risk | Refactoring suggestion.\n\nUse Glob and Read tools to discover and examine the source files."
+                AnsiConsole.Write(Render.userMessage cfg.Ui $"/complexity {target}" 0)
                 AnsiConsole.WriteLine()
                 do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
@@ -2402,8 +2405,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let prompt =
-                        sprintf "Analyse the following F# code for tail-recursion correctness:\n\n```fsharp\n%s\n```\n\nFor each recursive function:\n1. Determine whether it is tail-recursive (the recursive call is the last operation in all branches).\n2. If NOT tail-recursive, explain which call site is the problem and why it would stack-overflow on large inputs.\n3. Offer a rewrite using:\n   - Accumulator pattern (preferred)\n   - Continuation-passing style (CPS) if accumulator doesn't fit\n   - `[<TailCall>]` attribute hint where F# can optimise\n4. Show the rewritten function alongside the original.\n\nSource: %s" code label
-                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/check tail-rec %s" label) 0)
+                        $"Analyse the following F# code for tail-recursion correctness:\n\n```fsharp\n{code}\n```\n\nFor each recursive function:\n1. Determine whether it is tail-recursive (the recursive call is the last operation in all branches).\n2. If NOT tail-recursive, explain which call site is the problem and why it would stack-overflow on large inputs.\n3. Offer a rewrite using:\n   - Accumulator pattern (preferred)\n   - Continuation-passing style (CPS) if accumulator doesn't fit\n   - `[<TailCall>]` attribute hint where F# can optimise\n4. Show the rewritten function alongside the original.\n\nSource: {label}"
+                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/check tail-rec {label}" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
@@ -2420,8 +2423,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let prompt =
-                        sprintf "Review the following code for effect system type consistency:\n\n```\n%s\n```\n\nCheck:\n1. Are all effectful operations wrapped in the same effect type (IO/ZIO/Task/F# Async) consistently?\n2. Are effects mixed (e.g. ZIO and Future in the same for-comprehension) without proper lifting?\n3. Are error channels compatible across composed effects?\n4. Are any side effects performed outside the effect system (unsafe I/O, mutable state leaks)?\n\nFor each issue: show the problematic code, explain the violation, and provide a corrected version.\n\nSource: %s" code label
-                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/check effects %s" label) 0)
+                        $"Review the following code for effect system type consistency:\n\n```\n{code}\n```\n\nCheck:\n1. Are all effectful operations wrapped in the same effect type (IO/ZIO/Task/F# Async) consistently?\n2. Are effects mixed (e.g. ZIO and Future in the same for-comprehension) without proper lifting?\n3. Are error channels compatible across composed effects?\n4. Are any side effects performed outside the effect system (unsafe I/O, mutable state leaks)?\n\nFor each issue: show the problematic code, explain the violation, and provide a corrected version.\n\nSource: {label}"
+                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/check effects {label}" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
@@ -2433,8 +2436,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let prompt =
-                        sprintf "Translate all code comments in the file \"%s\" to English.\n\nRules:\n1. Translate only comment text — do NOT touch identifiers, string literals, or code.\n2. Preserve comment style (// vs /// vs /* */).\n3. Keep the original meaning precisely; prefer clarity over literal translation.\n4. Apply the translations using the Edit tool (one edit per comment block or file section).\n\nRead the file first, then apply targeted edits." arg
-                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/translate comments %s" arg) 0)
+                        $"Translate all code comments in the file \"{arg}\" to English.\n\nRules:\n1. Translate only comment text — do NOT touch identifiers, string literals, or code.\n2. Preserve comment style (// vs /// vs /* */).\n3. Keep the original meaning precisely; prefer clarity over literal translation.\n4. Apply the translations using the Edit tool (one edit per comment block or file section).\n\nRead the file first, then apply targeted edits."
+                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/translate comments {arg}" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
@@ -2445,8 +2448,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let prompt =
-                        sprintf "Generate an AOT-safe JSON codec for the F# type \"%s\".\n\n1. Read the type definition from the codebase (use the Read or Grep tools).\n2. Generate a `[<JsonSerializable>]` `JsonSerializerContext` subclass covering the type and any nested types.\n3. Add `[<JsonPropertyName>]` attributes for all fields to ensure stable serialization.\n4. If the type is a DU, add `[<JsonPolymorphic>]` and `[<JsonDerivedType>]` for each case.\n5. Show a usage example: `JsonSerializer.Serialize(value, MyContext.Default.MyType)`.\n\nTarget: System.Text.Json source generation, .NET 10, Native AOT compatible." typeName
-                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/derive codec %s" typeName) 0)
+                        $"Generate an AOT-safe JSON codec for the F# type \"{typeName}\".\n\n1. Read the type definition from the codebase (use the Read or Grep tools).\n2. Generate a `[<JsonSerializable>]` `JsonSerializerContext` subclass covering the type and any nested types.\n3. Add `[<JsonPropertyName>]` attributes for all fields to ensure stable serialization.\n4. If the type is a DU, add `[<JsonPolymorphic>]` and `[<JsonDerivedType>]` for each case.\n5. Show a usage example: `JsonSerializer.Serialize(value, MyContext.Default.MyType)`.\n\nTarget: System.Text.Json source generation, .NET 10, Native AOT compatible."
+                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/derive codec {typeName}" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
@@ -2457,8 +2460,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let prompt =
-                        sprintf "Generate a complete CQRS slice for \"%s\".\n\nInclude:\n1. **Command record** — immutable, validated constructor.\n2. **CommandHandler** — reads from the command, applies business logic, emits an event.\n3. **Domain Event** — added as a new DU case (or new type).\n4. **EventHandler** — updates read model or side-effects.\n5. **xUnit test skeleton** — arrange/act/assert for the happy path and one error case.\n\nFollow the naming and layering conventions visible in the existing codebase (use Glob/Read tools to discover them). Return separate fenced code blocks per file." cmdName
-                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/scaffold cqrs %s" cmdName) 0)
+                        $"Generate a complete CQRS slice for \"{cmdName}\".\n\nInclude:\n1. **Command record** — immutable, validated constructor.\n2. **CommandHandler** — reads from the command, applies business logic, emits an event.\n3. **Domain Event** — added as a new DU case (or new type).\n4. **EventHandler** — updates read model or side-effects.\n5. **xUnit test skeleton** — arrange/act/assert for the happy path and one error case.\n\nFollow the naming and layering conventions visible in the existing codebase (use Glob/Read tools to discover them). Return separate fenced code blocks per file."
+                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/scaffold cqrs {cmdName}" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
@@ -2469,8 +2472,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let prompt =
-                        sprintf "Generate a typed actor stub for \"%s\".\n\nFor F# / Proto.Actor:\n1. Command DU with all message types.\n2. `Actor` class implementing `IActor` with a `ReceiveAsync` dispatch.\n3. Supervision strategy.\n4. Props factory function.\n\nFor Scala / Akka Typed:\n1. `Command` sealed trait hierarchy.\n2. `Behavior[Command]` with `Behaviors.setup`.\n3. `SupervisorStrategy` using `Behaviors.supervise`.\n\nInfer the framework from the project (use Glob/Read to check dependencies). Return separate fenced blocks per file." actorName
-                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/scaffold actor %s" actorName) 0)
+                        $"Generate a typed actor stub for \"{actorName}\".\n\nFor F# / Proto.Actor:\n1. Command DU with all message types.\n2. `Actor` class implementing `IActor` with a `ReceiveAsync` dispatch.\n3. Supervision strategy.\n4. Props factory function.\n\nFor Scala / Akka Typed:\n1. `Command` sealed trait hierarchy.\n2. `Behavior[Command]` with `Behaviors.setup`.\n3. `SupervisorStrategy` using `Behaviors.supervise`.\n\nInfer the framework from the project (use Glob/Read to check dependencies). Return separate fenced blocks per file."
+                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/scaffold actor {actorName}" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
@@ -2482,8 +2485,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let prompt =
-                        sprintf "Generate a complete F# discriminated union for the concept \"%s\".\n\nInclude:\n1. The DU definition with well-named cases and meaningful data payloads.\n2. An exhaustive `match` example covering every case.\n3. Smart constructor helpers (active patterns or module functions) for common construction patterns.\n4. `[<JsonDerivedType>]` / `[<JsonPolymorphic>]` attributes for AOT-safe System.Text.Json serialization.\n5. A brief comment per case explaining its semantics.\n\nTarget: F# 9 / .NET 10, Native AOT compatible." concept
-                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/scaffold du %s" concept) 0)
+                        $"Generate a complete F# discriminated union for the concept \"{concept}\".\n\nInclude:\n1. The DU definition with well-named cases and meaningful data payloads.\n2. An exhaustive `match` example covering every case.\n3. Smart constructor helpers (active patterns or module functions) for common construction patterns.\n4. `[<JsonDerivedType>]` / `[<JsonPolymorphic>]` attributes for AOT-safe System.Text.Json serialization.\n5. A brief comment per case explaining its semantics.\n\nTarget: F# 9 / .NET 10, Native AOT compatible."
+                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/scaffold du {concept}" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
@@ -2495,7 +2498,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let prompt =
-                        sprintf "Convert the following imperative description into idiomatic monadic F# code:\n\n\"%s\"\n\nSteps:\n1. Identify the primary effect (async I/O, error handling, sequence generation, cancellation, …).\n2. Choose the correct F# computation expression (`task`, `async`, `result`, `asyncResult`, `seq`, …).\n3. Generate the CE block — no nested `match`/`if` for error handling; use `let!` and `return`.\n4. If the operation mixes effects (e.g. async + Result), compose them correctly (e.g. `taskResult`).\n5. Include the type signatures.\n\nReturn only the code with a one-line comment on the CE chosen." desc
+                        $"Convert the following imperative description into idiomatic monadic F# code:\n\n\"{desc}\"\n\nSteps:\n1. Identify the primary effect (async I/O, error handling, sequence generation, cancellation, …).\n2. Choose the correct F# computation expression (`task`, `async`, `result`, `asyncResult`, `seq`, …).\n3. Generate the CE block — no nested `match`/`if` for error handling; use `let!` and `return`.\n4. If the operation mixes effects (e.g. async + Result), compose them correctly (e.g. `taskResult`).\n5. Include the type signatures.\n\nReturn only the code with a one-line comment on the CE chosen."
                     AnsiConsole.Write(Render.userMessage cfg.Ui "/monad" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
@@ -2511,8 +2514,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         let fullPath = if IO.Path.IsPathRooted arg then arg else IO.Path.GetFullPath(IO.Path.Combine(cwd, arg))
                         if IO.File.Exists fullPath then IO.File.ReadAllText fullPath else arg
                     let prompt =
-                        sprintf "Migrate the following OOP code to idiomatic F#:\n\n```\n%s\n```\n\nMigration rules:\n1. `abstract class` / `interface` → F# discriminated union (one case per concrete class).\n2. Mutable fields → immutable record fields; setters → `with` copy-and-update expressions.\n3. `null` returns → `Option<T>`; `throw` → `Result<T, Error>` or DU error case.\n4. Virtual method dispatch → exhaustive `match` on the DU.\n5. Constructor logic → module-level factory functions.\n6. Preserve all business logic exactly.\n\nReturn the complete F# translation with brief migration notes per section." code
-                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/migrate oop-to-fp %s" arg) 0)
+                        $"Migrate the following OOP code to idiomatic F#:\n\n```\n{code}\n```\n\nMigration rules:\n1. `abstract class` / `interface` → F# discriminated union (one case per concrete class).\n2. Mutable fields → immutable record fields; setters → `with` copy-and-update expressions.\n3. `null` returns → `Option<T>`; `throw` → `Result<T, Error>` or DU error case.\n4. Virtual method dispatch → exhaustive `match` on the DU.\n5. Constructor logic → module-level factory functions.\n6. Preserve all business logic exactly.\n\nReturn the complete F# translation with brief migration notes per section."
+                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/migrate oop-to-fp {arg}" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
@@ -2524,8 +2527,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let prompt =
-                        sprintf "Generate a railway-oriented programming (ROP) pipeline for the following operation:\n\n\"%s\"\n\nRequirements:\n1. Use F# `Result<'ok, 'err>` types (or adapt for the target language).\n2. Define a discriminated union for all possible error cases.\n3. Compose steps with `Result.bind` (or `>>=`) — no exceptions, no `try/catch`.\n4. Unify error types across steps; if types differ, map to the common error DU.\n5. Include brief inline comments explaining each step.\n6. Return only the code (no prose preamble)." desc
-                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/rop %s" desc) 0)
+                        $"Generate a railway-oriented programming (ROP) pipeline for the following operation:\n\n\"{desc}\"\n\nRequirements:\n1. Use F# `Result<'ok, 'err>` types (or adapt for the target language).\n2. Define a discriminated union for all possible error cases.\n3. Compose steps with `Result.bind` (or `>>=`) — no exceptions, no `try/catch`.\n4. Unify error types across steps; if types differ, map to the common error DU.\n5. Include brief inline comments explaining each step.\n6. Return only the code (no prose preamble)."
+                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/rop {desc}" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
@@ -2537,7 +2540,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let prompt =
-                        sprintf "Infer and explain the type of the following F# expression:\n\n```fsharp\n%s\n```\n\nFormat your answer as:\n1. **Type signature** — in standard F# notation.\n2. **Parameter breakdown** — explain each type parameter, constraint, or variance annotation.\n3. **Plain-English summary** — one or two sentences explaining what this type means semantically.\n4. **Example usage** — a single concrete example showing it in action." expr
+                        $"Infer and explain the type of the following F# expression:\n\n```fsharp\n{expr}\n```\n\nFormat your answer as:\n1. **Type signature** — in standard F# notation.\n2. **Parameter breakdown** — explain each type parameter, constraint, or variance annotation.\n3. **Plain-English summary** — one or two sentences explaining what this type means semantically.\n4. **Example usage** — a single concrete example showing it in action."
                     AnsiConsole.Write(Render.userMessage cfg.Ui "/infer-type" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
@@ -2550,7 +2553,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let prompt =
-                        sprintf "Offer a point-free rewrite of the following F# function:\n\n```fsharp\n%s\n```\n\nFormat your answer as:\n1. **Original** — repeat the function as-is.\n2. **Point-free equivalent** — the rewritten version using partial application, `>>` / `<<`, or combinators.\n3. **Transformation steps** — explain each step of the rewrite.\n4. **Readability verdict** — note whether the point-free form is actually clearer, and when to prefer the explicit form.\n\nIf a point-free form is not natural or readable, say so and explain why." fn
+                        $"Offer a point-free rewrite of the following F# function:\n\n```fsharp\n{fn}\n```\n\nFormat your answer as:\n1. **Original** — repeat the function as-is.\n2. **Point-free equivalent** — the rewritten version using partial application, `>>` / `<<`, or combinators.\n3. **Transformation steps** — explain each step of the rewrite.\n4. **Readability verdict** — note whether the point-free form is actually clearer, and when to prefer the explicit form.\n\nIf a point-free form is not natural or readable, say so and explain why."
                     AnsiConsole.Write(Render.userMessage cfg.Ui "/pointfree" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
@@ -2577,7 +2580,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                                         | _ -> None
                                     else None
                                 match parsed with
-                                | Some (s, e) -> String.concat "\n" lines.[s..e], sprintf "%s:%d-%d" filePart (s+1) (e+1)
+                                | Some (s, e) -> String.concat "\n" lines.[s..e], $"{filePart}:{s+1}-{e+1}"
                                 | None        -> String.concat "\n" lines, filePart
                             else "", ""
                         else
@@ -2589,8 +2592,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     AnsiConsole.WriteLine()
                 else
                     let prompt =
-                        sprintf "Refactor the following F# code into an idiomatic pipe chain (`|>`).\n\nRules:\n1. Identify a linear data-flow sequence where each binding feeds into the next.\n2. Replace the sequence with a single `|>` chain.\n3. Use partial application where possible; inline lambdas only when necessary.\n4. Preserve all semantics exactly — no behaviour changes.\n5. Return only the refactored code block.\n\nSource (%s):\n```fsharp\n%s\n```" label code
-                    AnsiConsole.Write(Render.userMessage cfg.Ui (sprintf "/refactor pipeline %s" label) 0)
+                        $"Refactor the following F# code into an idiomatic pipe chain (`|>`).\n\nRules:\n1. Identify a linear data-flow sequence where each binding feeds into the next.\n2. Replace the sequence with a single `|>` chain.\n3. Use partial application where possible; inline lambdas only when necessary.\n4. Preserve all semantics exactly — no behaviour changes.\n5. Return only the refactored code block.\n\nSource ({label}):\n```fsharp\n{code}\n```"
+                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/refactor pipeline {label}" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
                 StatusBar.refresh ()
@@ -2623,7 +2626,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 else
                     let diagnostics = String.concat "\n" fs0025
                     let prompt =
-                        sprintf "The build found incomplete pattern match warnings (FS0025):\n\n```\n%s\n```\n\nPlease:\n1. Read each affected file.\n2. Add the missing match cases using `failwith \"TODO: <CaseName>\"` as placeholders.\n3. Apply the fixes using the Edit tool.\n\nFix all warnings before responding." diagnostics
+                        $"The build found incomplete pattern match warnings (FS0025):\n\n```\n{diagnostics}\n```\n\nPlease:\n1. Read each affected file.\n2. Add the missing match cases using `failwith \"TODO: <CaseName>\"` as placeholders.\n3. Apply the fixes using the Edit tool.\n\nFix all warnings before responding."
                     AnsiConsole.Write(Render.userMessage cfg.Ui "/check exhaustive" 0)
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode
@@ -2640,12 +2643,12 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 let pctUsed = int (float sysTok / float contextLimit * 100.0)
                 if Render.isColorEnabled () then
                     AnsiConsole.MarkupLine "[bold]Context budget estimate[/] [dim](word-count based, ×1.35)[/]"
-                    AnsiConsole.MarkupLine(sprintf "  [dim]system prompt[/]  ~%d tokens" sysTok)
-                    AnsiConsole.MarkupLine(sprintf "  [dim]context limit[/]   %d tokens (provider estimate)" contextLimit)
-                    AnsiConsole.MarkupLine(sprintf "  [dim]system usage[/]   %d%% of limit" pctUsed)
+                    AnsiConsole.MarkupLine($"  [dim]system prompt[/]  ~{sysTok} tokens")
+                    AnsiConsole.MarkupLine($"  [dim]context limit[/]   {contextLimit} tokens (provider estimate)")
+                    AnsiConsole.MarkupLine($"  [dim]system usage[/]   {pctUsed}%% of limit")
                     AnsiConsole.MarkupLine "[dim]  (turn history token count requires provider usage reporting)[/]"
                 else
-                    Console.Out.WriteLine(sprintf "System prompt: ~%d tokens / %d limit (%d%%)" sysTok contextLimit pctUsed)
+                    Console.Out.WriteLine($"System prompt: ~{sysTok} tokens / {contextLimit} limit ({pctUsed}%%)")
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/tokens" ->
@@ -2663,12 +2666,12 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     | Fugue.Core.Config.Ollama(_, m)    -> "ollama", m
                 let friendly = Fugue.Core.Config.modelDisplayName model
                 if Render.isColorEnabled () then
-                    AnsiConsole.MarkupLine(sprintf "[bold]/tokens[/] — provider: [cyan]%s[/]  model: [cyan]%s[/]" prov friendly)
-                    AnsiConsole.MarkupLine(sprintf "  system prompt:  ~%d tokens" sysTok)
+                    AnsiConsole.MarkupLine($"[bold]/tokens[/] — provider: [cyan]{prov}[/]  model: [cyan]{friendly}[/]")
+                    AnsiConsole.MarkupLine($"  system prompt:  ~{sysTok} tokens")
                     AnsiConsole.MarkupLine "[dim]  Exact per-turn counts require the provider to return usage metadata.[/]"
                     AnsiConsole.MarkupLine "[dim]  Use /context show for a full budget breakdown.[/]"
                 else
-                    Console.Out.WriteLine(sprintf "Provider: %s  Model: %s  System: ~%d tokens" prov friendly sysTok)
+                    Console.Out.WriteLine($"Provider: {prov}  Model: {friendly}  System: ~{sysTok} tokens")
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/locale " || s = "/locale" ->
@@ -2676,9 +2679,9 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 if arg = "" then
                     let current = savedUi.Locale
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine(sprintf "[dim]Current locale: [cyan]%s[/]  Usage: /locale [en|ru][/]" current)
+                        AnsiConsole.MarkupLine($"[dim]Current locale: [cyan]{current}[/]  Usage: /locale [en|ru][/]")
                     else
-                        Console.Out.WriteLine(sprintf "Current locale: %s  Usage: /locale [en|ru]" current)
+                        Console.Out.WriteLine($"Current locale: {current}  Usage: /locale [en|ru]")
                 elif arg <> "en" && arg <> "ru" then
                     if Render.isColorEnabled () then
                         AnsiConsole.MarkupLine "[dim yellow]Supported locales: en, ru[/]"
@@ -2690,14 +2693,14 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     try
                         Config.saveToFile { cfg with Ui = savedUi }
                         if Render.isColorEnabled () then
-                            AnsiConsole.MarkupLine(sprintf "[dim green]Locale set to [cyan]%s[/] and saved.[/]" arg)
+                            AnsiConsole.MarkupLine($"[dim green]Locale set to [cyan]{arg}[/] and saved.[/]")
                         else
-                            Console.Out.WriteLine(sprintf "Locale set to %s and saved." arg)
+                            Console.Out.WriteLine($"Locale set to {arg} and saved.")
                     with ex ->
                         if Render.isColorEnabled () then
-                            AnsiConsole.MarkupLine(sprintf "[dim yellow]Could not save config: %s[/]" (Markup.Escape ex.Message))
+                            AnsiConsole.MarkupLine($"[dim yellow]Could not save config: {Markup.Escape ex.Message}[/]")
                         else
-                            Console.Out.WriteLine(sprintf "Could not save config: %s" ex.Message)
+                            Console.Out.WriteLine($"Could not save config: {ex.Message}")
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/pin " ->
@@ -2708,14 +2711,14 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     else
                         AnsiConsole.MarkupLine "[bold]Pinned:[/]"
                         pinnedMessages |> List.iteri (fun i m ->
-                            if Render.isColorEnabled () then AnsiConsole.MarkupLine(sprintf "  [cyan]%d.[/] %s" (i+1) (Markup.Escape m))
-                            else Console.Out.WriteLine(sprintf "  %d. %s" (i+1) m))
+                            if Render.isColorEnabled () then AnsiConsole.MarkupLine($"  [cyan]{i+1}.[/] {Markup.Escape m}")
+                            else Console.Out.WriteLine($"  {i+1}. {m}"))
                 else
                     pinnedMessages <- pinnedMessages @ [msg]
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine(sprintf "[dim green]Pinned (%d total): [/]%s" pinnedMessages.Length (Markup.Escape msg))
+                        AnsiConsole.MarkupLine($"[dim green]Pinned ({pinnedMessages.Length} total): [/]{Markup.Escape msg}")
                     else
-                        Console.Out.WriteLine(sprintf "Pinned (%d total): %s" pinnedMessages.Length msg)
+                        Console.Out.WriteLine($"Pinned ({pinnedMessages.Length} total): {msg}")
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/pin" ->
@@ -2724,8 +2727,8 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 else
                     AnsiConsole.MarkupLine "[bold]Pinned messages:[/]"
                     pinnedMessages |> List.iteri (fun i m ->
-                        if Render.isColorEnabled () then AnsiConsole.MarkupLine(sprintf "  [cyan]%d.[/] %s" (i+1) (Markup.Escape m))
-                        else Console.Out.WriteLine(sprintf "  %d. %s" (i+1) m))
+                        if Render.isColorEnabled () then AnsiConsole.MarkupLine($"  [cyan]{i+1}.[/] {Markup.Escape m}")
+                        else Console.Out.WriteLine($"  {i+1}. {m}"))
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/compress" ->
@@ -2767,7 +2770,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                     with ex ->
                         AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                         AnsiConsole.WriteLine()
-                    let injection = sprintf "[Compressed session context]\n%s" summary
+                    let injection = $"[Compressed session context]\n{summary}"
                     do! streamAndRender agent session injection cfg cancelSrc zenMode
                     if Render.isColorEnabled () then
                         AnsiConsole.MarkupLine "[dim]Context compressed — previous history summarised and reset.[/]"
@@ -2803,7 +2806,7 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                         | None -> expandedInput
                     if pinnedMessages.IsEmpty then base'
                     else
-                        let pins = pinnedMessages |> List.mapi (fun i m -> sprintf "[pinned %d] %s" (i+1) m) |> String.concat "\n"
+                        let pins = pinnedMessages |> List.mapi (fun i m -> $"[pinned {i+1}] {m}") |> String.concat "\n"
                         pins + "\n\n" + base'
                 let sw = System.Diagnostics.Stopwatch.StartNew()
                 do! streamAndRender agent session effectiveInput cfg cancelSrc zenMode
@@ -2814,9 +2817,9 @@ Please generate a clear, actionable onboarding checklist.""" (String.concat "\n\
                 | (sig', count) :: _ ->
                     let short = if sig'.Length > 80 then sig'.[..79] + "…" else sig'
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine(sprintf "[dim yellow]⚠ recurring error (%d×): %s — type [bold]/report-bug[/] to file a report[/]" count (Markup.Escape short))
+                        AnsiConsole.MarkupLine($"[dim yellow]⚠ recurring error ({count}×): {Markup.Escape short} — type [bold]/report-bug[/] to file a report[/]")
                     else
-                        Console.Out.WriteLine(sprintf "⚠ recurring error (%d×): %s — type /report-bug to file a report" count short)
+                        Console.Out.WriteLine($"⚠ recurring error ({count}×): {short} — type /report-bug to file a report")
                 | [] -> ()
         // Generate and persist a 3-sentence session summary when the session had at least one turn.
         if turnNumber > 0 then
@@ -2868,10 +2871,10 @@ let runHeadless (agent: AIAgent) (cfg: AppConfig) (_cwd: string) : Task<unit> = 
                     Console.Out.Write t
                     Console.Out.Flush()
                 | Conversation.ToolStarted(_, name, args) ->
-                    Console.Error.WriteLine(sprintf "[tool: %s(%s)]" name args)
+                    Console.Error.WriteLine($"[tool: {name}({args})]")
                 | Conversation.ToolCompleted(id, output, isErr) ->
                     ignore id
-                    if isErr then Console.Error.WriteLine(sprintf "[tool error: %s]" output)
+                    if isErr then Console.Error.WriteLine($"[tool error: {output}]")
                 | Conversation.Finished -> ()
                 | Conversation.Failed ex -> raise ex
             else hasNext <- false
@@ -2905,13 +2908,13 @@ let runPrint (agent: AIAgent) (prompt: string) : Task<int> = task {
                     Console.Out.Write t
                     Console.Out.Flush()
                 | Conversation.ToolStarted(_, name, args) ->
-                    Console.Error.WriteLine(sprintf "[tool: %s(%s)]" name args)
+                    Console.Error.WriteLine($"[tool: {name}({args})]")
                 | Conversation.ToolCompleted(id, output, isErr) ->
                     ignore id
-                    if isErr then Console.Error.WriteLine(sprintf "[tool error: %s]" output)
+                    if isErr then Console.Error.WriteLine($"[tool error: {output}]")
                 | Conversation.Finished -> ()
                 | Conversation.Failed ex ->
-                    Console.Error.WriteLine(sprintf "error: %s" ex.Message)
+                    Console.Error.WriteLine($"error: {ex.Message}")
                     exitCode <- 1
             else hasNext <- false
         Console.Out.WriteLine()

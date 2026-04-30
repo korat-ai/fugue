@@ -40,6 +40,7 @@ These are **hard rules**. Don't ask, just follow.
 - **No `Co-Authored-By` trailers in commits.**
 - **`TreatWarningsAsErrors=true`** stays. **No `<NoWarn>` for our own code** — fix the underlying issue. `<NoWarn>` is allowed only for known third-party trim/AOT warnings (`IL2026`, `IL3050`, `IL3053`, `IL2104`).
 - **Every PR must produce an AOT-clean publish** (`dotnet publish src/Fugue.Cli -c Release -r osx-arm64`). No regressions in `Build succeeded. 0 Error(s).`
+- **Every 10 commits: run `dotnet build -c Release` and `dotnet test` locally and verify both pass before continuing.** This catches AOT/trim regressions and test breakage early.
 - **`git status` stays clean.** No stray files, no half-finished `.bak`/`.tmp`. Tree is always merge-ready.
 - **No tests-on-mocks for things that hit the real boundary.** Tools tests run against `tmp/` directories; config tests isolate `HOME`.
 
