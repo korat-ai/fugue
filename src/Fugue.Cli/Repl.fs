@@ -257,6 +257,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                 AnsiConsole.WriteLine()
                 let helpItems = [ "/help",           strings.CmdHelpDesc
                                   "/clear",          strings.CmdClearDesc
+                                  "/git-log",        strings.CmdGitLogDesc
                                   "/issue <N>",      strings.CmdIssueDesc
                                   "/model suggest",  strings.CmdModelDesc
                                   "/onboard",        strings.CmdOnboardDesc
@@ -264,6 +265,36 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) : Task<unit> = task {
                                   "/review pr <N>",  strings.CmdReviewPrDesc ]
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
+                    AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s = "/git-log" ->
+                let psi = System.Diagnostics.ProcessStartInfo()
+                psi.FileName <- "git"
+                psi.ArgumentList.Add "log"
+                psi.ArgumentList.Add "--oneline"
+                psi.ArgumentList.Add "--decorate"
+                psi.ArgumentList.Add "-20"
+                psi.UseShellExecute <- false
+                psi.RedirectStandardOutput <- true
+                psi.WorkingDirectory <- cwd
+                try
+                    use proc = new System.Diagnostics.Process()
+                    proc.StartInfo <- psi
+                    match proc.Start() with
+                    | false ->
+                        AnsiConsole.Write(Render.errorLine strings strings.GitLogNoRepo)
+                        AnsiConsole.WriteLine()
+                    | true ->
+                        let out = proc.StandardOutput.ReadToEnd()
+                        proc.WaitForExit()
+                        if proc.ExitCode <> 0 || String.IsNullOrWhiteSpace out then
+                            AnsiConsole.Write(Render.errorLine strings strings.GitLogNoRepo)
+                            AnsiConsole.WriteLine()
+                        else
+                            let prompt = strings.GitLogPrompt.Replace("%s", out)
+                            do! streamAndRender agent session prompt cfg cancelSrc
+                with ex ->
+                    AnsiConsole.Write(Render.errorLine strings ex.Message)
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->

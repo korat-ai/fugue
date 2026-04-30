@@ -48,6 +48,11 @@ type Strings =
       ReviewPrNotFound:  string
       ReviewPrPrompt:    string
 
+      // /git-log
+      CmdGitLogDesc: string
+      GitLogNoRepo:  string
+      GitLogPrompt:  string
+
       // Input safety
       ZeroWidthWarning: string
 
@@ -86,6 +91,9 @@ let en : Strings =
       ReviewPrUsage         = "Usage: /review pr <N>"
       ReviewPrNotFound      = "PR not found or gh CLI unavailable"
       ReviewPrPrompt        = "Please review GitHub PR #{0}.\n\nPR metadata:\n{1}\n\nDiff:\n```\n{2}\n```\n\nProvide a thorough code review: identify bugs, style issues, missing tests, security concerns, and any improvements. Be specific with line references where possible."
+      CmdGitLogDesc         = "explain recent git commit history"
+      GitLogNoRepo          = "not a git repository or git unavailable"
+      GitLogPrompt          = "Here are the last 20 commits from git log:\n\n%s\n\nPlease explain these commits in plain language — what changed, in what order, and what the overall direction seems to be."
       ZeroWidthWarning      = "Warning: input contains invisible zero-width characters — these may cause Edit tool diff mismatches"
       AtFileNotFound        = "@{0}: file not found, skipping"
       AtFileTooBig          = "[file too large — truncated to 4000 chars]" }
@@ -121,6 +129,9 @@ let ru : Strings =
       ReviewPrUsage         = "Использование: /review pr <N>"
       ReviewPrNotFound      = "PR не найден или gh CLI недоступен"
       ReviewPrPrompt        = "Пожалуйста, проверь GitHub PR #{0}.\n\nМетаданные PR:\n{1}\n\nDiff:\n```\n{2}\n```\n\nПроведи подробное ревью кода: выяви баги, проблемы со стилем, отсутствующие тесты, уязвимости безопасности и возможные улучшения. Указывай конкретные строки там, где это возможно."
+      CmdGitLogDesc         = "объяснить историю git коммитов"
+      GitLogNoRepo          = "не git-репозиторий или git недоступен"
+      GitLogPrompt          = "Вот последние 20 коммитов из git log:\n\n%s\n\nОбъясни эти коммиты простым языком — что изменилось, в каком порядке, и каково общее направление разработки."
       ZeroWidthWarning      = "Предупреждение: ввод содержит невидимые символы нулевой ширины — они могут нарушить работу инструмента Edit"
       AtFileNotFound        = "@{0}: файл не найден, пропускаем"
       AtFileTooBig          = "[файл слишком большой — обрезано до 4000 символов]" }
