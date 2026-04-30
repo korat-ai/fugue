@@ -25,10 +25,13 @@ type Strings =
       DiscoveryPickProvider:  string
 
       // Slash commands
-      CmdHelpDesc:  string
-      CmdClearDesc: string
-      CmdExitDesc:  string
-      HelpHeader:   string }
+      CmdHelpDesc:    string
+      CmdClearDesc:   string
+      CmdExitDesc:    string
+      CmdGitLogDesc:  string
+      GitLogNoRepo:   string
+      GitLogPrompt:   string
+      HelpHeader:     string }
 
 let en : Strings =
     { Cancelled            = "cancelled"
@@ -48,6 +51,9 @@ let en : Strings =
       CmdHelpDesc           = "show this help"
       CmdClearDesc          = "clear the screen"
       CmdExitDesc           = "exit Fugue"
+      CmdGitLogDesc         = "explain recent git commit history"
+      GitLogNoRepo          = "not a git repository or git unavailable"
+      GitLogPrompt          = "Here are the last 20 commits from git log:\n\n%s\n\nPlease explain these commits in plain language — what changed, in what order, and what the overall direction seems to be."
       HelpHeader            = "Available slash commands:" }
 
 let ru : Strings =
@@ -68,6 +74,9 @@ let ru : Strings =
       CmdHelpDesc           = "показать эту справку"
       CmdClearDesc          = "очистить экран"
       CmdExitDesc           = "выйти из Fugue"
+      CmdGitLogDesc         = "объяснить историю git коммитов"
+      GitLogNoRepo          = "не git-репозиторий или git недоступен"
+      GitLogPrompt          = "Вот последние 20 коммитов из git log:\n\n%s\n\nОбъясни эти коммиты простым языком — что изменилось, в каком порядке, и каково общее направление разработки."
       HelpHeader            = "Доступные команды:" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.
