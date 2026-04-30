@@ -207,6 +207,11 @@ type Strings =
       CmdHistoryDesc:      string
       SessionResuming:     string  // "{0}" = first sentence of last summary
 
+      // /rate command
+      CmdRateDesc:   string
+      RateUsage:     string
+      RateSaved:     string   // "{0}" = turn index, "{1}" = up|down
+
       // tool-call efficiency warning
       ToolCallsWarning: string }
 
@@ -338,6 +343,9 @@ let en : Strings =
       CmdCompatDesc         = "show terminal capability matrix"
       CmdHistoryDesc        = "show past session summaries"
       SessionResuming       = "▸ Last session: {0}…"
+      CmdRateDesc           = "rate the last response: /rate up|down [turn]"
+      RateUsage             = "usage: /rate up|down [turn-number]"
+      RateSaved             = "turn {0} rated {1}"
       ToolCallsWarning      = "{0} tool calls this turn — consider breaking the task into smaller steps" }
 
 let ru : Strings =
@@ -468,6 +476,9 @@ let ru : Strings =
       CmdCompatDesc         = "показать матрицу возможностей терминала"
       CmdHistoryDesc        = "показать историю прошлых сессий"
       SessionResuming       = "▸ Прошлая сессия: {0}…"
+      CmdRateDesc           = "оценить последний ответ: /rate up|down [ход]"
+      RateUsage             = "использование: /rate up|down [номер-хода]"
+      RateSaved             = "ход {0} оценён: {1}"
       ToolCallsWarning      = "{0} вызовов инструментов за ход — попробуйте разбить задачу на части" }
 
 /// Pick a Strings value by ISO-2 locale code. Unknown locales fall back to en.

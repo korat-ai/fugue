@@ -13,5 +13,6 @@
     <Compile Include="DebugLog.fs" />
     <Compile Include="Config.fs" />
     <Compile Include="SessionSummary.fs" />
+    <Compile Include="Annotation.fs" />
   </ItemGroup>
 </Project>

@@ -573,6 +573,7 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                                   "/macro …",        strings.CmdMacroDesc
                                   "/compat",         strings.CmdCompatDesc
                                   "/history [n]",    strings.CmdHistoryDesc
+                                  "/rate up|down [n]", strings.CmdRateDesc
                                   "/theme …",        strings.CmdThemeDesc
                                   "/exit",           strings.CmdExitDesc
                                   "/review pr <N>",  strings.CmdReviewPrDesc ]
@@ -906,6 +907,33 @@ let run (agent: AIAgent) (cfg: AppConfig) (cwd: string) (lastSummary: string opt
                             Console.Out.WriteLine(sprintf "#%d (%s)" (idx + 1) ago)
                             Console.Out.WriteLine summary
                             Console.Out.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s = "/rate" || s.StartsWith "/rate " ->
+                let parts = (if s = "/rate" then "" else s.Substring(6)).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                let ratingArg = if parts.Length > 0 then parts.[0].ToLowerInvariant() else ""
+                let turnArg   = if parts.Length > 1 then parts.[1] else ""
+                match ratingArg with
+                | "up" | "down" ->
+                    let rating = if ratingArg = "up" then Fugue.Core.Annotation.Up else Fugue.Core.Annotation.Down
+                    let targetTurn =
+                        match System.Int32.TryParse turnArg with
+                        | true, n when n > 0 -> n
+                        | _ -> turnNumber
+                    let ann : Fugue.Core.Annotation.TurnAnnotation =
+                        { TurnIndex   = targetTurn
+                          Rating      = Some rating
+                          Note        = None
+                          AnnotatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }
+                    Fugue.Core.Annotation.save cwd ann
+                    let msg = String.Format(strings.RateSaved, string targetTurn, ratingArg)
+                    if Render.isColorEnabled () then
+                        let color = if ratingArg = "up" then "green" else "red"
+                        AnsiConsole.MarkupLine(sprintf "[%s]%s[/]" color (Markup.Escape msg))
+                    else Console.Out.WriteLine msg
+                | _ ->
+                    if Render.isColorEnabled () then
+                        AnsiConsole.MarkupLine(sprintf "[dim]%s[/]" (Markup.Escape strings.RateUsage))
+                    else Console.Out.WriteLine strings.RateUsage
                 StatusBar.refresh ()
             | Some s when s = "/issue" || s.StartsWith "/issue " ->
                 let rawArg = if s = "/issue" then "" else s.Substring(7).TrimStart()
