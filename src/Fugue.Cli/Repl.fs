@@ -470,6 +470,9 @@ let private streamAndRender
             if assistantStreaming then
                 Console.Out.WriteLine ()
                 let text = responseText.ToString()
+                // Emit AssistantTurn with full content (Phase 3: FTS5 indexer capture).
+                if text.Length > 0 then
+                    recordFn (Fugue.Core.SessionRecord.AssistantTurn(DateTimeOffset.UtcNow, text))
                 if Render.isColorEnabled () then
                     // Replace raw streamed text with formatted markdown.
                     // Count how many terminal rows the raw output occupied, move cursor
@@ -3010,10 +3013,8 @@ Please generate a clear, actionable onboarding checklist."""
                 Fugue.Core.SessionPersistence.appendRecord sessionFilePath
                     (Fugue.Core.SessionRecord.UserTurn(DateTimeOffset.UtcNow, userInput))
                 let persistFn = Fugue.Core.SessionPersistence.appendRecord sessionFilePath
+                // persistFn is passed as recordFn so streamAndRender emits AssistantTurn with full content.
                 do! streamAndRender agent session effectiveInput cfg cancelSrc zenMode persistFn
-                // AssistantTurn content capture is deferred to Phase 3 (FTS5 indexer).
-                Fugue.Core.SessionPersistence.appendRecord sessionFilePath
-                    (Fugue.Core.SessionRecord.AssistantTurn(DateTimeOffset.UtcNow, ""))
                 StatusBar.refresh ()
                 // Nudge if the same tool error has recurred across sessions.
                 let recurring = Fugue.Core.ErrorTrend.findRecurring 3 14
@@ -3059,6 +3060,27 @@ Please generate a clear, actionable onboarding checklist."""
         // Append SessionEnd record to JSONL file (best-effort).
         Fugue.Core.SessionPersistence.appendRecord sessionFilePath
             (Fugue.Core.SessionRecord.SessionEnd(DateTimeOffset.UtcNow, turnNumber, durationMs))
+        // Batch-index this session into FTS5 (best-effort; failure is silent — reindex recovers).
+        try
+            let idxRow : Fugue.Core.SearchIndex.SessionRow = {
+                Id        = currentSessionId
+                Cwd       = cwd
+                StartedAt = DateTimeOffset.FromUnixTimeMilliseconds(sessionStartedAt).ToString("o")
+                EndedAt   = Some (DateTimeOffset.UtcNow.ToString("o"))
+                TurnCount = turnNumber
+                Summary   = None
+            }
+            Fugue.Core.SearchIndex.upsertSession idxRow
+            let content =
+                Fugue.Core.SessionPersistence.readRecords sessionFilePath
+                |> List.choose (function
+                    | Fugue.Core.SessionRecord.UserTurn(_, c)                         -> Some c
+                    | Fugue.Core.SessionRecord.AssistantTurn(_, c) when c <> ""      -> Some c
+                    | Fugue.Core.SessionRecord.ToolCall(_, n, a, _)                  -> Some $"{n} {a}"
+                    | _                                                               -> None)
+                |> String.concat " "
+            Fugue.Core.SearchIndex.upsertContent currentSessionId content
+        with _ -> ()
         // Fire SessionEnd hooks (best-effort; failures are logged, never surfaced).
         let sessionEndPayload =
             Fugue.Core.Hooks.sessionEndPayload cwd durationMs turnNumber
