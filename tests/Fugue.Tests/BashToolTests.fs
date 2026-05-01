@@ -18,7 +18,8 @@ let ``Bash captures stderr`` () =
 
 [<Fact>]
 let ``Bash reports non-zero exit code`` () =
-    let result = Fugue.Tools.BashTool.bash (Path.GetTempPath()) "false" None None CancellationToken.None
+    // `exit 1` is a builtin in both sh and pwsh, so the assertion is shell-agnostic.
+    let result = Fugue.Tools.BashTool.bash (Path.GetTempPath()) "exit 1" None None CancellationToken.None
     result |> should haveSubstring "exit_code=1"
 
 [<Fact>]

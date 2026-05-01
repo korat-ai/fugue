@@ -2,6 +2,7 @@ module Fugue.Tools.BashTool
 
 open System
 open System.Diagnostics
+open System.Runtime.InteropServices
 open System.Text
 open System.Threading
 open System.ComponentModel
@@ -34,17 +35,27 @@ let private isSafe (key: string) : bool =
     elif allowedPrefixes |> Array.exists (fun p -> up.StartsWith(p, StringComparison.Ordinal)) then true
     else false
 
-[<Description("Run a shell command via /bin/sh -c and return combined stdout/stderr with exit code.")>]
+[<Description("Run a shell command (POSIX sh on Unix, PowerShell on Windows) and return combined stdout/stderr with exit code.")>]
 let bash
     ([<Description("Working directory.")>] cwd: string)
-    ([<Description("Command line to execute (sh syntax).")>] command: string)
+    ([<Description("Command line to execute (POSIX sh on Unix, PowerShell on Windows).")>] command: string)
     ([<Description("Timeout in milliseconds (default 60000 = 60s).")>] timeoutMs: int option)
     ([<Description("Strip secret env vars before starting the process.")>] cleanEnv: bool option)
     ([<Description("CancellationToken to interrupt the process early.")>] ct: CancellationToken)
     : string =
     let timeout = timeoutMs |> Option.defaultValue 60_000
 
-    let psi = ProcessStartInfo("/bin/sh", "-c \"" + command.Replace("\"", "\\\"") + "\"")
+    // Pick shell per OS. -EncodedCommand expects UTF-16-LE base64 — the canonical
+    // way to feed a script to PowerShell from another process without quoting bugs.
+    let psi =
+        if RuntimeInformation.IsOSPlatform OSPlatform.Windows then
+            let encoded =
+                command
+                |> Encoding.Unicode.GetBytes
+                |> Convert.ToBase64String
+            ProcessStartInfo("pwsh", $"-NoProfile -NoLogo -EncodedCommand {encoded}")
+        else
+            ProcessStartInfo("/bin/sh", "-c \"" + command.Replace("\"", "\\\"") + "\"")
     psi.WorkingDirectory <- cwd
     psi.RedirectStandardOutput <- true
     psi.RedirectStandardError <- true
