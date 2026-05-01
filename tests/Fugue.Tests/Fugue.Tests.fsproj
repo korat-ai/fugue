@@ -41,6 +41,7 @@
     <Compile Include="TreeToolTests.fs" />
     <Compile Include="DiscoveryTests.fs" />
     <Compile Include="ConversationTests.fs" />
+    <Compile Include="SessionAccessTests.fs" />
     <Compile Include="AtFileTests.fs" />
     <Compile Include="PathSafetyGuardTests.fs" />
     <Compile Include="InjectionGuardTests.fs" />
