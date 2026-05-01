@@ -96,16 +96,20 @@ let private loadOverride (name: string) : (string * string) option =
             None
     else None
 
-// ── Known embedded names ──────────────────────────────────────────────────────
-// This list is the source of truth for what ships in the binary.
-// Adding a new .md file requires adding its stem here.
+// ── Embedded prompt names ─────────────────────────────────────────────────────
+// Discovered dynamically from the AOT manifest at first call — eliminates the
+// dual-maintenance burden of a hardcoded list. Adding a new template is
+// strictly "drop a .md file under prompts/" + rebuild.
 
-let private embeddedNames =
-    [| "breaking-changes"; "check-effects"; "check-tail-rec"; "complexity"
-       "derive-codec"; "idiomatic"; "incremental"; "infer-type"
-       "migrate-oop-to-fp"; "monad"; "pointfree"; "port"
-       "refactor-pipeline"; "review-game-loop"; "rop"; "scaffold"; "scaffold-actor"
-       "scaffold-cqrs"; "scaffold-du"; "show"; "translate-comments"; "typegen" |]
+let private discoverEmbeddedNames () : string[] =
+    let prefix = "Fugue.Cli.prompts."
+    let suffix = ".md"
+    Assembly.GetExecutingAssembly().GetManifestResourceNames()
+    |> Array.choose (fun n ->
+        if n.StartsWith prefix && n.EndsWith suffix then
+            Some (n.Substring(prefix.Length, n.Length - prefix.Length - suffix.Length))
+        else None)
+    |> Array.sort
 
 // ── Cache ─────────────────────────────────────────────────────────────────────
 
@@ -116,17 +120,7 @@ let clearCache () = cache <- None
 
 let private buildCache () : PromptTemplate list =
     let dir = overridesDir ()
-    // Diagnostic: count manifest resources matching the prompts prefix and
-    // warn if it diverges from the embeddedNames whitelist. This catches the
-    // common mistake where a developer drops a new .md file under prompts/
-    // but forgets to register it in embeddedNames above.
-    let manifestCount =
-        Assembly.GetExecutingAssembly().GetManifestResourceNames()
-        |> Array.filter (fun n -> n.StartsWith "Fugue.Cli.prompts." && n.EndsWith ".md")
-        |> Array.length
-    if manifestCount <> embeddedNames.Length then
-        eprintfn "fugue: warning: %d embedded prompt resources but %d names registered — register all prompts/*.md in PromptRegistry.embeddedNames"
-            manifestCount embeddedNames.Length
+    let embeddedNames = discoverEmbeddedNames ()
     // 1. All embedded templates
     let embedded =
         embeddedNames
