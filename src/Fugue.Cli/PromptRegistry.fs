@@ -104,7 +104,7 @@ let private embeddedNames =
     [| "breaking-changes"; "check-effects"; "check-tail-rec"; "complexity"
        "derive-codec"; "idiomatic"; "incremental"; "infer-type"
        "migrate-oop-to-fp"; "monad"; "pointfree"; "port"
-       "refactor-pipeline"; "rop"; "scaffold"; "scaffold-actor"
+       "refactor-pipeline"; "review-game-loop"; "rop"; "scaffold"; "scaffold-actor"
        "scaffold-cqrs"; "scaffold-du"; "show"; "translate-comments"; "typegen" |]
 
 // ── Cache ─────────────────────────────────────────────────────────────────────
