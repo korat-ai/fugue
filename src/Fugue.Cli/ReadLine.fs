@@ -405,19 +405,91 @@ let readAsync (prompt: string) (strings: Strings) (callbacks: ReadLineCallbacks)
                 i <- i + 1
         n
     let slashHelp =
-        [ "/help",         strings.CmdHelpDesc
+        [ // Core
+          "/help",         strings.CmdHelpDesc
           "/clear",        strings.CmdClearDesc
-          "/summary",      strings.CmdSummaryDesc
-          "/short",        strings.CmdShortDesc
-          "/long",         strings.CmdLongDesc
           "/clear-history", strings.CmdClearHistoryDesc
-          "/tools",        strings.CmdToolsDesc
-          "/summarize",    strings.CmdSummarizeDesc
           "/new",          strings.CmdNewDesc
           "/init",         strings.CmdInitDesc
           "/exit",         strings.CmdExitDesc
+          "/quit",         strings.CmdExitDesc
+          // Verbosity & summarization
+          "/short",        strings.CmdShortDesc
+          "/long",         strings.CmdLongDesc
+          "/summary",      strings.CmdSummaryDesc
+          "/summarize",    strings.CmdSummarizeDesc
+          "/compress",     "summarise session history and reset context window"
+          // Inspection
+          "/tools",        strings.CmdToolsDesc
           "/diff",         strings.CmdDiffDesc
-          "/diff --staged", strings.CmdDiffDesc ]
+          "/diff --staged", strings.CmdDiffDesc
+          "/git-log",      strings.CmdGitLogDesc
+          "/doctor",       "run environment diagnostics"
+          "/history",      strings.CmdHistoryDesc
+          "/onboard",      strings.CmdOnboardDesc
+          // Model
+          "/model",        "interactive model picker (or: /model set <name>, /model suggest)"
+          "/model set",    "switch model on current provider"
+          "/model suggest", "ask agent for model recommendation"
+          // Session metadata
+          "/rename",       "set a human-readable session title"
+          "/rate",         strings.CmdRateDesc
+          "/annotate",     strings.CmdAnnotateDesc
+          "/note",         strings.CmdNoteDesc
+          "/notes",        strings.CmdNotesDesc
+          "/bookmark",     strings.CmdBookmarkDesc
+          "/bookmarks",    strings.CmdBookmarksDesc
+          "/snippet",      strings.CmdSnippetDesc
+          "/find",         strings.CmdFindDesc
+          "/undo",         strings.CmdUndoDesc
+          "/todo",         strings.CmdTodoDesc
+          "/zen",          strings.CmdZenDesc
+          "/theme",        strings.CmdThemeDesc
+          "/templates",    "list available session templates"
+          // Workflow
+          "/ask",          strings.CmdAskDesc
+          "/document",     strings.CmdDocumentDesc
+          "/activity",     strings.CmdActivityDesc
+          "/alias",        strings.CmdAliasDesc
+          "/scratch",      strings.CmdScratchDesc
+          "/squash",       strings.CmdSquashDesc
+          "/macro",        strings.CmdMacroDesc
+          "/bench",        strings.CmdBenchDesc
+          "/compat",       strings.CmdCompatDesc
+          "/issue",        strings.CmdIssueDesc
+          "/watch",        strings.CmdWatchDesc
+          "/review pr",    strings.CmdReviewPrDesc
+          // Generation / scaffolding (PROMPT)
+          "/scaffold du",       "generate F# DU with match examples and JSON attrs"
+          "/scaffold cqrs",     "generate CQRS Command/Handler/Event/Test slice"
+          "/scaffold actor",    "generate typed actor with command DU and supervision"
+          "/derive codec",      "generate AOT-safe STJ JsonSerializerContext"
+          "/migrate oop-to-fp", "convert OOP class hierarchy to F# DUs"
+          "/refactor pipeline", "rewrite F# let-bindings as |> pipe chain"
+          "/translate comments","translate code comments to English"
+          "/port",              "idiomatic cross-language code translation"
+          "/idiomatic",         "suggest idiomatic style improvements for the language"
+          "/incremental",       "add a new function in-place without rewriting files"
+          "/breaking-changes",  "detect breaking API changes and list call sites"
+          "/complexity",        "cyclomatic complexity analysis and refactoring hints"
+          "/infer-type",        "infer and explain F# type signature of an expression"
+          "/pointfree",         "offer point-free rewrite of an F# function"
+          "/monad",             "generate F# CE / Scala for-comprehension from pseudocode"
+          "/rop",               "generate ROP Result/Either chain from plain-English"
+          "/check exhaustive",  "find FS0025 incomplete-pattern warnings and fix"
+          "/check tail-rec",    "detect non-tail-recursive functions and offer rewrites"
+          "/check effects",     "verify ZIO/Cats Effect/Async type consistency"
+          // Utility
+          "/gen uuid",     "generate a UUID"
+          "/gen ulid",     "generate a ULID"
+          "/gen nanoid",   "generate a NanoID"
+          "/env list",     "list session environment variables"
+          "/env set",      "set a session environment variable"
+          "/env unset",    "unset a session environment variable"
+          "/cron",         "convert NL schedule to cron expression"
+          "/regex",        "test a regex pattern against sample input"
+          "/http",         "inline HTTP client (HTTPie-style)"
+          "/report-bug",   "capture last failed turn as a GitHub issue draft" ]
     let st : S =
         { Buffer          = ResizeArray<char>()
           Cursor          = 0
