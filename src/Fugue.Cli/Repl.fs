@@ -2952,9 +2952,14 @@ Please generate a clear, actionable onboarding checklist."""
                             | _                                  -> effectiveInput
                         turnNumber <- turnNumber + 1
                         task {
-                            // Record UserTurn before streaming so ordering is preserved even on cancel.
+                            // Record UserTurn with the EFFECTIVE input — i.e., the post-hook
+                            // text the agent actually saw. On /session resume, replaying this
+                            // record reconstructs the same agent state including any hook
+                            // Replace/Append transformations. The user's raw typed text is
+                            // already echoed to the terminal via Render.userMessage at type-time;
+                            // JSONL captures the durable agent-processed view.
                             Fugue.Core.SessionPersistence.appendRecord sessionFilePath
-                                (Fugue.Core.SessionRecord.UserTurn(DateTimeOffset.UtcNow, userInput))
+                                (Fugue.Core.SessionRecord.UserTurn(DateTimeOffset.UtcNow, effectiveInput))
                             let persistFn = Fugue.Core.SessionPersistence.appendRecord sessionFilePath
                             // persistFn is passed as recordFn so streamAndRender emits AssistantTurn with full content.
                             do! streamAndRender agent session effectiveInput cfg cancelSrc zenMode persistFn
