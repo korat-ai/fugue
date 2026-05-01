@@ -50,6 +50,13 @@ let mutable private sessionEnvVars : Set<string> = Set.empty
 // Per-session ID for error trend logging (reset on /new).
 let mutable private currentSessionId = ""
 
+/// Collapse newlines/tabs to spaces and clip to 60 chars for the /turns picker.
+/// Public so tests can lock in invariants without driving a TTY.
+let previewTurnContent (s: string) : string =
+    let collapsed = s.Replace('\n', ' ').Replace('\r', ' ').Replace('\t', ' ')
+    if collapsed.Length <= 60 then collapsed
+    else collapsed.Substring(0, 60)
+
 // Last turn that had tool errors — used by /report-bug.
 let mutable private lastFailedTurn : BugReport.TurnRecord option = None
 
@@ -1267,6 +1274,28 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                             Console.Out.WriteLine($"#{idx + 1} ({ago})")
                             Console.Out.WriteLine summary
                             Console.Out.WriteLine()
+                StatusBar.refresh ()
+            | Some "/turns" ->
+                let records = Fugue.Core.SessionPersistence.readRecords sessionFilePath
+                let turnItems =
+                    records
+                    |> List.choose (function
+                        | Fugue.Core.SessionRecord.UserTurn(_, c)      -> Some ("user", c)
+                        | Fugue.Core.SessionRecord.AssistantTurn(_, c) -> Some ("asst", c)
+                        | _                                            -> None)
+                    |> List.mapi (fun i (role, c) ->
+                        ($"[{i + 1}] {role}", previewTurnContent c))
+                if turnItems.IsEmpty then
+                    AnsiConsole.MarkupLine "[dim]No turns yet in this session.[/]"
+                else
+                    match Picker.pick "Turns — current session" turnItems (turnItems.Length - 1) with
+                    | None -> AnsiConsole.MarkupLine "[dim]Cancelled[/]"
+                    | Some i ->
+                        let (label, _) = turnItems.[i]
+                        let closeIdx = label.IndexOf ']'
+                        if closeIdx > 1 then
+                            let n = label.Substring(1, closeIdx - 1)
+                            nextInputPrefill <- $"/show {n}"
                 StatusBar.refresh ()
             | Some "/templates" ->
                 let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)

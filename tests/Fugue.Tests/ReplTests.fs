@@ -197,3 +197,76 @@ let ``generateNanoid produces unique values`` () =
     let a = generateNanoid ()
     let b = generateNanoid ()
     a |> should not' (equal b)
+
+// ---------------------------------------------------------------------------
+// /turns picker — content preview helper + JSONL round-trip
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``previewTurnContent passes through short single-line content unchanged`` () =
+    previewTurnContent "hello world" |> should equal "hello world"
+
+[<Fact>]
+let ``previewTurnContent clips at 60 chars`` () =
+    let long = String.replicate 80 "x"
+    let result = previewTurnContent long
+    result.Length |> should equal 60
+
+[<Fact>]
+let ``previewTurnContent collapses newlines and tabs to spaces`` () =
+    let result = previewTurnContent "line1\nline2\rline3\tend"
+    result |> should equal "line1 line2 line3 end"
+    result.Contains '\n' |> should equal false
+    result.Contains '\r' |> should equal false
+    result.Contains '\t' |> should equal false
+
+[<Fact>]
+let ``readRecords filtered to user/assistant turns yields correct count`` () =
+    let dir = tmpDir ()
+    try
+        let path = Path.Combine(dir, "01TURNS00000000000000000001.jsonl")
+        let ts = System.DateTimeOffset.UtcNow
+        Fugue.Core.SessionPersistence.appendRecord path
+            (Fugue.Core.SessionRecord.SessionStart(ts, dir, "model-x", "provider-x"))
+        for i in 1..3 do
+            Fugue.Core.SessionPersistence.appendRecord path
+                (Fugue.Core.SessionRecord.UserTurn(ts, $"q{i}"))
+        for i in 1..2 do
+            Fugue.Core.SessionPersistence.appendRecord path
+                (Fugue.Core.SessionRecord.AssistantTurn(ts, $"a{i}"))
+        Fugue.Core.SessionPersistence.appendRecord path
+            (Fugue.Core.SessionRecord.ToolCall(ts, "Read", "{}", "{}"))
+        Fugue.Core.SessionPersistence.appendRecord path
+            (Fugue.Core.SessionRecord.SessionEnd(ts, 5, 1000L))
+
+        let records = Fugue.Core.SessionPersistence.readRecords path
+        let turnCount =
+            records
+            |> List.choose (function
+                | Fugue.Core.SessionRecord.UserTurn(_, c)      -> Some c
+                | Fugue.Core.SessionRecord.AssistantTurn(_, c) -> Some c
+                | _                                            -> None)
+            |> List.length
+        turnCount |> should equal 5
+    finally
+        cleanup dir
+
+[<Fact>]
+let ``empty session jsonl yields no turn items`` () =
+    let dir = tmpDir ()
+    try
+        let path = Path.Combine(dir, "01EMPTY0000000000000000000.jsonl")
+        let ts = System.DateTimeOffset.UtcNow
+        Fugue.Core.SessionPersistence.appendRecord path
+            (Fugue.Core.SessionRecord.SessionStart(ts, dir, "m", "p"))
+        Fugue.Core.SessionPersistence.appendRecord path
+            (Fugue.Core.SessionRecord.SessionEnd(ts, 0, 10L))
+        let records = Fugue.Core.SessionPersistence.readRecords path
+        let turns =
+            records
+            |> List.choose (function
+                | Fugue.Core.SessionRecord.UserTurn(_, c) | Fugue.Core.SessionRecord.AssistantTurn(_, c) -> Some c
+                | _ -> None)
+        turns |> should be Empty
+    finally
+        cleanup dir

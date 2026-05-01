@@ -53,6 +53,7 @@ let getAll (strings: Strings) : (string * string) list =
           "/bench [n]",                  strings.CmdBenchDesc
           "/compat",                     strings.CmdCompatDesc
           "/history [n]",                strings.CmdHistoryDesc
+          "/turns",                      "scrollable picker of turns in current session"
           "/templates",                  "list available session templates"
           "/gen uuid|ulid|nanoid",       "generate a unique identifier"
           "/rename <title>",             "set a human-readable title for this session"
