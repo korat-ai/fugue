@@ -1535,7 +1535,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                                 sessionRef.Value <- session
                                 let provName, _ = providerInfo cfg.Provider
                                 AnsiConsole.MarkupLine($"[green]✓[/] model → [cyan]{Markup.Escape provName}[/] / [green]{Markup.Escape newModel}[/] [dim](history reset)[/]")
-                                StatusBar.start cwd cfg
+                                StatusBar.setCfg cfg
                             with ex ->
                                 AnsiConsole.MarkupLine($"[red]✗ failed to switch model: {Markup.Escape ex.Message}[/]")
                         }
@@ -1676,7 +1676,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         sessionRef.Value <- session
                         let prov, _ = providerInfo cfg.Provider
                         AnsiConsole.MarkupLine($"[green]✓[/] model → [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape newModel}[/] [dim](history reset)[/]")
-                        StatusBar.start cwd cfg
+                        StatusBar.setCfg cfg
                         // Re-fetch model list for the (potentially) new provider in background.
                         // On empty result (HTTP failure proxy), keep the previous list and
                         // mark stale — the user will see `[stale]` next time they hit

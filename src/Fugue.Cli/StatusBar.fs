@@ -212,6 +212,14 @@ let refresh () =
     writeRaw line2
     writeRaw "\x1b[u"
 
+/// Update the config the status bar reads from. Use after `/model set` and
+/// other config-mutating commands. `start` early-returns once the bar is
+/// active, so it cannot be reused for re-init — this setter exists to keep
+/// the rendered model name / provider in sync after a rebuild.
+let setCfg (newCfg: AppConfig) : unit =
+    cfg <- Some newCfg
+    if active then refresh ()
+
 let start (initialCwd: string) (initialCfg: AppConfig) : unit =
     if active || not (Render.isColorEnabled ()) then () else
     cwd <- initialCwd
