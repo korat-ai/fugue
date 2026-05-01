@@ -760,75 +760,7 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
             | Some s when s = "/help" ->
                 AnsiConsole.Write(Markup("[bold]" + Markup.Escape liveStrings.HelpHeader + "[/]"))
                 AnsiConsole.WriteLine()
-                let helpItems = [ "/help",           liveStrings.CmdHelpDesc
-                                  "/ask <q>",        liveStrings.CmdAskDesc
-                                  "/clear",          liveStrings.CmdClearDesc
-                                  "/summary",         liveStrings.CmdSummaryDesc
-                                  "/document [path]", liveStrings.CmdDocumentDesc
-                                  "/activity",        liveStrings.CmdActivityDesc
-                                  "/alias <n>=<exp>", liveStrings.CmdAliasDesc
-                                  "/scratch <text>",  liveStrings.CmdScratchDesc
-                                  "/squash <N>",      liveStrings.CmdSquashDesc
-                                  "/short",           liveStrings.CmdShortDesc
-                                  "/long",            liveStrings.CmdLongDesc
-                                  "/zen",             liveStrings.CmdZenDesc
-                                  "/snippet …",       liveStrings.CmdSnippetDesc
-                                  "/bookmark <name>", liveStrings.CmdBookmarkDesc
-                                  "/bookmarks",       liveStrings.CmdBookmarksDesc
-                                  "/clear-history",   liveStrings.CmdClearHistoryDesc
-                                  "/tools",           liveStrings.CmdToolsDesc
-                                  "/todo",            liveStrings.CmdTodoDesc
-                                  "/note <text>",     liveStrings.CmdNoteDesc
-                                  "/notes",           liveStrings.CmdNotesDesc
-                                  "/undo",            liveStrings.CmdUndoDesc
-                                  "/find <query>",    liveStrings.CmdFindDesc
-                                  "/summarize <p>",   liveStrings.CmdSummarizeDesc
-                                  "/new",             liveStrings.CmdNewDesc
-                                  "/diff",           liveStrings.CmdDiffDesc
-                                  "/init",           liveStrings.CmdInitDesc
-                                  "/git-log",        liveStrings.CmdGitLogDesc
-                                  "/issue <N>",      liveStrings.CmdIssueDesc
-                                  "/model",          "interactive model picker (or: /model set <name>, /model suggest)"
-                                  "/onboard",        liveStrings.CmdOnboardDesc
-                                  "/watch <p> <cmd>", liveStrings.CmdWatchDesc
-                                  "/macro …",        liveStrings.CmdMacroDesc
-                                  "/bench [n]",      liveStrings.CmdBenchDesc
-                                  "/compat",         liveStrings.CmdCompatDesc
-                                  "/history [n]",    liveStrings.CmdHistoryDesc
-                                  "/templates",      "list available session templates"
-                                  "/gen uuid|ulid|nanoid", "generate a unique identifier"
-                                  "/rename <title>",     "set a human-readable title for this session"
-                                  "/env set|unset|list", "manage session-scoped environment variables"
-                                  "/cron \"description\"", "convert NL schedule to cron + next 5 fire times"
-                                  "/regex \"pat\" \"in\"", "test a regex pattern against sample input"
-                                  "/rate up|down [n]", liveStrings.CmdRateDesc
-                                  "/annotate [n] [up|down] <note>", liveStrings.CmdAnnotateDesc
-                                  "/theme …",        liveStrings.CmdThemeDesc
-                                  "/exit",           liveStrings.CmdExitDesc
-                                  "/review pr <N>",  liveStrings.CmdReviewPrDesc
-                                  "/report-bug",     "capture last failed turn as a GitHub issue draft"
-                                  "/http METHOD URL …", "inline HTTP client (HTTPie-style, -H/-d/--inject)"
-                                  "/refactor pipeline [f:N-M]", "rewrite F# let-bindings as |> pipe chain"
-                                  "/check exhaustive [dir]",     "find FS0025 incomplete-pattern warnings and fix"
-                                  "/compress",          "summarise session history and reset context window"
-                                  "/rop <description>",  "generate ROP Result/Either chain from plain-English"
-                                  "/infer-type <expr>",  "infer and explain F# type signature of an expression"
-                                  "/pointfree <fn>",     "offer point-free rewrite of an F# function"
-                                  "/scaffold du <name>", "generate F# DU with match examples and JSON attrs"
-                                  "/monad <desc>",       "generate F# CE / Scala for-comprehension from pseudocode"
-                                  "/migrate oop-to-fp [file]", "convert OOP class hierarchy to F# DUs"
-                                  "/derive codec <Type>",      "generate AOT-safe STJ JsonSerializerContext"
-                                  "/scaffold cqrs <Cmd>",      "generate CQRS Command/Handler/Event/Test slice"
-                                  "/scaffold actor <Name>",    "generate typed actor with command DU and supervision"
-                                  "/check tail-rec <file>",    "detect non-tail-recursive functions and offer rewrites"
-                                  "/check effects <file>",     "verify ZIO/Cats Effect/Async type consistency"
-                                  "/translate comments <file>","translate code comments to English"
-                                  "/port <file> [lang]",       "idiomatic cross-language code translation"
-                                  "/scaffold <type> <name>",   "language-aware project scaffolding"
-                                  "/complexity [file/dir]",    "cyclomatic complexity analysis and refactoring hints"
-                                  "/breaking-changes <args>",  "detect breaking API changes and list call sites"
-                                  "/idiomatic <file>",         "suggest idiomatic style improvements for the language"
-                                  "/incremental <desc>",       "add a new function in-place without rewriting files" ]
+                let helpItems = SlashCommands.getAll liveStrings
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()

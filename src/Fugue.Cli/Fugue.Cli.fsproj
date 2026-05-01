@@ -45,6 +45,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="SlashCommands.fs" />
     <Compile Include="ReadLine.fs" />
     <Compile Include="MathRender.fs" />
     <Compile Include="MarkdownRender.fs" />
