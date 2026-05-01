@@ -340,3 +340,54 @@ let ``no cfg: line2 renders without crashing and contains StatusBarApp`` () =
             | DrawOp.Paint(Region.StatusBarLine2, t, _) -> Some t
             | _ -> None)
     line2 |> should haveSubstring en.StatusBarApp
+
+// ---------------------------------------------------------------------------
+// PR B integration: verify captureState→renderStatusBar pipeline convergence
+// These tests exercise renderStatusBar with state that mirrors what captureState
+// would produce from known inputs — ensuring no divergence between the pure
+// render and the old inline path's output contract.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``renderStatusBar line2 contains provider label when cfg is present`` () =
+    let s = { idleState with Cfg = Some defaultCfg }
+    let ops = renderStatusBar s
+    let line2 =
+        ops |> List.pick (fun op ->
+            match op with
+            | DrawOp.Paint(Region.StatusBarLine2, t, _) -> Some t
+            | _ -> None)
+    // Provider label format: "anthropic:claude-opus-4-7" or display name
+    line2 |> should haveSubstring "anthropic:"
+
+[<Fact>]
+let ``renderStatusBar re-renders consistently after state change (cfg swap)`` () =
+    // Simulate what refresh() does after setCfg: build state with new cfg, re-render.
+    let cfg1 = defaultCfg
+    let cfg2 = { defaultCfg with Provider = OpenAI("key2", "gpt-4o") }
+    let s1 = { idleState with Cfg = Some cfg1 }
+    let s2 = { idleState with Cfg = Some cfg2 }
+    let ops1 = renderStatusBar s1
+    let ops2 = renderStatusBar s2
+    let line2Of ops =
+        ops |> List.pick (fun op ->
+            match op with
+            | DrawOp.Paint(Region.StatusBarLine2, t, _) -> Some t
+            | _ -> None)
+    let text1 = line2Of ops1
+    let text2 = line2Of ops2
+    text1 |> should haveSubstring "anthropic:"
+    text2 |> should haveSubstring "openai:"
+
+[<Fact>]
+let ``renderStatusBar state snapshot preserves cwd home-relative form`` () =
+    // Verify that cwd passed in as-is ends up in line1 — no double-transformation.
+    // (captureState calls homeRel before building state; renderStatusBar uses Cwd verbatim.)
+    let s = { idleState with Cwd = "~/projects/myapp"; Branch = "develop" }
+    let ops = renderStatusBar s
+    let line1 =
+        ops |> List.pick (fun op ->
+            match op with
+            | DrawOp.Paint(Region.StatusBarLine1, t, _) -> Some t
+            | _ -> None)
+    line1 |> should haveSubstring "~/projects/myapp"
