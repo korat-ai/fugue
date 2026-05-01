@@ -53,3 +53,10 @@ let ``parseOllama extracts names from models array`` () =
     let json = """{"models":[{"name":"llama3.1:latest"},{"name":"mistral:7b"},{"name":"qwen3:14b"}]}"""
     let result = parseOllama json
     result |> should equal [ "llama3.1:latest"; "mistral:7b"; "qwen3:14b" ]
+
+// ── Test 7: parseOllama returns [] for malformed JSON ────────────────────────
+
+[<Fact>]
+let ``parseOllama returns empty list for malformed JSON`` () =
+    let result = parseOllama "not-json"
+    result |> should equal ([] : string list)
