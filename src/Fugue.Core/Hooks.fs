@@ -14,6 +14,7 @@ type HookEvent =
     | SessionEnd
     | PreToolUse
     | PostToolUse
+    | UserPromptSubmit
 
 type OnError =
     | LogContinue   // default: log warning and keep going
@@ -27,20 +28,22 @@ type HookDef =
     }
 
 type HooksConfig =
-    { HookTimeoutMs : int          // global default (ms)
-      OnError       : OnError
-      SessionStart  : HookDef list
-      SessionEnd    : HookDef list
-      PreToolUse    : HookDef list
-      PostToolUse   : HookDef list }
+    { HookTimeoutMs    : int          // global default (ms)
+      OnError          : OnError
+      SessionStart     : HookDef list
+      SessionEnd       : HookDef list
+      PreToolUse       : HookDef list
+      PostToolUse      : HookDef list
+      UserPromptSubmit : HookDef list }
 
 let defaultConfig : HooksConfig =
-    { HookTimeoutMs = 5_000
-      OnError       = LogContinue
-      SessionStart  = []
-      SessionEnd    = []
-      PreToolUse    = []
-      PostToolUse   = [] }
+    { HookTimeoutMs    = 5_000
+      OnError          = LogContinue
+      SessionStart     = []
+      SessionEnd       = []
+      PreToolUse       = []
+      PostToolUse      = []
+      UserPromptSubmit = [] }
 
 // ── PreToolResult ─────────────────────────────────────────────────────────────
 
@@ -49,6 +52,15 @@ type PreToolResult =
     | Proceed                                         // proceed with original args
     | Block       of reason : string                  // abort tool call; return reason to LLM
     | ModifyArgs  of changes : (string * string) list // key/rawJsonValue pairs to overwrite
+
+// ── UserPromptResult ──────────────────────────────────────────────────────────
+
+/// Result returned by runUserPromptSubmit.
+type UserPromptResult =
+    | PassThrough              // pass original prompt unchanged
+    | Replace of string        // substitute the prompt entirely
+    | Append  of string        // append text to the prompt (newline-separated)
+    | BlockPrompt of string    // cancel the turn; display reason to user
 
 // ── Payload builders ─────────────────────────────────────────────────────────
 // AOT-safe: manual JSON building, no reflection, no STJ serialization.
@@ -96,6 +108,15 @@ let postToolUsePayload (toolName: string) (argsJson: string) (result: string) (i
     "," + q + "args" + q + ":" + argsJson +
     "," + q + "result" + q + ":" + q + esc result + q +
     "," + q + "isError" + q + ":" + (if isError then "true" else "false") +
+    "," + q + "sessionId" + q + ":" + q + esc sessionId + q +
+    "}"
+
+/// Build JSON payload for UserPromptSubmit.
+let userPromptSubmitPayload (prompt: string) (sessionId: string) : string =
+    let q = "\""
+    "{" + q + "event" + q + ":" + q + "UserPromptSubmit" + q +
+    "," + q + "version" + q + ":1" +
+    "," + q + "prompt" + q + ":" + q + esc prompt + q +
     "," + q + "sessionId" + q + ":" + q + esc sessionId + q +
     "}"
 
@@ -200,12 +221,13 @@ let load () : HooksConfig =
                         { def with Async = true }
                     else def)
 
-            { HookTimeoutMs = globalTimeout
-              OnError        = onError
-              SessionStart   = parseHooks "SessionStart"
-              SessionEnd     = parseHooks "SessionEnd"
-              PreToolUse     = parseHooks "PreToolUse"
-              PostToolUse    = parseHooksPostToolUse "PostToolUse" }
+            { HookTimeoutMs    = globalTimeout
+              OnError          = onError
+              SessionStart     = parseHooks "SessionStart"
+              SessionEnd       = parseHooks "SessionEnd"
+              PreToolUse       = parseHooks "PreToolUse"
+              PostToolUse      = parseHooksPostToolUse "PostToolUse"
+              UserPromptSubmit = parseHooks "UserPromptSubmit" }
         with ex ->
             eprintfn $"[hooks] failed to load {path}: {ex.Message}"
             defaultConfig
@@ -318,7 +340,7 @@ let runLifecycle (event: HookEvent) (payloadJson: string) (config: HooksConfig) 
         match event with
         | SessionStart -> config.SessionStart
         | SessionEnd   -> config.SessionEnd
-        | PreToolUse | PostToolUse -> []  // handled by runPreToolUse / runPostToolUse
+        | PreToolUse | PostToolUse | UserPromptSubmit -> []  // handled by dedicated run* functions
     if hooks.IsEmpty then Task.FromResult(())
     else task {
         for def in hooks do
@@ -413,3 +435,63 @@ let runPostToolUse (toolName: string) (argsJson: string) (result: string) (isErr
     let payload = postToolUsePayload toolName argsJson result isError sessionId
     for def in matchingHooks do
         fireAsyncHook def payload
+
+// ── runUserPromptSubmit ──────────────────────────────────────────────────────
+
+/// Parse a single hook's stdout into the accumulated UserPromptResult.
+/// Priority: BlockPrompt > Replace > first Append wins; empty stdout → unchanged.
+let private parseUserPromptResult (stdout: string) (current: UserPromptResult) : UserPromptResult =
+    if String.IsNullOrWhiteSpace stdout then current
+    else
+        try
+            use doc = JsonDocument.Parse(stdout)
+            let root = doc.RootElement
+            let mutable blockEl = Unchecked.defaultof<JsonElement>
+            if root.TryGetProperty("block", &blockEl) && blockEl.ValueKind = JsonValueKind.True then
+                let mutable reasonEl = Unchecked.defaultof<JsonElement>
+                let reason =
+                    if root.TryGetProperty("reason", &reasonEl) && reasonEl.ValueKind = JsonValueKind.String then
+                        reasonEl.GetString() |> Option.ofObj |> Option.defaultValue "blocked by hook"
+                    else "blocked by hook"
+                BlockPrompt reason
+            else
+                match current with
+                | BlockPrompt _ -> current  // already blocked; short-circuit
+                | _ ->
+                    let mutable replaceEl = Unchecked.defaultof<JsonElement>
+                    let mutable appendEl  = Unchecked.defaultof<JsonElement>
+                    if root.TryGetProperty("replace", &replaceEl) && replaceEl.ValueKind = JsonValueKind.String then
+                        let s = replaceEl.GetString() |> Option.ofObj |> Option.defaultValue ""
+                        Replace s
+                    elif root.TryGetProperty("append", &appendEl) && appendEl.ValueKind = JsonValueKind.String then
+                        let extra = appendEl.GetString() |> Option.ofObj |> Option.defaultValue ""
+                        match current with
+                        | Append existing -> Append (existing + "\n" + extra)
+                        | _              -> Append extra
+                    else current
+        with ex ->
+            eprintfn $"[hooks] failed to parse UserPromptSubmit hook stdout: {ex.Message}"
+            current
+
+/// Run all UserPromptSubmit hooks synchronously (user is waiting; no fire-and-forget).
+/// Accumulates results: first Block wins, first Replace wins over Append, Appends concatenate.
+let runUserPromptSubmit (prompt: string) (sessionId: string) (config: HooksConfig) : Task<UserPromptResult> =
+    if config.UserPromptSubmit.IsEmpty then Task.FromResult PassThrough
+    else task {
+        let payload = userPromptSubmitPayload prompt sessionId
+        let mutable result = PassThrough
+        for def in config.UserPromptSubmit do
+            match result with
+            | BlockPrompt _ -> ()  // short-circuit: already blocked
+            | _ ->
+                let exitCode, stdout =
+                    try runSyncHookWithStdout def payload config.HookTimeoutMs
+                    with ex ->
+                        eprintfn $"[hooks] UserPromptSubmit hook failed ({def.Command}): {ex.Message}"
+                        0, ""
+                if exitCode = -1 then
+                    eprintfn $"[hooks] UserPromptSubmit hook timed out ({def.Command}) — proceeding"
+                else
+                    result <- parseUserPromptResult stdout result
+        return result
+    }
