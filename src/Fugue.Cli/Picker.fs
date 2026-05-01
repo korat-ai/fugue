@@ -2,6 +2,68 @@ module Fugue.Cli.Picker
 
 open System
 open Spectre.Console
+open Fugue.Surface
+
+// ---------------------------------------------------------------------------
+// Pure render types
+// ---------------------------------------------------------------------------
+
+/// Immutable state snapshot for the picker. All fields needed to render
+/// a complete frame — no Console reads inside renderState.
+type PickerState = {
+    Title:       string
+    Items:       (string * string) array  // (label, hint) pairs
+    CurrentIdx:  int
+    ScrollTop:   int
+    VisibleRows: int
+}
+
+/// Pure render: PickerState -> DrawOp list.
+/// No Console writes, no side effects. Same state → same ops.
+/// Each op is DrawOp.Append (one line), in top-to-bottom order:
+///   row 0 : title
+///   row 1 : above-hint or blank
+///   row 2..2+VisibleRows-1 : item rows (up to VisibleRows items)
+///   row 2+VisibleRows : below-hint or blank
+///   row 3+VisibleRows : footer
+let renderState (state: PickerState) : DrawOp list =
+    let n = state.Items.Length
+    surface {
+        // Title row
+        yield DrawOp.Append $"  {state.Title}"
+
+        // Above-scroll hint (or blank spacer)
+        if state.ScrollTop > 0 then
+            yield DrawOp.Append $"  ▲ {state.ScrollTop} more above"
+        else
+            yield DrawOp.Append ""
+
+        // Item rows
+        for offset in 0 .. state.VisibleRows - 1 do
+            let i = state.ScrollTop + offset
+            if i < n then
+                let (label, hint) = state.Items.[i]
+                let selected = i = state.CurrentIdx
+                let marker = if selected then "› " else "  "
+                let labelPart = if selected then $"[bold cyan]{Markup.Escape label}[/]" else Markup.Escape label
+                yield DrawOp.Append $"{marker}{labelPart}  [dim]{Markup.Escape hint}[/]"
+            else
+                yield DrawOp.Append ""
+
+        // Below-scroll hint (or blank spacer)
+        let remaining = n - (state.ScrollTop + state.VisibleRows)
+        if remaining > 0 then
+            yield DrawOp.Append $"  ▼ {remaining} more below"
+        else
+            yield DrawOp.Append ""
+
+        // Footer help row
+        yield DrawOp.Append "  ↑/↓ navigate · PgUp/PgDn page · Home/End ends · Enter select · Esc cancel"
+    }
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 /// Generic scrollable arrow-key picker.
 /// items: (label, hint) pairs. label is the bold left column, hint is the dimmed right column.
@@ -24,32 +86,25 @@ let pick (title: string) (items: (string * string) list) (initialIdx: int) : int
             elif currentIdx >= scrollTop + visibleRows then
                 scrollTop <- currentIdx - visibleRows + 1
 
-        let renderRow (i: int) (selected: bool) : string =
-            let (label, hint) = arr.[i]
-            let escLabel = Markup.Escape label
-            let escHint = Markup.Escape hint
-            let marker = if selected then "[bold cyan]›[/] " else "  "
-            if selected then $"{marker}[bold cyan]{escLabel}[/]  [dim]{escHint}[/]"
-            else             $"{marker}{escLabel}  [dim]{escHint}[/]"
+        let mkState () : PickerState =
+            { Title       = title
+              Items       = arr
+              CurrentIdx  = currentIdx
+              ScrollTop   = scrollTop
+              VisibleRows = visibleRows }
 
-        let renderAll () =
-            AnsiConsole.MarkupLine $"[dim]{Markup.Escape title}[/]"
-            if scrollTop > 0 then
-                AnsiConsole.MarkupLine $"  [dim]▲ {scrollTop} more above[/]"
-            else
-                Console.Out.WriteLine ""
-            for offset in 0 .. visibleRows - 1 do
-                let i = scrollTop + offset
-                if i < n then AnsiConsole.MarkupLine(renderRow i (i = currentIdx))
-                else Console.Out.WriteLine ""
-            let remaining = n - (scrollTop + visibleRows)
-            if remaining > 0 then
-                AnsiConsole.MarkupLine $"  [dim]▼ {remaining} more below[/]"
-            else
-                Console.Out.WriteLine ""
-            AnsiConsole.MarkupLine "[dim]↑/↓ navigate · PgUp/PgDn page · Home/End ends · Enter select · Esc cancel[/]"
+        // Apply DrawOp list to Console via direct ANSI (Phase 1 — MailboxProcessor wiring in Phase 2).
+        let applyOps (ops: DrawOp list) =
+            for op in ops do
+                match op with
+                | DrawOp.Append text ->
+                    AnsiConsole.MarkupLine text
+                | _ -> ()
 
         let totalLines = 1 + 1 + visibleRows + 1 + 1
+
+        let renderAll () =
+            applyOps (renderState (mkState ()))
 
         let redraw () =
             Console.Out.Write($"\x1b[{totalLines}F")

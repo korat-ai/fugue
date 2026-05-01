@@ -109,5 +109,6 @@
     <ProjectReference Include="..\Fugue.Core\Fugue.Core.fsproj" />
     <ProjectReference Include="..\Fugue.Agent\Fugue.Agent.fsproj" />
     <ProjectReference Include="..\Fugue.Tools\Fugue.Tools.fsproj" />
+    <ProjectReference Include="..\Fugue.Surface\Fugue.Surface.fsproj" />
   </ItemGroup>
 </Project>
