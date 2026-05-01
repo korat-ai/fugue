@@ -27,14 +27,13 @@ type SearchHit = {
     StartedAt : string
 }
 
-/// Override for test isolation — set to Some path before calling any function.
-/// Production code leaves this as None (uses ~/.fugue/index.db).
-let mutable dbPathOverride : string option = None
-
+/// DB path resolution. Honors FUGUE_INDEX_DB env override (used by tests
+/// for full isolation), falling back to ~/.fugue/index.db. Symmetric with
+/// FUGUE_PROMPTS_DIR / FUGUE_CACHE_DIR / FUGUE_SESSIONS_DIR.
 let dbPath () : string =
-    match dbPathOverride with
-    | Some p -> p
-    | None   -> Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".fugue", "index.db")
+    match Environment.GetEnvironmentVariable "FUGUE_INDEX_DB" |> Option.ofObj with
+    | Some p when p <> "" -> p
+    | _ -> Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".fugue", "index.db")
 
 let private openConn () : SqliteConnection =
     let path = dbPath ()

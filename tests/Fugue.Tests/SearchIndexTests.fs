@@ -9,19 +9,19 @@ open Fugue.Core.SessionPersistence
 open Fugue.Core.SessionRecord
 
 // ---------------------------------------------------------------------------
-// Helper: each test gets its own temp SQLite DB via dbPathOverride
+// Helper: each test gets its own temp SQLite DB via FUGUE_INDEX_DB env override
 // ---------------------------------------------------------------------------
 
 let private withTmpDb f =
     let tmp = Path.Combine(Path.GetTempPath(), "FugueIdxTests_" + Path.GetRandomFileName())
     Directory.CreateDirectory tmp |> ignore
     let dbFile = Path.Combine(tmp, "index.db")
-    let prev = dbPathOverride
+    let prev = Environment.GetEnvironmentVariable "FUGUE_INDEX_DB"
     try
-        dbPathOverride <- Some dbFile
+        Environment.SetEnvironmentVariable("FUGUE_INDEX_DB", dbFile)
         f tmp
     finally
-        dbPathOverride <- prev
+        Environment.SetEnvironmentVariable("FUGUE_INDEX_DB", prev)
         try Directory.Delete(tmp, true) with _ -> ()
 
 // ---------------------------------------------------------------------------
@@ -116,7 +116,7 @@ let ``reindexFromJsonl: indexes 3 JSONL session files`` () =
     withTmpDb (fun tmp ->
         // Build sessions dir structure inside tmp (not the real ~/.fugue)
         // We need a fake sessionsDir — override it by writing files where sessionsDir() points.
-        // sessionsDir() = ~/.fugue/sessions but with dbPathOverride set the DB is in tmp.
+        // sessionsDir() = ~/.fugue/sessions but with FUGUE_INDEX_DB set the DB is in tmp.
         // We still need to write JSONL files somewhere reindexFromJsonl can find them.
         // sessionsDir() reads GetFolderPath(UserProfile) which is fixed; we write there.
         let sessDir = Path.Combine(tmp, "sessions", "-tmp-proj")
