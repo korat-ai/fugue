@@ -3087,24 +3087,43 @@ Please generate a clear, actionable onboarding checklist."""
                     else
                         let pins = pinnedMessages |> List.mapi (fun i m -> $"[pinned {i+1}] {m}") |> String.concat "\n"
                         pins + "\n\n" + base'
-                let sw = System.Diagnostics.Stopwatch.StartNew()
-                // Record UserTurn before streaming so ordering is preserved even on cancel.
-                Fugue.Core.SessionPersistence.appendRecord sessionFilePath
-                    (Fugue.Core.SessionRecord.UserTurn(DateTimeOffset.UtcNow, userInput))
-                let persistFn = Fugue.Core.SessionPersistence.appendRecord sessionFilePath
-                // persistFn is passed as recordFn so streamAndRender emits AssistantTurn with full content.
-                do! streamAndRender agent session effectiveInput cfg cancelSrc zenMode persistFn
-                StatusBar.refresh ()
-                // Nudge if the same tool error has recurred across sessions.
-                let recurring = Fugue.Core.ErrorTrend.findRecurring 3 14
-                match recurring with
-                | (sig', count) :: _ ->
-                    let short = if sig'.Length > 80 then sig'.[..79] + "…" else sig'
-                    if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine($"[dim yellow]⚠ recurring error ({count}×): {Markup.Escape short} — type [bold]/report-bug[/] to file a report[/]")
-                    else
-                        Console.Out.WriteLine($"⚠ recurring error ({count}×): {short} — type /report-bug to file a report")
-                | [] -> ()
+                // Fire UserPromptSubmit hooks before dispatching to the agent.
+                let! hookResult = Fugue.Core.Hooks.runUserPromptSubmit effectiveInput currentSessionId hooksConfig
+                do!
+                    match hookResult with
+                    | Fugue.Core.Hooks.BlockPrompt reason ->
+                        task {
+                            if Render.isColorEnabled () then
+                                AnsiConsole.MarkupLine $"[yellow]⊘ prompt blocked by hook:[/] {Markup.Escape reason}"
+                            else
+                                Console.Out.WriteLine $"⊘ prompt blocked by hook: {reason}"
+                            AnsiConsole.WriteLine()
+                        }
+                    | _ ->
+                        let effectiveInput =
+                            match hookResult with
+                            | Fugue.Core.Hooks.Replace newPrompt -> newPrompt
+                            | Fugue.Core.Hooks.Append  extra     -> effectiveInput + "\n" + extra
+                            | _                                  -> effectiveInput
+                        task {
+                            // Record UserTurn before streaming so ordering is preserved even on cancel.
+                            Fugue.Core.SessionPersistence.appendRecord sessionFilePath
+                                (Fugue.Core.SessionRecord.UserTurn(DateTimeOffset.UtcNow, userInput))
+                            let persistFn = Fugue.Core.SessionPersistence.appendRecord sessionFilePath
+                            // persistFn is passed as recordFn so streamAndRender emits AssistantTurn with full content.
+                            do! streamAndRender agent session effectiveInput cfg cancelSrc zenMode persistFn
+                            StatusBar.refresh ()
+                            // Nudge if the same tool error has recurred across sessions.
+                            let recurring = Fugue.Core.ErrorTrend.findRecurring 3 14
+                            match recurring with
+                            | (sig', count) :: _ ->
+                                let short = if sig'.Length > 80 then sig'.[..79] + "…" else sig'
+                                if Render.isColorEnabled () then
+                                    AnsiConsole.MarkupLine($"[dim yellow]⚠ recurring error ({count}×): {Markup.Escape short} — type [bold]/report-bug[/] to file a report[/]")
+                                else
+                                    Console.Out.WriteLine($"⚠ recurring error ({count}×): {short} — type /report-bug to file a report")
+                            | [] -> ()
+                        }
         // Generate and persist a 3-sentence session summary when the session had at least one turn.
         if turnNumber > 0 then
             try
