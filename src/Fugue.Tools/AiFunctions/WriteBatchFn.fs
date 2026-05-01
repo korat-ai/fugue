@@ -11,11 +11,13 @@ let private schema = DelegatedFn.parseSchema """{
   "required":["files"]
 }"""
 
-let create (cwd: string) : AIFunction =
+let create (cwd: string) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionId: string) : AIFunction =
     DelegatedFn.DelegatedAIFunction(
         name        = "WriteBatch",
         description = "Atomically write multiple files in one operation (all-or-nothing).",
         schema      = schema,
+        hooksConfig = hooksConfig,
+        sessionId   = sessionId,
         invoke      = fun args ct -> task {
             ct.ThrowIfCancellationRequested()
             let files = Args.getStr args "files"

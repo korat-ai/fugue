@@ -102,11 +102,13 @@ let private desc =
 /// The optional `getSession` closure overrides the module-level state (useful in tests).
 [<RequiresUnreferencedCode("Calls getConversationJson which uses AgentSessionExtensions over STJ state")>]
 [<RequiresDynamicCode("Calls getConversationJson which uses AgentSessionExtensions over STJ state")>]
-let create (getSession: (unit -> AgentSession | null) option) : AIFunction =
+let create (getSession: (unit -> AgentSession | null) option) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionId: string) : AIFunction =
     DelegatedFn.DelegatedAIFunction(
         name        = "GetConversation",
         description = desc,
         schema      = schema,
+        hooksConfig = hooksConfig,
+        sessionId   = sessionId,
         invoke      = fun _args ct -> task {
             ct.ThrowIfCancellationRequested()
             let session =

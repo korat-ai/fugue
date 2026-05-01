@@ -8,16 +8,16 @@ open Fugue.Tools.AiFunctions
 /// The GetConversation tool reads the session via GetConversationFn.setSession / module-level state.
 [<RequiresUnreferencedCode("GetConversationFn uses AgentSessionExtensions over STJ state")>]
 [<RequiresDynamicCode("GetConversationFn uses AgentSessionExtensions over STJ state")>]
-let buildAll (cwd: string) : AIFunction list = [
-    ReadFn.create      cwd
-    WriteFn.create     cwd
-    WriteBatchFn.create cwd
-    EditFn.create      cwd
-    BashFn.create      cwd
-    GlobFn.create      cwd
-    GrepFn.create      cwd
-    TreeFn.create      cwd
-    GetConversationFn.create None
+let buildAll (cwd: string) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionId: string) : AIFunction list = [
+    ReadFn.create       cwd hooksConfig sessionId
+    WriteFn.create      cwd hooksConfig sessionId
+    WriteBatchFn.create cwd hooksConfig sessionId
+    EditFn.create       cwd hooksConfig sessionId
+    BashFn.create       cwd hooksConfig sessionId
+    GlobFn.create       cwd hooksConfig sessionId
+    GrepFn.create       cwd hooksConfig sessionId
+    TreeFn.create       cwd hooksConfig sessionId
+    GetConversationFn.create None hooksConfig sessionId
 ]
 
 let names : string list = [ "Read"; "Write"; "WriteBatch"; "Edit"; "Bash"; "Glob"; "Grep"; "Tree"; "GetConversation" ]

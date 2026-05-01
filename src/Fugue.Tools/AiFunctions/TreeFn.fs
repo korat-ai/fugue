@@ -13,11 +13,13 @@ let private schema = DelegatedFn.parseSchema """{
   "required":[]
 }"""
 
-let create (cwd: string) : AIFunction =
+let create (cwd: string) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionId: string) : AIFunction =
     DelegatedFn.DelegatedAIFunction(
         name        = "Tree",
         description = "Show directory structure as an ASCII tree. Optionally filter by glob pattern.",
         schema      = schema,
+        hooksConfig = hooksConfig,
+        sessionId   = sessionId,
         invoke      = fun args ct -> task {
             ct.ThrowIfCancellationRequested()
             let path  = Args.tryGetStr args "path"  |> Option.defaultValue "."

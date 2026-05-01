@@ -13,11 +13,13 @@ let private schema = DelegatedFn.parseSchema """{
   "required":["path"]
 }"""
 
-let create (cwd: string) : AIFunction =
+let create (cwd: string) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionId: string) : AIFunction =
     DelegatedFn.DelegatedAIFunction(
         name        = "Read",
         description = "Read a text file. Returns lines prefixed with 1-based line numbers. For files >200 lines use offset+limit to read only what you need.",
         schema      = schema,
+        hooksConfig = hooksConfig,
+        sessionId   = sessionId,
         invoke      = fun args ct -> task {
             ct.ThrowIfCancellationRequested()
             let path   = Args.getStr     args "path"

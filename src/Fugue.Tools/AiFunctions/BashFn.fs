@@ -13,11 +13,13 @@ let private schema = DelegatedFn.parseSchema """{
   "required":["command"]
 }"""
 
-let create (cwd: string) : AIFunction =
+let create (cwd: string) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionId: string) : AIFunction =
     DelegatedFn.DelegatedAIFunction(
         name        = "Bash",
         description = "Run a shell command via /bin/sh -c. Returns stdout, stderr, and exit code.",
         schema      = schema,
+        hooksConfig = hooksConfig,
+        sessionId   = sessionId,
         invoke      = fun args ct -> task {
             ct.ThrowIfCancellationRequested()
             let command   = Args.getStr    args "command"

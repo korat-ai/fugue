@@ -14,11 +14,13 @@ let private schema = DelegatedFn.parseSchema """{
   "required":["path","old_string","new_string"]
 }"""
 
-let create (cwd: string) : AIFunction =
+let create (cwd: string) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionId: string) : AIFunction =
     DelegatedFn.DelegatedAIFunction(
         name        = "Edit",
         description = "Edit a text file by exact-string replacement.",
         schema      = schema,
+        hooksConfig = hooksConfig,
+        sessionId   = sessionId,
         invoke      = fun args ct -> task {
             ct.ThrowIfCancellationRequested()
             let path       = Args.getStr     args "path"

@@ -14,11 +14,13 @@ let private schema = DelegatedFn.parseSchema """{
   "required":["pattern"]
 }"""
 
-let create (cwd: string) : AIFunction =
+let create (cwd: string) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionId: string) : AIFunction =
     DelegatedFn.DelegatedAIFunction(
         name        = "Grep",
         description = "Regex-search files. Returns path:line:text matches.",
         schema      = schema,
+        hooksConfig = hooksConfig,
+        sessionId   = sessionId,
         invoke      = fun args ct -> task {
             ct.ThrowIfCancellationRequested()
             let pattern = Args.getStr    args "pattern"

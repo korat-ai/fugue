@@ -12,11 +12,13 @@ let private schema = DelegatedFn.parseSchema """{
   "required":["pattern"]
 }"""
 
-let create (cwd: string) : AIFunction =
+let create (cwd: string) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionId: string) : AIFunction =
     DelegatedFn.DelegatedAIFunction(
         name        = "Glob",
         description = "Find files matching a glob pattern, sorted by mtime descending.",
         schema      = schema,
+        hooksConfig = hooksConfig,
+        sessionId   = sessionId,
         invoke      = fun args ct -> task {
             ct.ThrowIfCancellationRequested()
             let pattern = Args.getStr    args "pattern"
