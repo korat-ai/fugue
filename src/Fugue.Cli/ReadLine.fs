@@ -341,7 +341,11 @@ let private redraw (st: S) =
         writeRaw ("\x1b[" + string st.RowsBelowCursor + "B")
     eraseLines st.LinesRendered
     // 2. emit prompt + buffer
-    if st.LinesRendered = 0 then writeRaw "\r"
+    // On the very first draw (LinesRendered = 0) the current terminal row may carry
+    // stale content from a previous prompt render (e.g. a long model name typed in
+    // /model set that was longer than the new placeholder).  \x1b[2K erases the
+    // entire line before we write so no leftover characters show through.
+    if st.LinesRendered = 0 then writeRaw "\x1b[2K\r"
     writeRaw st.PromptText
     let bufStr = String(st.Buffer.ToArray())
     writeRaw bufStr
