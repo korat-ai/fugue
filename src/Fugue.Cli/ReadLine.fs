@@ -358,10 +358,10 @@ let private redraw (st: S) =
     if st.ExitArmed && st.HintWhenArmed <> "" then
         writeRaw ("\n\x1b[2m" + st.HintWhenArmed + "\x1b[0m")
         st.LinesRendered <- st.LinesRendered + 1
-    elif st.Buffer.Count > 1 && st.Buffer.[0] = '/' then
-        // Only show inline suggestions when prefix has ≥2 chars (e.g. "/h", "/cl").
-        // A bare "/" matches all commands and would overflow the terminal, corrupting
-        // cursor tracking in eraseLines on the next redraw.
+    elif st.Buffer.Count > 0 && st.Buffer.[0] = '/' then
+        // Show inline slash command suggestions, capped at maxSuggestions to keep
+        // the rendered area bounded (prevents terminal scroll from corrupting
+        // cursor-tracking in eraseLines on the next redraw).
         let prefix = String(st.Buffer.ToArray())
         let matches = st.SlashHelp |> List.filter (fun (name, _) -> name.StartsWith(prefix))
         let maxSuggestions = 8
@@ -369,7 +369,7 @@ let private redraw (st: S) =
             writeRaw ("\n\x1b[2m  " + name + "  " + desc + "\x1b[0m")
             st.LinesRendered <- st.LinesRendered + 1
         if matches.Length > maxSuggestions then
-            writeRaw $"\n\x1b[2m  … {matches.Length - maxSuggestions} more (keep typing)[/]\x1b[0m"
+            writeRaw $"\n\x1b[2m  … {matches.Length - maxSuggestions} more (keep typing)\x1b[0m"
             st.LinesRendered <- st.LinesRendered + 1
     // 4. position cursor at st.Cursor inside buffer.
     //    Compute (row, col) from start of prompt.
