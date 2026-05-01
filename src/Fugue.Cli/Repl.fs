@@ -704,6 +704,9 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         MarkdownRender.initEmoji emojiEnabled
                         savedUi <- newCfg.Ui
                         liveStrings <- pick newCfg.Ui.Locale
+                        // Propagate the full new config so the status bar re-renders with
+                        // the updated locale, model, and provider label immediately.
+                        StatusBar.setCfg newCfg
                         AnsiConsole.MarkupLine "[dim]Config reloaded.[/]"
                         StatusBar.refresh ()
                     | Error _ -> ()   // ignore malformed config
@@ -2587,6 +2590,8 @@ Please generate a clear, actionable onboarding checklist."""
                 else
                     savedUi <- { savedUi with Locale = arg }
                     liveStrings <- Fugue.Core.Localization.pick arg
+                    // Propagate new locale to status bar so its strings re-resolve immediately.
+                    StatusBar.setCfg { cfg with Ui = savedUi }
                     try
                         Config.saveToFile { cfg with Ui = savedUi }
                         if Render.isColorEnabled () then
