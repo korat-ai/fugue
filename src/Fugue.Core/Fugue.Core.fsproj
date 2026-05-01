@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Log.fs" />
+    <Compile Include="SessionRecord.fs" />
     <Compile Include="Checkpoint.fs" />
     <Compile Include="EmojiMap.fs" />
     <Compile Include="Localization.fs" />
