@@ -45,6 +45,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="prompts\*.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="PromptRegistry.fs" />
     <Compile Include="SlashCommands.fs" />
     <Compile Include="Picker.fs" />
     <Compile Include="ReadLine.fs" />
