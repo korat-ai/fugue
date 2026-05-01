@@ -137,8 +137,9 @@ let ``loadProfile returns Some content when profile file exists`` () =
     let profilesDir = Path.Combine(tmpHome, ".fugue", "profiles")
     Directory.CreateDirectory profilesDir |> ignore
     File.WriteAllText(Path.Combine(profilesDir, "senior-reviewer.md"), "You are a senior code reviewer.")
-    // Override HOME so Environment.SpecialFolder.UserProfile resolves to tmpHome.
+    // Environment.SpecialFolder.UserProfile reads HOME on Unix and USERPROFILE on Windows — set both.
     Environment.SetEnvironmentVariable("HOME", tmpHome)
+    Environment.SetEnvironmentVariable("USERPROFILE", tmpHome)
     let result = loadProfile "senior-reviewer"
     result |> should equal (Some "You are a senior code reviewer.")
 
@@ -147,6 +148,7 @@ let ``loadProfile returns None when profile file does not exist`` () =
     let tmpHome = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
     Directory.CreateDirectory tmpHome |> ignore
     Environment.SetEnvironmentVariable("HOME", tmpHome)
+    Environment.SetEnvironmentVariable("USERPROFILE", tmpHome)
     let result = loadProfile "nonexistent"
     result |> should equal (None: string option)
 
