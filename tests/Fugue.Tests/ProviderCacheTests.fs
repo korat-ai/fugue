@@ -1,3 +1,4 @@
+[<Xunit.Collection("Sequential")>]
 module Fugue.Tests.ProviderCacheTests
 
 open System
@@ -50,10 +51,10 @@ let ``getCached returns stdout on hit, skips re-execution on second call`` () =
     let script = makeScript "echo hello"
     try
         let provider = makeProvider "test1" script 3600
-        // First call: cache miss → executes script, writes cache
+        // First call: cache miss → returns None (getCached alone doesn't fetch).
         let result1 = getCached provider |> Async.RunSynchronously
-        // getCached alone doesn't run the command; we need fetchProvider path
-        // so run assembleWithProviders instead, which calls fetchProvider internally
+        result1 |> should equal (None: string option)
+        // assembleWithProviders runs the full fetchProvider path which writes cache on success.
         let assembled = assembleWithProviders [ provider ] 5000 |> Async.RunSynchronously
         assembled |> should haveSubstring "[Context: test1]"
         assembled |> should haveSubstring "hello"

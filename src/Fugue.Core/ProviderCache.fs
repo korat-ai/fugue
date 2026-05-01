@@ -1,6 +1,7 @@
 module Fugue.Core.ProviderCache
 
 open System
+open System.Globalization
 open System.IO
 open System.Security.Cryptography
 open System.Text
@@ -55,7 +56,8 @@ let getCached (provider: Hooks.ContextProvider) : Async<string option> =
                         let fetchedAtStr = fetchedAtEl.GetString() |> Option.ofObj |> Option.defaultValue ""
                         if fetchedAtStr = "" then return None
                         else
-                        let fetchedAt = DateTimeOffset.Parse(fetchedAtStr)
+                        let fetchedAt =
+                            DateTimeOffset.ParseExact(fetchedAtStr, "o", CultureInfo.InvariantCulture)
                         let age       = DateTimeOffset.UtcNow - fetchedAt
                         let ttl       = TimeSpan.FromSeconds(float provider.TtlSeconds)
                         if age < ttl then
