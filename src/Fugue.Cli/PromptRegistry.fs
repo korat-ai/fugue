@@ -71,7 +71,9 @@ let parseTemplate (text: string) : PromptTemplate =
 
 let private loadEmbedded (name: string) : string option =
     let asm = Assembly.GetExecutingAssembly()
-    let resourceName = $"fugue.prompts.{name}.md"
+    // MSBuild embeds as <RootNamespace>.<folder>.<filename>
+    // RootNamespace is "Fugue.Cli", folder is "prompts", so: Fugue.Cli.prompts.<name>.md
+    let resourceName = $"Fugue.Cli.prompts.{name}.md"
     match asm.GetManifestResourceStream(resourceName) with
     | null -> None
     | stream ->
