@@ -153,7 +153,7 @@ jobs:
         uses: NuGet/login@v1
         id: login
         with:
-          user: neftedollar
+          user: Neftedollar
 
       - name: Push to NuGet.org
         run: >
