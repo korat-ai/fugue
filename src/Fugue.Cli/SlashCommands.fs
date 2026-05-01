@@ -35,6 +35,8 @@ let getAll (strings: Strings) : (string * string) list =
       "/undo",                       strings.CmdUndoDesc
       "/find <query>",               strings.CmdFindDesc
       "/summarize <p>",              strings.CmdSummarizeDesc
+      "/session offload",            "save session to JSONL, clear in-memory history"
+      "/session resume <id>",        "reload a previously offloaded session by ULID"
       "/new",                        strings.CmdNewDesc
       "/diff",                       strings.CmdDiffDesc
       "/init",                       strings.CmdInitDesc

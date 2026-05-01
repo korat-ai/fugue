@@ -56,29 +56,8 @@ let mutable private lastFailedTurn : BugReport.TurnRecord option = None
 // Whether the last AI response looked like a plan (for smart follow-up detection).
 let mutable private lastResponseWasPlan = false
 
-let internal generateUlid () : string =
-    let alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-    let rng = System.Security.Cryptography.RandomNumberGenerator.Create()
-    let ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-    let sb = System.Text.StringBuilder(26)
-    let mutable t = ts
-    let tsChars = Array.zeroCreate 10
-    for i in 9 .. -1 .. 0 do
-        tsChars.[i] <- alphabet.[int (t % 32L)]
-        t <- t / 32L
-    for c in tsChars do sb.Append c |> ignore
-    let randBytes = Array.zeroCreate 10
-    rng.GetBytes randBytes
-    let mutable bits = 0UL
-    let mutable bitsAvail = 0
-    for b in randBytes do
-        bits <- (bits <<< 8) ||| uint64 b
-        bitsAvail <- bitsAvail + 8
-        while bitsAvail >= 5 do
-            bitsAvail <- bitsAvail - 5
-            let idx = int ((bits >>> bitsAvail) &&& 0x1FUL)
-            sb.Append alphabet.[idx] |> ignore
-    sb.ToString().[..25]
+/// Delegate to SessionPersistence — kept internal so existing ReplTests still compile.
+let internal generateUlid () : string = Fugue.Core.SessionPersistence.generateUlid ()
 
 let internal generateNanoid () : string =
     let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
@@ -386,7 +365,8 @@ type CancelSource() =
 
 let private streamAndRender
         (agent: AIAgent) (session: AgentSession | null) (input: string)
-        (cfg: AppConfig) (cancelSrc: CancelSource) (zen: bool) : Task<unit> = task {
+        (cfg: AppConfig) (cancelSrc: CancelSource) (zen: bool)
+        (recordFn: Fugue.Core.SessionRecord.SessionRecord -> unit) : Task<unit> = task {
     use streamCts = cancelSrc.NewStreamCts()
     let strings = pick cfg.Ui.Locale
     let toolMeta = Dictionary<string, string * string * int64>()
@@ -416,6 +396,7 @@ let private streamAndRender
                     | Conversation.ToolStarted(id, name, args) ->
                         toolMeta.[id] <- (name, args, Stopwatch.GetTimestamp())
                         toolCallsThisTurn <- toolCallsThisTurn + 1
+                        recordFn (Fugue.Core.SessionRecord.ToolCall(DateTimeOffset.UtcNow, name, args, id))
                         if assistantStreaming then
                             Console.Out.WriteLine ()
                             assistantStreaming <- false
@@ -475,6 +456,7 @@ let private streamAndRender
                             failedArgs.[name] <- args
                         else
                             failedArgs.Remove name |> ignore
+                        recordFn (Fugue.Core.SessionRecord.ToolResult(DateTimeOffset.UtcNow, id, output, isErr))
                         let state =
                             if isErr then Render.Failed(name, args, output, elapsed)
                             else Render.Completed(name, args, output, elapsed)
@@ -575,10 +557,14 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
     let! initialSession = agent.CreateSessionAsync(CancellationToken.None)
     let mutable session : AgentSession | null = initialSession
     Fugue.Tools.AiFunctions.GetConversationFn.setSession session
+    // JSONL session file — appended throughout the session.
+    let providerName, modelName = providerInfo cfg.Provider
+    let sessionFilePath = Fugue.Core.SessionPersistence.sessionPath cwd currentSessionId
+    Fugue.Core.SessionPersistence.appendRecord sessionFilePath
+        (Fugue.Core.SessionRecord.SessionStart(DateTimeOffset.UtcNow, cwd, modelName, providerName))
     // Pre-fill for the next ReadLine call. Used by /menu and similar pickers
     // that hand a partial command back to the user for completion.
     let mutable nextInputPrefill : string = ""
-    let providerName, modelName = providerInfo cfg.Provider
     DebugLog.sessionStart providerName modelName cwd
     // Load hooks config once per session (file absent → silent no-op).
     let hooksConfig = Fugue.Core.Hooks.load ()
@@ -720,7 +706,7 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                 AnsiConsole.Write(Render.userMessage cfg.Ui $"[watch] {wcmd}" turnNumber)
                 AnsiConsole.WriteLine()
                 prelude cfg
-                do! streamAndRender agent session wcmd cfg cancelSrc zenMode
+                do! streamAndRender agent session wcmd cfg cancelSrc zenMode ignore
                 coda cfg
                 StatusBar.refresh ()
             let modelShort =
@@ -814,7 +800,7 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                             AnsiConsole.WriteLine()
                         else
                             let prompt = liveStrings.GitLogPrompt.Replace("%s", out)
-                            do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                            do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 with ex ->
                     AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                     AnsiConsole.WriteLine()
@@ -852,7 +838,7 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                                 AnsiConsole.WriteLine()
                             else
                                 let prompt = $"""Here are the last {n} commits to be squashed:\n\n{out}\n\nPlease generate a single conventional commit message that summarizes all these changes.\nFollow the format: type(scope): description\n\nAlso show the git command to execute the squash:\n  git reset --soft HEAD~{n} && git commit -m "<your message>"\n\nDo NOT run the command — just show it for the user to review and run manually."""
-                                do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                                do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                     with ex ->
                         AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                         AnsiConsole.WriteLine()
@@ -937,7 +923,7 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                         AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetInjected, query)) + "[/]"))
                         AnsiConsole.WriteLine()
                         let block = $"```{lang}\n{code}\n```"
-                        do! streamAndRender agent session block cfg cancelSrc zenMode
+                        do! streamAndRender agent session block cfg cancelSrc zenMode ignore
                     StatusBar.refresh ()
                 | "remove" when parts.Length >= 3 ->
                     let name = parts.[2..] |> String.concat " "
@@ -1109,7 +1095,7 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                                 turnNumber <- turnNumber + 1
                                 AnsiConsole.Write(Render.userMessage cfg.Ui $"[injected HTTP response from {method'} {url}]" turnNumber)
                                 AnsiConsole.WriteLine()
-                                do! streamAndRender agent session ctx cfg cancelSrc zenMode
+                                do! streamAndRender agent session ctx cfg cancelSrc zenMode ignore
                         with ex ->
                             AnsiConsole.Write(Render.errorLine liveStrings $"HTTP error: {ex.Message}")
                             AnsiConsole.WriteLine()
@@ -1459,7 +1445,7 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                                             AnsiConsole.WriteLine()
                                 with _ -> ()   // git unavailable or not a repo — silent
                                 // Inject issue context into conversation
-                                do! streamAndRender agent session issueContext cfg cancelSrc zenMode
+                                do! streamAndRender agent session issueContext cfg cancelSrc zenMode ignore
                     with ex ->
                         AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                         AnsiConsole.WriteLine()
@@ -1467,7 +1453,7 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
             | Some s when s = "/model suggest" ->
                 AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AskingModelRecommendation + "[/]"))
                 AnsiConsole.WriteLine()
-                do! streamAndRender agent session liveStrings.ModelSuggestPrompt cfg cancelSrc zenMode
+                do! streamAndRender agent session liveStrings.ModelSuggestPrompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s = "/model" || s = "/model list" ->
                 let prov, currentModel = providerInfo cfg.Provider
@@ -1612,7 +1598,7 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                     | Some i when i = suggestIdx ->
                         AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AskingModelRecommendation + "[/]"))
                         AnsiConsole.WriteLine()
-                        do! streamAndRender agent session liveStrings.ModelSuggestPrompt cfg cancelSrc zenMode
+                        do! streamAndRender agent session liveStrings.ModelSuggestPrompt cfg cancelSrc zenMode ignore
                     | Some i ->
                         do! pickModel modelsArr.[i]
                     StatusBar.refresh ()
@@ -1680,7 +1666,7 @@ Include: setup steps, key files to read, how to build/test, coding conventions, 
 {ctx}
 
 Please generate a clear, actionable onboarding checklist."""
-                do! streamAndRender agent session onboardPrompt cfg cancelSrc zenMode
+                do! streamAndRender agent session onboardPrompt cfg cancelSrc zenMode ignore
             | Some s when s = "/review pr" || s = "/review pr " ->
                 AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrUsage + "[/]"))
                 AnsiConsole.WriteLine()
@@ -1713,7 +1699,7 @@ Please generate a clear, actionable onboarding checklist."""
                                 .Replace("{2}", truncatedDiff)
                         AnsiConsole.Write(Render.userMessage cfg.Ui $"Reviewing PR #{prNum}…" 0)
                         AnsiConsole.WriteLine()
-                        do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                        do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/ask " ->
                 let question = s.Substring(5).Trim()
@@ -1724,7 +1710,7 @@ Please generate a clear, actionable onboarding checklist."""
                     let augmented = $"[System: answer from your training knowledge only — do not invoke any tools, do not read files, do not run commands]\n\nUser: {question}"
                     AnsiConsole.Write(Render.userMessage cfg.Ui question 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session augmented cfg cancelSrc zenMode
+                    do! streamAndRender agent session augmented cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s = "/ask" ->
                 AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AskUsage + "[/]"))
@@ -1794,7 +1780,7 @@ Please generate a clear, actionable onboarding checklist."""
                         "Write the file to ./FUGUE.md using the Write tool."
                     AnsiConsole.Write(Render.userMessage cfg.Ui "/init" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session initPrompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session initPrompt cfg cancelSrc zenMode ignore
                     StatusBar.refresh ()
             | Some s when s = "/new" ->
                 AnsiConsole.Clear()
@@ -1894,7 +1880,7 @@ Please generate a clear, actionable onboarding checklist."""
                     "Be concise but complete."
                 AnsiConsole.Write(Render.userMessage cfg.Ui "/summary" 0)
                 AnsiConsole.WriteLine()
-                do! streamAndRender agent session summaryPrompt cfg cancelSrc zenMode
+                do! streamAndRender agent session summaryPrompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/document" ->
                 let arg = s.Substring("/document".Length).Trim()
@@ -1906,7 +1892,7 @@ Please generate a clear, actionable onboarding checklist."""
                 let docPrompt = System.String.Format(liveStrings.DocumentPrompt, docPath)
                 AnsiConsole.Write(Render.userMessage cfg.Ui $"/document {docPath}" 0)
                 AnsiConsole.WriteLine()
-                do! streamAndRender agent session docPrompt cfg cancelSrc zenMode
+                do! streamAndRender agent session docPrompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s = "/activity" ->
                 if activityStore.IsEmpty then
@@ -2225,7 +2211,7 @@ Please generate a clear, actionable onboarding checklist."""
                     scratchLines <- []
                     AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ScratchSent + "[/]"))
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session text cfg cancelSrc zenMode
+                    do! streamAndRender agent session text cfg cancelSrc zenMode ignore
                 | "send" ->
                     AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ScratchEmpty + "[/]"))
                     AnsiConsole.WriteLine()
@@ -2358,7 +2344,7 @@ Please generate a clear, actionable onboarding checklist."""
                     let body = String.concat "\n" truncated
                     let summary =
                         $"Found {lines.Length} TODO/FIXME/HACK items in workspace:\n\n{body}{note}\n\nPlease review these and suggest which ones are worth addressing now."
-                    do! streamAndRender agent session summary cfg cancelSrc zenMode
+                    do! streamAndRender agent session summary cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/find " ->
                 let query = s.Substring("/find ".Length).Trim()
@@ -2440,7 +2426,7 @@ Please generate a clear, actionable onboarding checklist."""
                             $"The path '{rawArg}' does not exist. Please let me know."
                     AnsiConsole.Write(Render.userMessage cfg.Ui ("/summarize " + rawArg) 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session summarizePrompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session summarizePrompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/breaking-changes " || s = "/breaking-changes" ->
                 // /breaking-changes <old-file> <new-file> — scan for breaking changes
@@ -2453,7 +2439,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Analyse the following for breaking API changes: \"{arg}\"\n\nCheck:\n1. Renamed or removed public functions, types, or module members.\n2. Changed parameter types or return types.\n3. Added required parameters (non-optional).\n4. Changed DU cases that callers must pattern-match on.\n5. Removed interface members.\n\nFor each breaking change:\n- Quote the old signature vs new signature.\n- List all known call sites (use Grep tool).\n- Suggest a deprecation path (default argument, type alias, or wrapper).\n\nUse Read/Grep tools to discover call sites."
                     AnsiConsole.Write(Render.userMessage cfg.Ui "/breaking-changes" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/idiomatic " || s = "/idiomatic" ->
                 // /idiomatic [file] — post-generation idiomatic rewrite suggestion
@@ -2466,7 +2452,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Review \"{arg}\" for idiomatic style improvements.\n\nFor F#: flag non-idiomatic patterns and suggest pipe-based, DU-based, or computation-expression rewrites.\nFor Elixir: flag imperative loops (use Enum/Stream pipelines instead) and missing pattern match clauses.\nFor Kotlin: flag nullable handling that should use `?.let`/`?:` and unnecessary `!!`.\nFor TypeScript: flag mutation where `const` + spread is preferred and callback nesting that should be Promise chains.\n\nFor each suggestion: quote the original, show the idiomatic alternative, and explain why it's preferred.\n\nRead the file first, then provide structured feedback."
                     AnsiConsole.Write(Render.userMessage cfg.Ui $"/idiomatic {arg}" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/incremental " || s = "/incremental" ->
                 // /incremental <description> — generate only the new function and Edit it in place
@@ -2479,7 +2465,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Add the following functionality incrementally to the existing codebase: \"{desc}\"\n\nRules:\n1. Generate ONLY the new function(s) or type(s) — no file rewrites.\n2. Find the best insertion point using Read and Grep tools.\n3. Apply changes using the Edit tool to insert at the exact location.\n4. Do not modify existing functions unless absolutely required.\n5. Ensure the new code compiles by running `dotnet build --no-restore` after editing."
                     AnsiConsole.Write(Render.userMessage cfg.Ui "/incremental" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/port " || s = "/port" ->
                 // /port <file> [target-lang] — idiomatic cross-language code translation
@@ -2499,7 +2485,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Port the following code to idiomatic {targetLang}:\n\n```\n{code}\n```\n\nRequirements:\n1. Use the target language's idiomatic patterns — not a literal transliteration.\n2. For OOP→FP: use DUs/sealed traits, immutable records, pattern matching.\n3. For FP→OOP: map to classes, interfaces, exception handling.\n4. Annotate each non-obvious translation decision with a brief inline comment.\n5. Return the full translated file ready to use."
                     AnsiConsole.Write(Render.userMessage cfg.Ui $"/port {file} → {targetLang}" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/scaffold " && not (s.StartsWith "/scaffold du") && not (s.StartsWith "/scaffold cqrs") && not (s.StartsWith "/scaffold actor") ->
                 // /scaffold [type] <name> — language-aware project bootstrapping
@@ -2512,7 +2498,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Generate a project scaffold for \"{arg}\".\n\nInspect the project structure first (use Glob/Read tools) to understand:\n1. Language and framework in use.\n2. Naming conventions, folder layout, and existing patterns.\n3. Test framework and tooling.\n\nThen generate the scaffold files following project conventions. Include:\n- Main implementation file(s)\n- Unit test skeleton\n- Any registration/wiring needed in existing entry points\n\nWrite each file using the Write tool."
                     AnsiConsole.Write(Render.userMessage cfg.Ui $"/scaffold {arg}" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s = "/complexity" || s.StartsWith "/complexity " ->
                 // /complexity [file] — cyclomatic complexity analysis
@@ -2522,7 +2508,7 @@ Please generate a clear, actionable onboarding checklist."""
                     $"Analyse cyclomatic complexity of the code in \"{target}\".\n\nFor each function/method:\n1. Compute approximate cyclomatic complexity (count decision points: if/match/loop/exception handlers).\n2. Flag functions with complexity > 10 as high-risk.\n3. Suggest refactorings for the top 3 most complex functions (extract method, simplify conditions, etc.).\n\nPresent results as a table: Function | Complexity | Risk | Refactoring suggestion.\n\nUse Glob and Read tools to discover and examine the source files."
                 AnsiConsole.Write(Render.userMessage cfg.Ui $"/complexity {target}" 0)
                 AnsiConsole.WriteLine()
-                do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/check tail-rec " || s = "/check tail-rec" ->
                 // /check tail-rec [file] — detect non-tail-recursive functions and offer rewrites
@@ -2540,7 +2526,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Analyse the following F# code for tail-recursion correctness:\n\n```fsharp\n{code}\n```\n\nFor each recursive function:\n1. Determine whether it is tail-recursive (the recursive call is the last operation in all branches).\n2. If NOT tail-recursive, explain which call site is the problem and why it would stack-overflow on large inputs.\n3. Offer a rewrite using:\n   - Accumulator pattern (preferred)\n   - Continuation-passing style (CPS) if accumulator doesn't fit\n   - `[<TailCall>]` attribute hint where F# can optimise\n4. Show the rewritten function alongside the original.\n\nSource: {label}"
                     AnsiConsole.Write(Render.userMessage cfg.Ui $"/check tail-rec {label}" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/check effects " || s = "/check effects" ->
                 // /check effects [file] — verify ZIO/Cats Effect type consistency
@@ -2558,7 +2544,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Review the following code for effect system type consistency:\n\n```\n{code}\n```\n\nCheck:\n1. Are all effectful operations wrapped in the same effect type (IO/ZIO/Task/F# Async) consistently?\n2. Are effects mixed (e.g. ZIO and Future in the same for-comprehension) without proper lifting?\n3. Are error channels compatible across composed effects?\n4. Are any side effects performed outside the effect system (unsafe I/O, mutable state leaks)?\n\nFor each issue: show the problematic code, explain the violation, and provide a corrected version.\n\nSource: {label}"
                     AnsiConsole.Write(Render.userMessage cfg.Ui $"/check effects {label}" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/translate comments " || s = "/translate comments" ->
                 // /translate comments [file] — translate code comments to English
@@ -2571,7 +2557,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Translate all code comments in the file \"{arg}\" to English.\n\nRules:\n1. Translate only comment text — do NOT touch identifiers, string literals, or code.\n2. Preserve comment style (// vs /// vs /* */).\n3. Keep the original meaning precisely; prefer clarity over literal translation.\n4. Apply the translations using the Edit tool (one edit per comment block or file section).\n\nRead the file first, then apply targeted edits."
                     AnsiConsole.Write(Render.userMessage cfg.Ui $"/translate comments {arg}" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/derive codec " || s = "/derive codec" ->
                 let typeName = if s = "/derive codec" then "" else s.Substring("/derive codec ".Length).Trim()
@@ -2583,7 +2569,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Generate an AOT-safe JSON codec for the F# type \"{typeName}\".\n\n1. Read the type definition from the codebase (use the Read or Grep tools).\n2. Generate a `[<JsonSerializable>]` `JsonSerializerContext` subclass covering the type and any nested types.\n3. Add `[<JsonPropertyName>]` attributes for all fields to ensure stable serialization.\n4. If the type is a DU, add `[<JsonPolymorphic>]` and `[<JsonDerivedType>]` for each case.\n5. Show a usage example: `JsonSerializer.Serialize(value, MyContext.Default.MyType)`.\n\nTarget: System.Text.Json source generation, .NET 10, Native AOT compatible."
                     AnsiConsole.Write(Render.userMessage cfg.Ui $"/derive codec {typeName}" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/scaffold cqrs " || s = "/scaffold cqrs" ->
                 let cmdName = if s = "/scaffold cqrs" then "" else s.Substring("/scaffold cqrs ".Length).Trim()
@@ -2595,7 +2581,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Generate a complete CQRS slice for \"{cmdName}\".\n\nInclude:\n1. **Command record** — immutable, validated constructor.\n2. **CommandHandler** — reads from the command, applies business logic, emits an event.\n3. **Domain Event** — added as a new DU case (or new type).\n4. **EventHandler** — updates read model or side-effects.\n5. **xUnit test skeleton** — arrange/act/assert for the happy path and one error case.\n\nFollow the naming and layering conventions visible in the existing codebase (use Glob/Read tools to discover them). Return separate fenced code blocks per file."
                     AnsiConsole.Write(Render.userMessage cfg.Ui $"/scaffold cqrs {cmdName}" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/scaffold actor " || s = "/scaffold actor" ->
                 let actorName = if s = "/scaffold actor" then "" else s.Substring("/scaffold actor ".Length).Trim()
@@ -2607,7 +2593,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Generate a typed actor stub for \"{actorName}\".\n\nFor F# / Proto.Actor:\n1. Command DU with all message types.\n2. `Actor` class implementing `IActor` with a `ReceiveAsync` dispatch.\n3. Supervision strategy.\n4. Props factory function.\n\nFor Scala / Akka Typed:\n1. `Command` sealed trait hierarchy.\n2. `Behavior[Command]` with `Behaviors.setup`.\n3. `SupervisorStrategy` using `Behaviors.supervise`.\n\nInfer the framework from the project (use Glob/Read to check dependencies). Return separate fenced blocks per file."
                     AnsiConsole.Write(Render.userMessage cfg.Ui $"/scaffold actor {actorName}" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/scaffold du " || s = "/scaffold du" ->
                 // /scaffold du <concept> — generate F# DU / Scala sealed trait with match examples
@@ -2620,7 +2606,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Generate a complete F# discriminated union for the concept \"{concept}\".\n\nInclude:\n1. The DU definition with well-named cases and meaningful data payloads.\n2. An exhaustive `match` example covering every case.\n3. Smart constructor helpers (active patterns or module functions) for common construction patterns.\n4. `[<JsonDerivedType>]` / `[<JsonPolymorphic>]` attributes for AOT-safe System.Text.Json serialization.\n5. A brief comment per case explaining its semantics.\n\nTarget: F# 9 / .NET 10, Native AOT compatible."
                     AnsiConsole.Write(Render.userMessage cfg.Ui $"/scaffold du {concept}" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/monad " || s = "/monad" ->
                 // /monad <description> — generate F# CE / Scala for-comprehension
@@ -2633,7 +2619,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Convert the following imperative description into idiomatic monadic F# code:\n\n\"{desc}\"\n\nSteps:\n1. Identify the primary effect (async I/O, error handling, sequence generation, cancellation, …).\n2. Choose the correct F# computation expression (`task`, `async`, `result`, `asyncResult`, `seq`, …).\n3. Generate the CE block — no nested `match`/`if` for error handling; use `let!` and `return`.\n4. If the operation mixes effects (e.g. async + Result), compose them correctly (e.g. `taskResult`).\n5. Include the type signatures.\n\nReturn only the code with a one-line comment on the CE chosen."
                     AnsiConsole.Write(Render.userMessage cfg.Ui "/monad" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/migrate oop-to-fp " || s = "/migrate oop-to-fp" ->
                 // /migrate oop-to-fp [file] — convert C#/Java class hierarchy to F# DUs
@@ -2649,7 +2635,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Migrate the following OOP code to idiomatic F#:\n\n```\n{code}\n```\n\nMigration rules:\n1. `abstract class` / `interface` → F# discriminated union (one case per concrete class).\n2. Mutable fields → immutable record fields; setters → `with` copy-and-update expressions.\n3. `null` returns → `Option<T>`; `throw` → `Result<T, Error>` or DU error case.\n4. Virtual method dispatch → exhaustive `match` on the DU.\n5. Constructor logic → module-level factory functions.\n6. Preserve all business logic exactly.\n\nReturn the complete F# translation with brief migration notes per section."
                     AnsiConsole.Write(Render.userMessage cfg.Ui $"/migrate oop-to-fp {arg}" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/rop " || s = "/rop" ->
                 // /rop <description> — generate a railway-oriented Result/Either chain
@@ -2662,7 +2648,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Generate a railway-oriented programming (ROP) pipeline for the following operation:\n\n\"{desc}\"\n\nRequirements:\n1. Use F# `Result<'ok, 'err>` types (or adapt for the target language).\n2. Define a discriminated union for all possible error cases.\n3. Compose steps with `Result.bind` (or `>>=`) — no exceptions, no `try/catch`.\n4. Unify error types across steps; if types differ, map to the common error DU.\n5. Include brief inline comments explaining each step.\n6. Return only the code (no prose preamble)."
                     AnsiConsole.Write(Render.userMessage cfg.Ui $"/rop {desc}" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/infer-type " || s = "/infer-type" ->
                 // /infer-type <expression> — explain the inferred F# type
@@ -2675,7 +2661,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Infer and explain the type of the following F# expression:\n\n```fsharp\n{expr}\n```\n\nFormat your answer as:\n1. **Type signature** — in standard F# notation.\n2. **Parameter breakdown** — explain each type parameter, constraint, or variance annotation.\n3. **Plain-English summary** — one or two sentences explaining what this type means semantically.\n4. **Example usage** — a single concrete example showing it in action."
                     AnsiConsole.Write(Render.userMessage cfg.Ui "/infer-type" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/pointfree " || s = "/pointfree" ->
                 // /pointfree <function-definition> — offer point-free rewrite
@@ -2688,7 +2674,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Offer a point-free rewrite of the following F# function:\n\n```fsharp\n{fn}\n```\n\nFormat your answer as:\n1. **Original** — repeat the function as-is.\n2. **Point-free equivalent** — the rewritten version using partial application, `>>` / `<<`, or combinators.\n3. **Transformation steps** — explain each step of the rewrite.\n4. **Readability verdict** — note whether the point-free form is actually clearer, and when to prefer the explicit form.\n\nIf a point-free form is not natural or readable, say so and explain why."
                     AnsiConsole.Write(Render.userMessage cfg.Ui "/pointfree" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/refactor pipeline" ->
                 // /refactor pipeline [file:start-end] — rewrite let-bindings as |> pipe chain
@@ -2727,7 +2713,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"Refactor the following F# code into an idiomatic pipe chain (`|>`).\n\nRules:\n1. Identify a linear data-flow sequence where each binding feeds into the next.\n2. Replace the sequence with a single `|>` chain.\n3. Use partial application where possible; inline lambdas only when necessary.\n4. Preserve all semantics exactly — no behaviour changes.\n5. Return only the refactored code block.\n\nSource ({label}):\n```fsharp\n{code}\n```"
                     AnsiConsole.Write(Render.userMessage cfg.Ui $"/refactor pipeline {label}" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s = "/check exhaustive" || s.StartsWith "/check exhaustive " ->
                 // Run dotnet build and feed FS0025 (incomplete pattern match) warnings back
@@ -2761,7 +2747,7 @@ Please generate a clear, actionable onboarding checklist."""
                         $"The build found incomplete pattern match warnings (FS0025):\n\n```\n{diagnostics}\n```\n\nPlease:\n1. Read each affected file.\n2. Add the missing match cases using `failwith \"TODO: <CaseName>\"` as placeholders.\n3. Apply the fixes using the Edit tool.\n\nFix all warnings before responding."
                     AnsiConsole.Write(Render.userMessage cfg.Ui "/check exhaustive" 0)
                     AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode
+                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s = "/context show" || s.StartsWith "/context show" ->
                 let wordsToTokens (text: string) =
@@ -2904,7 +2890,7 @@ Please generate a clear, actionable onboarding checklist."""
                         AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                         AnsiConsole.WriteLine()
                     let injection = $"[Compressed session context]\n{summary}"
-                    do! streamAndRender agent session injection cfg cancelSrc zenMode
+                    do! streamAndRender agent session injection cfg cancelSrc zenMode ignore
                     if Render.isColorEnabled () then
                         AnsiConsole.MarkupLine "[dim]Context compressed — previous history summarised and reset.[/]"
                     else
@@ -2913,6 +2899,84 @@ Please generate a clear, actionable onboarding checklist."""
                     AnsiConsole.MarkupLine "[dim yellow]Could not generate summary — context unchanged.[/]"
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
+            | Some s when s = "/session offload" ->
+                // 1. Flush SessionEnd to JSONL
+                Fugue.Core.SessionPersistence.appendRecord sessionFilePath
+                    (Fugue.Core.SessionRecord.SessionEnd(DateTimeOffset.UtcNow, turnNumber, 0L))
+                // 2. Print session id to user
+                let offloadMsg = $"Session saved: {currentSessionId}\nFile: {sessionFilePath}"
+                if Render.isColorEnabled () then
+                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape offloadMsg}[/]")
+                else
+                    Console.Out.WriteLine offloadMsg
+                AnsiConsole.WriteLine()
+                // 3. Reset in-memory history (same pattern as /clear-history)
+                match box session with
+                | :? IAsyncDisposable as d -> try do! d.DisposeAsync().AsTask() with _ -> ()
+                | _ -> ()
+                try
+                    let! newSession = agent.CreateSessionAsync(CancellationToken.None)
+                    session <- newSession
+                    Fugue.Tools.AiFunctions.GetConversationFn.setSession session
+                    // 4. Inject synthetic orientation note so agent knows context was offloaded
+                    let offloadNote = $"Previous context offloaded to session {currentSessionId}. Use GetConversation to inspect history if needed."
+                    do! streamAndRender agent session offloadNote cfg cancelSrc zenMode ignore
+                with ex ->
+                    AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
+                    AnsiConsole.WriteLine()
+                // 5. Reset per-turn counters (keep currentSessionId so offload note references it)
+                turnNumber <- 0
+                sessionNotes <- []
+                lastFile <- None
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/session resume " ->
+                let resumeId = s.Substring("/session resume ".Length).Trim()
+                match Fugue.Core.SessionPersistence.findByIdInCwd cwd resumeId with
+                | None ->
+                    if Render.isColorEnabled () then
+                        AnsiConsole.MarkupLine($"[red]Session not found: {Markup.Escape resumeId}[/]")
+                    else
+                        Console.Out.WriteLine($"Session not found: {resumeId}")
+                    AnsiConsole.WriteLine()
+                | Some path ->
+                    let records = Fugue.Core.SessionPersistence.readRecords path
+                    let messages = System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>()
+                    for r in records do
+                        match r with
+                        | Fugue.Core.SessionRecord.UserTurn(_, content) ->
+                            messages.Add(Microsoft.Extensions.AI.ChatMessage(Microsoft.Extensions.AI.ChatRole.User, content))
+                        | Fugue.Core.SessionRecord.AssistantTurn(_, content) ->
+                            messages.Add(Microsoft.Extensions.AI.ChatMessage(Microsoft.Extensions.AI.ChatRole.Assistant, content))
+                        | Fugue.Core.SessionRecord.ToolCall(_, toolName, args, callId) ->
+                            // Encode as text prefix to avoid FunctionCallContent AOT issues
+                            let text = $"[tool_call:{toolName} call_id:{callId}] {args}"
+                            messages.Add(Microsoft.Extensions.AI.ChatMessage(Microsoft.Extensions.AI.ChatRole.Assistant, text))
+                        | Fugue.Core.SessionRecord.ToolResult(_, callId, output, isError) ->
+                            let errorTag = if isError then " [error]" else ""
+                            let text = $"[tool_result:{callId}]{errorTag} {output}"
+                            messages.Add(Microsoft.Extensions.AI.ChatMessage(Microsoft.Extensions.AI.ChatRole.User, text))
+                        | _ -> ()  // SessionStart / SessionEnd skipped
+                    match box session with
+                    | :? IAsyncDisposable as d -> try do! d.DisposeAsync().AsTask() with _ -> ()
+                    | _ -> ()
+                    try
+                        let! newSession = agent.CreateSessionAsync(CancellationToken.None)
+                        session <- newSession
+                        Fugue.Tools.AiFunctions.GetConversationFn.setSession session
+                        match session with
+                        | null -> ()
+                        | sess ->
+                            let stateKey : string | null = null
+                            let jsonOpts : System.Text.Json.JsonSerializerOptions | null = null
+                            AgentSessionExtensions.SetInMemoryChatHistory(sess, messages, stateKey, jsonOpts)
+                        if Render.isColorEnabled () then
+                            AnsiConsole.MarkupLine($"[dim]Resumed session {Markup.Escape resumeId} — {messages.Count} messages loaded.[/]")
+                        else
+                            Console.Out.WriteLine($"Resumed session {resumeId} — {messages.Count} messages loaded.")
+                    with ex ->
+                        AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
+                    AnsiConsole.WriteLine()
+                    StatusBar.refresh ()
             | Some userInput ->
                 let userInput = ReadLine.normalizeInput userInput
                 if ReadLine.hasZeroWidth userInput then
@@ -2942,7 +3006,14 @@ Please generate a clear, actionable onboarding checklist."""
                         let pins = pinnedMessages |> List.mapi (fun i m -> $"[pinned {i+1}] {m}") |> String.concat "\n"
                         pins + "\n\n" + base'
                 let sw = System.Diagnostics.Stopwatch.StartNew()
-                do! streamAndRender agent session effectiveInput cfg cancelSrc zenMode
+                // Record UserTurn before streaming so ordering is preserved even on cancel.
+                Fugue.Core.SessionPersistence.appendRecord sessionFilePath
+                    (Fugue.Core.SessionRecord.UserTurn(DateTimeOffset.UtcNow, userInput))
+                let persistFn = Fugue.Core.SessionPersistence.appendRecord sessionFilePath
+                do! streamAndRender agent session effectiveInput cfg cancelSrc zenMode persistFn
+                // AssistantTurn content capture is deferred to Phase 3 (FTS5 indexer).
+                Fugue.Core.SessionPersistence.appendRecord sessionFilePath
+                    (Fugue.Core.SessionRecord.AssistantTurn(DateTimeOffset.UtcNow, ""))
                 StatusBar.refresh ()
                 // Nudge if the same tool error has recurred across sessions.
                 let recurring = Fugue.Core.ErrorTrend.findRecurring 3 14
@@ -2983,9 +3054,12 @@ Please generate a clear, actionable onboarding checklist."""
         Console.CancelKeyPress.RemoveHandler handler
         Console.Out.Write "\x1b[?2004l"   // disable bracketed paste
         Console.Out.Flush()
-        // Fire SessionEnd hooks (best-effort; failures are logged, never surfaced).
         let nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
         let durationMs = nowMs - sessionStartedAt
+        // Append SessionEnd record to JSONL file (best-effort).
+        Fugue.Core.SessionPersistence.appendRecord sessionFilePath
+            (Fugue.Core.SessionRecord.SessionEnd(DateTimeOffset.UtcNow, turnNumber, durationMs))
+        // Fire SessionEnd hooks (best-effort; failures are logged, never surfaced).
         let sessionEndPayload =
             Fugue.Core.Hooks.sessionEndPayload cwd durationMs turnNumber
         try
