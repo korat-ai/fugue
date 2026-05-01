@@ -21,7 +21,7 @@ let private mkState (text: string) (cursor: int) : S =
       ColorEnabled    = false
       Width           = 80
       SlashHelp       = []
-      ModelCompleter  = fun _ -> [] }
+      ModelCompleter  = fun _ -> ([], false) }
 
 let private key (c: char) (mods: ConsoleModifiers) : ConsoleKeyInfo =
     let cKey =

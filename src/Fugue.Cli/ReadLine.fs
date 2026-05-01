@@ -80,7 +80,7 @@ type S = {
     ColorEnabled:            bool
     Width:                   int
     SlashHelp:               (string * string) list  // (name, dim description) pairs
-    ModelCompleter:          string -> string list   // prefix → matching model names
+    ModelCompleter:          string -> string list * bool   // prefix → (matching names, isStale)
 }
 
 /// Action returned by the pure key-handler. The caller (read-loop) decides what to do.
@@ -365,7 +365,17 @@ let private redraw (st: S) =
         if bufStr2.StartsWith modelSetPrefix then
             // ModelName context: show matching model names from the completer.
             let typedPrefix = bufStr2.Substring(modelSetPrefix.Length)
-            let matches = st.ModelCompleter typedPrefix
+            let (matches, isStale) = st.ModelCompleter typedPrefix
+            // [stale] hint: surfaces when the cached model list is empty due to
+            // an HTTP failure (vs. healthy refresh). Helps users tell "no matches
+            // for this prefix" apart from "model discovery is broken".
+            if isStale then
+                if matches.IsEmpty then
+                    writeRaw "\n\x1b[2m  [stale] model list unavailable — provider unreachable\x1b[0m"
+                    st.LinesRendered <- st.LinesRendered + 1
+                else
+                    writeRaw "\n\x1b[2m  [stale] showing last-known list — refresh failed\x1b[0m"
+                    st.LinesRendered <- st.LinesRendered + 1
             let maxSuggestions = 8
             for name in matches |> List.truncate maxSuggestions do
                 writeRaw ("\n\x1b[2m  " + name + "\x1b[0m")
@@ -405,7 +415,7 @@ let private redraw (st: S) =
     else writeRaw "\r"
     st.RowsBelowCursor <- upBy   // save for next redraw's erase pass
 
-let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) list) (modelCompleter: string -> string list) (callbacks: ReadLineCallbacks) (colorEnabled: bool) (initial: string) (ct: CancellationToken) : Task<string option> = task {
+let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) list) (modelCompleter: string -> string list * bool) (callbacks: ReadLineCallbacks) (colorEnabled: bool) (initial: string) (ct: CancellationToken) : Task<string option> = task {
     // Strip ANSI escapes for visible-length calc (rough — assumes only \x1b[...m sequences).
     let visLen =
         let mutable n = 0
@@ -481,7 +491,8 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
                         (tabIndex >= 0 && tabIndex < tabMatches.Length &&
                          currentInput <> modelSetPrefix + tabMatches.[tabIndex])
                     if needsReset then
-                        tabMatches <- st.ModelCompleter typedPrefix |> List.toArray
+                        let (m, _isStale) = st.ModelCompleter typedPrefix
+                        tabMatches <- m |> List.toArray
                         tabIndex   <- -1
                     if tabMatches.Length > 0 then
                         tabIndex <- (tabIndex + 1) % tabMatches.Length

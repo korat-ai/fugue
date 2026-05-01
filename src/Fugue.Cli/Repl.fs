@@ -577,10 +577,19 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
     let mutable nextInputPrefill : string = ""
     // Model name cache for /model set autocomplete.
     // Populated in background at session start; re-fetched on provider change via /model set.
+    // cachedModelsStale flips true when a fetch returns an empty list (HTTP failure
+    // proxy — getModels returns [] on any non-2xx or exception). Surfaced as `[stale]`
+    // hint in the inline /model set suggestions render. Reset to false on any non-empty
+    // refresh.
     let cachedModels : string list ref = ref []
+    let cachedModelsStale : bool ref = ref false
     Async.Start(async {
         let! models = Fugue.Agent.ModelDiscovery.getModels cfg.Provider cfg.BaseUrl |> Async.AwaitTask
-        cachedModels.Value <- models
+        if models.IsEmpty then
+            cachedModelsStale.Value <- true
+        else
+            cachedModels.Value <- models
+            cachedModelsStale.Value <- false
     })
     DebugLog.sessionStart providerName modelName cwd
     // Load hooks config once per session (file absent → silent no-op).
@@ -742,8 +751,10 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                     nextInputPrefill <- ""
                     let slashHelp = SlashCommands.getAll liveStrings
                     let modelCompleter (prefix: string) =
-                        cachedModels.Value
-                        |> List.filter (fun m -> m.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        let matches =
+                            cachedModels.Value
+                            |> List.filter (fun m -> m.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        (matches, cachedModelsStale.Value)
                     ReadLine.readAsync (Render.prompt cfg.Ui modelShort) liveStrings slashHelp modelCompleter callbacks (Render.isColorEnabled ()) initial cancelSrc.Token
             // Colon command expansion: :q → /exit, :n → /new, :h → /help, :s → /scratch send
             let colonExpand (s: string) =
@@ -1667,9 +1678,16 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                         AnsiConsole.MarkupLine($"[green]✓[/] model → [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape newModel}[/] [dim](history reset)[/]")
                         StatusBar.start cwd cfg
                         // Re-fetch model list for the (potentially) new provider in background.
+                        // On empty result (HTTP failure proxy), keep the previous list and
+                        // mark stale — the user will see `[stale]` next time they hit
+                        // `/model set`. Successful refresh clears the stale flag.
                         Async.Start(async {
                             let! models = Fugue.Agent.ModelDiscovery.getModels cfg.Provider cfg.BaseUrl |> Async.AwaitTask
-                            cachedModels.Value <- models
+                            if models.IsEmpty then
+                                cachedModelsStale.Value <- true
+                            else
+                                cachedModels.Value <- models
+                                cachedModelsStale.Value <- false
                         })
                     with ex ->
                         AnsiConsole.MarkupLine($"[red]✗ failed to switch model: {Markup.Escape ex.Message}[/]")
