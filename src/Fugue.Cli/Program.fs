@@ -15,9 +15,8 @@ let private noColor () =
 
 [<System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Calls ToolRegistry.buildAll which uses AgentSessionExtensions over STJ state")>]
 [<System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Calls ToolRegistry.buildAll which uses AgentSessionExtensions over STJ state")>]
-let private buildAgent (cfg: AppConfig) (lastSummary: string option) : AIAgent =
+let private buildAgent (cfg: AppConfig) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (providerContext: string option) (lastSummary: string option) : AIAgent =
     let cwd = Environment.CurrentDirectory
-    let hooksConfig = Fugue.Core.Hooks.load ()
     let sessionId = System.Guid.NewGuid().ToString("N")
     let rawTools = Fugue.Tools.ToolRegistry.buildAll cwd hooksConfig sessionId
     let tools = if cfg.DryRun then DryRun.wrapTools rawTools else rawTools
@@ -27,6 +26,10 @@ let private buildAgent (cfg: AppConfig) (lastSummary: string option) : AIAgent =
         | None ->
             let ctx = if cfg.LowBandwidth then None else Fugue.Core.SystemPrompt.loadFugueContext cwd
             Fugue.Core.SystemPrompt.render cwd Fugue.Tools.ToolRegistry.names ctx
+    let basePrompt =
+        match providerContext with
+        | Some ctx when ctx <> "" -> ctx + "\n\n" + basePrompt
+        | _ -> basePrompt
     let sysPrompt =
         match cfg.ProfileContent with
         | Some profile -> profile + "\n\n---\n\n" + basePrompt
@@ -44,8 +47,17 @@ let private buildAgent (cfg: AppConfig) (lastSummary: string option) : AIAgent =
 [<RequiresUnreferencedCode("Calls Repl.runPrint which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 [<RequiresDynamicCode("Calls Repl.runPrint which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 let private runWithPrint (cfg: AppConfig) (prompt: string) : int =
-    let lastSummary = if cfg.LowBandwidth then None else Fugue.Core.SessionSummary.loadLast (Environment.CurrentDirectory)
-    let agent = buildAgent cfg lastSummary
+    let lastSummary  = if cfg.LowBandwidth then None else Fugue.Core.SessionSummary.loadLast (Environment.CurrentDirectory)
+    let hooksConfig  = Fugue.Core.Hooks.load ()
+    let providerContext =
+        if cfg.LowBandwidth || hooksConfig.ContextProviders.IsEmpty then None
+        else
+            let assembled =
+                Fugue.Core.ProviderCache.assembleWithProviders
+                    hooksConfig.ContextProviders hooksConfig.HookTimeoutMs
+                |> Async.RunSynchronously
+            if assembled = "" then None else Some assembled
+    let agent = buildAgent cfg hooksConfig providerContext lastSummary
     let t = Repl.runPrint agent prompt
     try
         t.Wait()
@@ -95,10 +107,19 @@ let private runWithCfg (cfg: AppConfig) : int =
     StatusBar.setScheduleActive scheduleActive
     let cwd = Environment.CurrentDirectory
     let lastSummary = if cfg.LowBandwidth then None else Fugue.Core.SessionSummary.loadLast cwd
-    let agent = buildAgent cfg lastSummary
+    let hooksConfig = Fugue.Core.Hooks.load ()
+    let providerContext =
+        if cfg.LowBandwidth || hooksConfig.ContextProviders.IsEmpty then None
+        else
+            let assembled =
+                Fugue.Core.ProviderCache.assembleWithProviders
+                    hooksConfig.ContextProviders hooksConfig.HookTimeoutMs
+                |> Async.RunSynchronously
+            if assembled = "" then None else Some assembled
+    let agent = buildAgent cfg hooksConfig providerContext lastSummary
     let t =
         if Console.IsInputRedirected then Repl.runHeadless agent cfg cwd
-        else Repl.run agent cfg cwd lastSummary (fun newCfg -> buildAgent newCfg None)
+        else Repl.run agent cfg cwd lastSummary (fun newCfg -> buildAgent newCfg hooksConfig providerContext None)
     try t.Wait()
     with
     | :? AggregateException as agg ->

@@ -27,6 +27,11 @@ type HookDef =
       Matcher   : string option  // None = match all tools; "*"/"" = match all
     }
 
+type ContextProvider =
+    { Name       : string
+      Command    : string
+      TtlSeconds : int }   // 0 = no cache
+
 type HooksConfig =
     { HookTimeoutMs    : int          // global default (ms)
       OnError          : OnError
@@ -34,7 +39,8 @@ type HooksConfig =
       SessionEnd       : HookDef list
       PreToolUse       : HookDef list
       PostToolUse      : HookDef list
-      UserPromptSubmit : HookDef list }
+      UserPromptSubmit : HookDef list
+      ContextProviders : ContextProvider list }
 
 let defaultConfig : HooksConfig =
     { HookTimeoutMs    = 5_000
@@ -43,7 +49,8 @@ let defaultConfig : HooksConfig =
       SessionEnd       = []
       PreToolUse       = []
       PostToolUse      = []
-      UserPromptSubmit = [] }
+      UserPromptSubmit = []
+      ContextProviders = [] }
 
 // ── PreToolResult ─────────────────────────────────────────────────────────────
 
@@ -221,13 +228,28 @@ let load () : HooksConfig =
                         { def with Async = true }
                     else def)
 
+            let parseContextProviders () : ContextProvider list =
+                let mutable cpEl = Unchecked.defaultof<JsonElement>
+                if root.TryGetProperty("contextProviders", &cpEl)
+                   && cpEl.ValueKind = JsonValueKind.Array
+                then
+                    [ for item in cpEl.EnumerateArray() do
+                        if item.ValueKind = JsonValueKind.Object then
+                            let name    = getString item "name"    ""
+                            let command = getString item "command" ""
+                            if name <> "" && command <> "" then
+                                let ttl = getInt item "ttlSeconds" 0
+                                yield { Name = name; Command = command; TtlSeconds = ttl } ]
+                else []
+
             { HookTimeoutMs    = globalTimeout
               OnError          = onError
               SessionStart     = parseHooks "SessionStart"
               SessionEnd       = parseHooks "SessionEnd"
               PreToolUse       = parseHooks "PreToolUse"
               PostToolUse      = parseHooksPostToolUse "PostToolUse"
-              UserPromptSubmit = parseHooks "UserPromptSubmit" }
+              UserPromptSubmit = parseHooks "UserPromptSubmit"
+              ContextProviders = parseContextProviders () }
         with ex ->
             eprintfn $"[hooks] failed to load {path}: {ex.Message}"
             defaultConfig
@@ -297,7 +319,7 @@ let private runSyncHook (def: HookDef) (payloadJson: string) (globalTimeout: int
 
 /// Run a single sync hook and capture stdout. Drains stdout AND stderr concurrently
 /// to prevent deadlock on full pipe buffers (>4 KB). Returns (exitCode, stdout).
-let private runSyncHookWithStdout (def: HookDef) (payloadJson: string) (globalTimeout: int) : int * string =
+let internal runSyncHookWithStdout (def: HookDef) (payloadJson: string) (globalTimeout: int) : int * string =
     let timeout = def.TimeoutMs |> Option.defaultValue globalTimeout
     let proc = spawnHook def.Command payloadJson
     use _ = proc

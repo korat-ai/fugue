@@ -52,6 +52,7 @@
     <Compile Include="MacrosTests.fs" />
     <Compile Include="ReplTests.fs" />
     <Compile Include="HookRunnerTests.fs" />
+    <Compile Include="ProviderCacheTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>

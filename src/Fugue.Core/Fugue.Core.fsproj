@@ -21,6 +21,7 @@
     <Compile Include="ErrorTrend.fs" />
     <Compile Include="ConversationIntent.fs" />
     <Compile Include="Hooks.fs" />
+    <Compile Include="ProviderCache.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.*" />
