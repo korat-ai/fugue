@@ -149,21 +149,18 @@ jobs:
       - name: Pack
         run: dotnet pack src/Fugue.Cli -c Release -p:Version=${{ env.VERSION }}-jit
 
-      - name: Get NuGet OIDC token
-        id: oidc
-        run: |
-          TOKEN=$(curl -sS \
-            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=api.nuget.org" \
-            | jq -r .value)
-          echo "token=$TOKEN" >> $GITHUB_OUTPUT
+      - name: NuGet login (OIDC → temporary API key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: neftedollar
 
-      - name: Push to NuGet.org (Trusted Publishing — OIDC)
+      - name: Push to NuGet.org
         run: >
           dotnet nuget push
           src/Fugue.Cli/bin/Release/fugue.${{ env.VERSION }}-jit.nupkg
           --source https://api.nuget.org/v3/index.json
-          --api-key ${{ steps.oidc.outputs.token }}
+          --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
           --skip-duplicate
 
   update-homebrew:
