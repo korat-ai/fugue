@@ -5,6 +5,7 @@ open System.Diagnostics.CodeAnalysis
 open Microsoft.Agents.AI
 open Fugue.Core.Config
 open Fugue.Agent
+open Fugue.Surface
 
 let private noColor () =
     let isSet name = Environment.GetEnvironmentVariable name |> isNull |> not
@@ -127,16 +128,31 @@ let private runWithCfg (cfg: AppConfig) : int =
     // CreateSessionAsync and on each /new / /clear-history. Replaces an older
     // module-level mutable in GetConversationFn (#50).
     let sessionRef : (Microsoft.Agents.AI.AgentSession | null) ref = ref null
-    let agent = buildAgent cfg hooksConfig providerContext lastSummary sessionId sessionRef
+    let aiAgent = buildAgent cfg hooksConfig providerContext lastSummary sessionId sessionRef
+    // Start the Surface actor — serialises all terminal writes and eliminates the
+    // timer-thread race.  Wire it into StatusBar before start() is called.
+    let surfaceActor =
+        if Console.IsInputRedirected then None
+        else
+            let actor = RealExecutor.start ()
+            StatusBar.setAgent actor
+            Some actor
     let t =
-        if Console.IsInputRedirected then Repl.runHeadless agent cfg cwd
-        else Repl.run agent sessionRef cfg cwd lastSummary (fun newCfg -> buildAgent newCfg hooksConfig providerContext None sessionId sessionRef)
+        if Console.IsInputRedirected then Repl.runHeadless aiAgent cfg cwd
+        else Repl.run aiAgent sessionRef cfg cwd lastSummary (fun newCfg -> buildAgent newCfg hooksConfig providerContext None sessionId sessionRef)
     try t.Wait()
     with
     | :? AggregateException as agg ->
         match agg.InnerException with
         | :? OperationCanceledException -> ()
         | _ -> raise agg
+    // Graceful shutdown: StatusBar.stop() already posted ExecuteAndAck for erase ops.
+    // Now shut down the actor so any remaining buffered ops flush before process exits.
+    match surfaceActor with
+    | Some actor ->
+        actor.PostAndAsyncReply(fun ch -> SurfaceMessage.Shutdown ch)
+        |> Async.RunSynchronously
+    | None -> ()
     0
 
 [<EntryPoint>]
