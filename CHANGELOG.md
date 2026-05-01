@@ -3,6 +3,15 @@
 All notable changes to Fugue are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.3] — 2026-05-01
+
+### Fixed
+- Inline slash-command suggestions reappear on bare `/` again (regression from v0.2.2 — was gated to ≥2 chars to avoid terminal overflow; the `truncate 8` cap already prevents that).
+- Slash-suggestion list expanded from 13 to 70+ entries — `/m*`, `/scaffold *`, `/check *`, `/derive *`, `/refactor *`, `/migrate *`, `/translate *`, etc. were missing entirely. Two parallel lists (`ReadLine.fs` vs `Repl.fs helpItems`) had drifted apart.
+- Removed stray `[/]` (Spectre markup) embedded inside a raw ANSI escape sequence in slash overflow hint.
+
+[0.2.3]: https://github.com/korat-ai/fugue/releases/tag/v0.2.3
+
 ## [0.2.2] — 2026-05-01
 
 ### Fixed
