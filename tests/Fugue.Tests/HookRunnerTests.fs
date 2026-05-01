@@ -31,10 +31,11 @@ let private cfgWith (event: HookEvent) (cmd: string) (async': bool) (timeoutMs: 
     let def = { Command = cmd; Async = async'; TimeoutMs = timeoutMs; Matcher = None }
     let hooks =
         match event with
-        | SessionStart  -> { defaultConfig with SessionStart = [ def ]; OnError = onErr }
-        | SessionEnd    -> { defaultConfig with SessionEnd   = [ def ]; OnError = onErr }
-        | PreToolUse    -> { defaultConfig with PreToolUse   = [ def ]; OnError = onErr }
-        | PostToolUse   -> { defaultConfig with PostToolUse  = [ def ]; OnError = onErr }
+        | SessionStart     -> { defaultConfig with SessionStart     = [ def ]; OnError = onErr }
+        | SessionEnd       -> { defaultConfig with SessionEnd       = [ def ]; OnError = onErr }
+        | PreToolUse       -> { defaultConfig with PreToolUse       = [ def ]; OnError = onErr }
+        | PostToolUse      -> { defaultConfig with PostToolUse      = [ def ]; OnError = onErr }
+        | UserPromptSubmit -> { defaultConfig with UserPromptSubmit = [ def ]; OnError = onErr }
     hooks
 
 // ── Test 1: no hooks.json → silent no-op ─────────────────────────────────────
@@ -284,3 +285,74 @@ let ``runPreToolUse with no hooks returns Proceed immediately`` () =
     sw.Stop()
     result |> should equal Proceed
     sw.ElapsedMilliseconds |> should be (lessThan 100L)
+
+// ── UserPromptSubmit tests ────────────────────────────────────────────────────
+
+/// Build a minimal HooksConfig with a single UserPromptSubmit hook.
+let private promptCfgWith (cmd: string) (timeoutMs: int option) : HooksConfig =
+    let def = { Command = cmd; Async = false; TimeoutMs = timeoutMs; Matcher = None }
+    { defaultConfig with UserPromptSubmit = [ def ] }
+
+// ── Test 15: no hooks → PassThrough immediately ───────────────────────────────
+
+[<Fact>]
+let ``runUserPromptSubmit with no hooks returns PassThrough immediately`` () =
+    let sw = Stopwatch.StartNew()
+    let result = (runUserPromptSubmit "hello" "s7" defaultConfig).Result
+    sw.Stop()
+    result |> should equal PassThrough
+    sw.ElapsedMilliseconds |> should be (lessThan 100L)
+
+// ── Test 16: block=true returns BlockPrompt with reason ───────────────────────
+
+[<Fact>]
+let ``UserPromptSubmit block=true returns BlockPrompt with reason`` () =
+    let script = makeScript """echo '{"block":true,"reason":"no profanity allowed"}'"""
+    try
+        let cfg = promptCfgWith script None
+        let result = (runUserPromptSubmit "bad word!" "s8" cfg).Result
+        match result with
+        | BlockPrompt reason -> reason |> should equal "no profanity allowed"
+        | other -> failwith $"Expected BlockPrompt, got {other}"
+    finally
+        try File.Delete script with _ -> ()
+
+// ── Test 17: replace="..." returns Replace with new string ────────────────────
+
+[<Fact>]
+let ``UserPromptSubmit replace returns Replace with substituted prompt`` () =
+    let script = makeScript """echo '{"replace":"augmented prompt"}'"""
+    try
+        let cfg = promptCfgWith script None
+        let result = (runUserPromptSubmit "original" "s9" cfg).Result
+        match result with
+        | Replace newPrompt -> newPrompt |> should equal "augmented prompt"
+        | other -> failwith $"Expected Replace, got {other}"
+    finally
+        try File.Delete script with _ -> ()
+
+// ── Test 18: append="..." returns Append fragment ─────────────────────────────
+
+[<Fact>]
+let ``UserPromptSubmit append returns Append with extra text`` () =
+    let script = makeScript """echo '{"append":"extra context"}'"""
+    try
+        let cfg = promptCfgWith script None
+        let result = (runUserPromptSubmit "base prompt" "s10" cfg).Result
+        match result with
+        | Append extra -> extra |> should equal "extra context"
+        | other -> failwith $"Expected Append, got {other}"
+    finally
+        try File.Delete script with _ -> ()
+
+// ── Test 19: empty stdout → PassThrough ──────────────────────────────────────
+
+[<Fact>]
+let ``UserPromptSubmit empty stdout returns PassThrough`` () =
+    let script = makeScript "exit 0"  // exits cleanly with no stdout
+    try
+        let cfg = promptCfgWith script None
+        let result = (runUserPromptSubmit "some prompt" "s11" cfg).Result
+        result |> should equal PassThrough
+    finally
+        try File.Delete script with _ -> ()
