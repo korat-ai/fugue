@@ -832,6 +832,8 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                 for (name, desc) in helpItems do
                     AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
                     AnsiConsole.WriteLine()
+                AnsiConsole.WriteLine()
+                AnsiConsole.MarkupLine "[dim]Tip: turn numbers [[N]] are searchable — use your terminal's [bold]Cmd+F[/] / [bold]Ctrl+Shift+F[/] to jump back to any past message.[/]"
                 StatusBar.refresh ()
             | Some s when s = "/git-log" ->
                 let psi = System.Diagnostics.ProcessStartInfo()
