@@ -6,6 +6,7 @@
     <Compile Include="Log.fs" />
     <Compile Include="SessionRecord.fs" />
     <Compile Include="SessionPersistence.fs" />
+    <Compile Include="SearchIndex.fs" />
     <Compile Include="Checkpoint.fs" />
     <Compile Include="EmojiMap.fs" />
     <Compile Include="Localization.fs" />
@@ -20,5 +21,14 @@
     <Compile Include="ErrorTrend.fs" />
     <Compile Include="ConversationIntent.fs" />
     <Compile Include="Hooks.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.*" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Microsoft.Data.Sqlite: P/Invoke interop to native SQLite amalgamation.
+         TrimmerRootAssembly preserves the P/Invoke thunks; without it the linker
+         strips the interop layer and causes NullReferenceException at AOT runtime. -->
+    <TrimmerRootAssembly Include="Microsoft.Data.Sqlite" />
   </ItemGroup>
 </Project>
