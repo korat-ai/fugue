@@ -102,6 +102,7 @@ Verified metrics:
   - PR #357: `/summary` session summary command (#209)
   - PR #166: input history (Up/Down) + word cursor (pending)
   - #898: `/model set` autocomplete — `ModelDiscovery` module fetches model list from active provider at session start; Tab-cycles through matching names in `/model set <prefix>` context (shipped 2026-05-01)
+  - #901 Phase 2: `/turns` interactive turn picker (arrow-key navigation + Enter to dispatch `/show N`)
 
 Live binary: `src/Fugue.Cli/bin/Release/net10.0/osx-arm64/publish/fugue`
 

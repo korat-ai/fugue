@@ -237,6 +237,19 @@ This is intentional: prompts are rarely changed mid-session. If you want to test
 
 See `docs/hooks.md` for the hook system.
 
+## Picking a turn interactively (/turns)
+
+The `/turns` command opens an arrow-key navigable picker of every user and assistant turn in the current session. Each row shows:
+
+```
+[1] user   first 60 chars of the prompt …
+[2] asst   first 60 chars of the response …
+```
+
+Navigate with arrow keys (Up/Down), then press Enter to dispatch `/show N` for the chosen turn number. This composes seamlessly with the `/show` prompt template from Phase 1 of issue #901. Press Esc to cancel the picker.
+
+Data is read from the on-disk JSONL session file via SessionPersistence, so the picker reflects all turns appended during the current session. It works correctly even after history compaction, but only sees turns in the active session, not historical archived sessions.
+
 ## Troubleshooting
 
 ### Command not found
