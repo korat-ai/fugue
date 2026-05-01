@@ -23,7 +23,7 @@ let ``GlobFn finds files matching pattern`` () =
     File.WriteAllText(Path.Combine(dir, "a.fs"), "")
     File.WriteAllText(Path.Combine(dir, "b.fs"), "")
     File.WriteAllText(Path.Combine(dir, "c.txt"), "")
-    let fn = GlobFn.create dir
+    let fn = GlobFn.create dir Fugue.Core.Hooks.defaultConfig "test"
     let args = mkArgs [ "pattern", jsonStr "*.fs" ]
     let out = (fn.InvokeAsync(args, CancellationToken.None).AsTask()).Result |> string
     out |> should haveSubstring "a.fs"

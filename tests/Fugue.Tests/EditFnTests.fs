@@ -26,7 +26,7 @@ let ``EditFn replaces single occurrence`` () =
     Directory.CreateDirectory dir |> ignore
     let path = Path.Combine(dir, "f.txt")
     File.WriteAllText(path, "old text here")
-    let fn = EditFn.create dir
+    let fn = EditFn.create dir Fugue.Core.Hooks.defaultConfig "test"
     let args = mkArgs [
         "path",       jsonStr "f.txt"
         "old_string", jsonStr "old"
@@ -42,7 +42,7 @@ let ``EditFn replace_all replaces every occurrence`` () =
     Directory.CreateDirectory dir |> ignore
     let path = Path.Combine(dir, "f.txt")
     File.WriteAllText(path, "x x x")
-    let fn = EditFn.create dir
+    let fn = EditFn.create dir Fugue.Core.Hooks.defaultConfig "test"
     let args = mkArgs [
         "path",        jsonStr "f.txt"
         "old_string",  jsonStr "x"

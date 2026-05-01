@@ -1,8 +1,11 @@
 module Fugue.Tests.HookRunnerTests
 
 open System
+open System.Diagnostics
 open System.IO
+open System.Text.Json
 open System.Threading.Tasks
+open Microsoft.Extensions.AI
 open Xunit
 open FsUnit.Xunit
 open Fugue.Core.Hooks
@@ -25,11 +28,13 @@ let private makeScript (body: string) : string =
 
 /// Build a minimal HooksConfig with a single command hook for the given event.
 let private cfgWith (event: HookEvent) (cmd: string) (async': bool) (timeoutMs: int option) (onErr: OnError) : HooksConfig =
-    let def = { Command = cmd; Async = async'; TimeoutMs = timeoutMs }
+    let def = { Command = cmd; Async = async'; TimeoutMs = timeoutMs; Matcher = None }
     let hooks =
         match event with
-        | SessionStart -> { defaultConfig with SessionStart = [ def ]; OnError = onErr }
-        | SessionEnd   -> { defaultConfig with SessionEnd   = [ def ]; OnError = onErr }
+        | SessionStart  -> { defaultConfig with SessionStart = [ def ]; OnError = onErr }
+        | SessionEnd    -> { defaultConfig with SessionEnd   = [ def ]; OnError = onErr }
+        | PreToolUse    -> { defaultConfig with PreToolUse   = [ def ]; OnError = onErr }
+        | PostToolUse   -> { defaultConfig with PostToolUse  = [ def ]; OnError = onErr }
     hooks
 
 // ── Test 1: no hooks.json → silent no-op ─────────────────────────────────────
@@ -157,3 +162,125 @@ let ``load returns defaultConfig when hooks.json is absent`` () =
     finally
         Environment.SetEnvironmentVariable("HOME", saved)
         try Directory.Delete(tmpHome, true) with _ -> ()
+
+// ── PreToolUse / PostToolUse tests ────────────────────────────────────────────
+
+/// Build a minimal HooksConfig with a single PreToolUse hook.
+let private preCfgWith (cmd: string) (matcher: string option) (timeoutMs: int option) : HooksConfig =
+    let def = { Command = cmd; Async = false; TimeoutMs = timeoutMs; Matcher = matcher }
+    { defaultConfig with PreToolUse = [ def ] }
+
+/// Build a minimal HooksConfig with a single PostToolUse hook.
+let private postCfgWith (cmd: string) (matcher: string option) : HooksConfig =
+    let def = { Command = cmd; Async = true; TimeoutMs = None; Matcher = matcher }
+    { defaultConfig with PostToolUse = [ def ] }
+
+/// Make a JsonElement-boxed string arg for AIFunctionArguments.
+let private jsonStrArg (s: string) : obj | null =
+    use doc = JsonDocument.Parse(JsonSerializer.Serialize s)
+    box (doc.RootElement.Clone())
+
+// ── Test 9: block=true hook returns Block ─────────────────────────────────────
+
+[<Fact>]
+let ``PreToolUse block=true returns Block with reason`` () =
+    let script = makeScript """echo '{"block":true,"reason":"no rm -rf"}'"""
+    try
+        let cfg = preCfgWith script None None
+        let args = AIFunctionArguments()
+        let result = (runPreToolUse "Bash" "{}" "s1" cfg).Result
+        match result with
+        | Block reason -> reason |> should equal "no rm -rf"
+        | other -> failwith $"Expected Block, got {other}"
+    finally
+        try File.Delete script with _ -> ()
+
+// ── Test 10: modified_args merges into AIFunctionArguments ────────────────────
+
+[<Fact>]
+let ``PreToolUse modified_args returns ModifyArgs with new value`` () =
+    let script = makeScript """echo '{"modified_args":{"command":"echo safe"}}'"""
+    try
+        let cfg = preCfgWith script None None
+        let args = AIFunctionArguments(dict [ "command", jsonStrArg "echo original" ])
+        let result = (runPreToolUse "Bash" """{"command":"echo original"}""" "s2" cfg).Result
+        match result with
+        | ModifyArgs changes ->
+            changes |> should not' (be Empty)
+            let cmdChange = changes |> List.tryFind (fun (k, _) -> k = "command")
+            cmdChange |> should not' (equal None)
+            // Apply the changes and verify the arg was overwritten
+            for (k, v) in changes do
+                use doc = JsonDocument.Parse(v)
+                args[k] <- box (doc.RootElement.Clone())
+            match args.TryGetValue "command" with
+            | true, (:? JsonElement as el) when el.ValueKind = JsonValueKind.String ->
+                el.GetString() |> Option.ofObj |> Option.defaultValue "" |> should equal "echo safe"
+            | _ -> failwith "Expected JsonElement string for command"
+        | other -> failwith $"Expected ModifyArgs, got {other}"
+    finally
+        try File.Delete script with _ -> ()
+
+// ── Test 11: matcher filter skips non-matching tool ───────────────────────────
+
+[<Fact>]
+let ``PreToolUse matcher Bash skips non-matching toolName Read`` () =
+    let outFile = Path.GetTempFileName()
+    // Script writes to outFile so we can probe whether it ran
+    let script = makeScript $"echo ran > \"{outFile}\""
+    try
+        let cfg = preCfgWith script (Some "Bash") None
+        // toolName = "Read" — should NOT match matcher "Bash"
+        let result = (runPreToolUse "Read" "{}" "s3" cfg).Result
+        result |> should equal Proceed
+        // Script must not have written anything
+        let written = File.ReadAllText(outFile).Trim()
+        written |> should be Empty
+    finally
+        try File.Delete outFile with _ -> ()
+        try File.Delete script  with _ -> ()
+
+// ── Test 12: PostToolUse is fire-and-forget (returns immediately) ─────────────
+
+[<Fact>]
+let ``PostToolUse fire-and-forget returns before slow script finishes`` () =
+    let outFile = Path.GetTempFileName()
+    // Script sleeps 5s then writes; runPostToolUse should return well before that.
+    let script = makeScript $"sleep 5 && echo done > \"{outFile}\""
+    try
+        let cfg = postCfgWith script None
+        let sw = Stopwatch.StartNew()
+        runPostToolUse "Write" "{}" "ok" false "s4" cfg
+        sw.Stop()
+        sw.ElapsedMilliseconds |> should be (lessThan 500L)
+        // The file should NOT be written yet (script is sleeping)
+        let written = File.ReadAllText(outFile).Trim()
+        written |> should be Empty
+    finally
+        try File.Delete outFile with _ -> ()
+        try File.Delete script  with _ -> ()
+
+// ── Test 13: PreToolUse timeout with LogContinue returns Proceed ─────────────
+
+[<Fact>]
+let ``PreToolUse hook timeout returns Proceed (LogContinue)`` () =
+    let script = makeScript "sleep 30"
+    try
+        // 100ms timeout — much shorter than sleep 30
+        let cfg = preCfgWith script None (Some 100)
+        let result = (runPreToolUse "Bash" "{}" "s5" cfg).Result
+        // Should proceed (not throw, not block) — timeout is silently swallowed
+        result |> should equal Proceed
+    finally
+        try File.Delete script with _ -> ()
+
+// ── Test 14: no PreToolUse hooks → Proceed immediately ───────────────────────
+
+[<Fact>]
+let ``runPreToolUse with no hooks returns Proceed immediately`` () =
+    // defaultConfig has empty PreToolUse list — no process should be spawned
+    let sw = Stopwatch.StartNew()
+    let result = (runPreToolUse "Bash" "{}" "s6" defaultConfig).Result
+    sw.Stop()
+    result |> should equal Proceed
+    sw.ElapsedMilliseconds |> should be (lessThan 100L)

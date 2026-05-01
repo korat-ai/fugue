@@ -17,6 +17,8 @@ let ``DelegatedAIFunction surfaces name + description + schema`` () =
             name = "Echo",
             description = "echoes input",
             schema = schema,
+            hooksConfig = Fugue.Core.Hooks.defaultConfig,
+            sessionId = "test",
             invoke = fun _ _ -> Task.FromResult("ok"))
     fn.Name |> should equal "Echo"
     fn.Description |> should equal "echoes input"
@@ -30,6 +32,8 @@ let ``DelegatedAIFunction.InvokeAsync calls invoke and boxes result`` () =
             name = "Echo",
             description = "",
             schema = schema,
+            hooksConfig = Fugue.Core.Hooks.defaultConfig,
+            sessionId = "test",
             invoke = fun args _ ->
                 Task.FromResult(sprintf "got %d keys" args.Count))
     let args = AIFunctionArguments(dict [ "a", box "1"; "b", box "2" ])

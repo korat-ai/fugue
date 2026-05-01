@@ -108,7 +108,7 @@ let ``getConversationJson JSON round-trip has correct top-level shape`` () =
 [<RequiresDynamicCode("Calls ToolRegistry.buildAll which uses AgentSessionExtensions over STJ state")>]
 [<Fact>]
 let ``ToolRegistry includes GetConversation and invoking it with no session returns no_session`` () = task {
-    let tools = ToolRegistry.buildAll "/tmp"
+    let tools = ToolRegistry.buildAll "/tmp" Fugue.Core.Hooks.defaultConfig "test-session"
 
     // Verify GetConversation is in the names list
     ToolRegistry.names |> should contain "GetConversation"

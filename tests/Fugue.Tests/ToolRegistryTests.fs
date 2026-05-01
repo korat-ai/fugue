@@ -9,14 +9,14 @@ open Fugue.Tools
 [<RequiresDynamicCode("Calls ToolRegistry.buildAll which uses AgentSessionExtensions over STJ state")>]
 [<Fact>]
 let ``buildAll returns 9 functions`` () =
-    let fns = ToolRegistry.buildAll "/tmp"
+    let fns = ToolRegistry.buildAll "/tmp" Fugue.Core.Hooks.defaultConfig "test-session"
     fns |> List.length |> should equal 9
 
 [<RequiresUnreferencedCode("Calls ToolRegistry.buildAll which uses AgentSessionExtensions over STJ state")>]
 [<RequiresDynamicCode("Calls ToolRegistry.buildAll which uses AgentSessionExtensions over STJ state")>]
 [<Fact>]
 let ``buildAll names match the names list`` () =
-    let fns = ToolRegistry.buildAll "/tmp"
+    let fns = ToolRegistry.buildAll "/tmp" Fugue.Core.Hooks.defaultConfig "test-session"
     let actualNames = fns |> List.map (fun f -> f.Name) |> List.sort
     let expectedNames = ToolRegistry.names |> List.sort
     actualNames |> should equal expectedNames
@@ -25,7 +25,7 @@ let ``buildAll names match the names list`` () =
 [<RequiresDynamicCode("Calls ToolRegistry.buildAll which uses AgentSessionExtensions over STJ state")>]
 [<Fact>]
 let ``every tool has a valid object schema with required field`` () =
-    let fns = ToolRegistry.buildAll "/tmp"
+    let fns = ToolRegistry.buildAll "/tmp" Fugue.Core.Hooks.defaultConfig "test-session"
     for fn in fns do
         fn.JsonSchema.GetProperty("type").GetString() |> should equal "object"
         fn.JsonSchema.TryGetProperty("required") |> fst |> should equal true
