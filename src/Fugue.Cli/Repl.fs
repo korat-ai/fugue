@@ -726,7 +726,8 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                 | None ->
                     let initial = nextInputPrefill
                     nextInputPrefill <- ""
-                    ReadLine.readAsync (Render.prompt cfg.Ui modelShort) liveStrings callbacks (Render.isColorEnabled ()) initial cancelSrc.Token
+                    let slashHelp = SlashCommands.getAll liveStrings
+                    ReadLine.readAsync (Render.prompt cfg.Ui modelShort) liveStrings slashHelp callbacks (Render.isColorEnabled ()) initial cancelSrc.Token
             // Colon command expansion: :q → /exit, :n → /new, :h → /help, :s → /scratch send
             let colonExpand (s: string) =
                 if not (s.StartsWith ':') || s.Length < 2 then s
