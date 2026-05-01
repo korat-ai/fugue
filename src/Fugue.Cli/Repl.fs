@@ -550,7 +550,7 @@ let private coda (cfg: AppConfig) =
 
 [<RequiresUnreferencedCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 [<RequiresDynamicCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
-let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSummary: string option) (rebuildAgent: AppConfig -> AIAgent) : Task<unit> = task {
+let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initialCfg: AppConfig) (cwd: string) (lastSummary: string option) (rebuildAgent: AppConfig -> AIAgent) : Task<unit> = task {
     let mutable agent = initialAgent
     let mutable cfg   = initialCfg
     let sessionStartedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
@@ -566,7 +566,7 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                 cancelSrc.RequestQuit())
     let! initialSession = agent.CreateSessionAsync(CancellationToken.None)
     let mutable session : AgentSession | null = initialSession
-    Fugue.Tools.AiFunctions.GetConversationFn.setSession session
+    sessionRef.Value <- session
     // JSONL session file — appended throughout the session.
     let providerName, modelName = providerInfo cfg.Provider
     let sessionFilePath = Fugue.Core.SessionPersistence.sessionPath cwd currentSessionId
@@ -1048,12 +1048,12 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                 try
                     let! newSession = agent.CreateSessionAsync(CancellationToken.None)
                     session <- newSession
-                    Fugue.Tools.AiFunctions.GetConversationFn.setSession session
+                    sessionRef.Value <- session
                     AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ClearHistoryDone + "[/]"))
                     AnsiConsole.WriteLine()
                 with ex ->
                     session <- null
-                    Fugue.Tools.AiFunctions.GetConversationFn.setSession session
+                    sessionRef.Value <- session
                     AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
@@ -1532,7 +1532,7 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                                 cfg   <- newCfg
                                 let! freshSession = agent.CreateSessionAsync(CancellationToken.None)
                                 session <- freshSession
-                                Fugue.Tools.AiFunctions.GetConversationFn.setSession session
+                                sessionRef.Value <- session
                                 let provName, _ = providerInfo cfg.Provider
                                 AnsiConsole.MarkupLine($"[green]✓[/] model → [cyan]{Markup.Escape provName}[/] / [green]{Markup.Escape newModel}[/] [dim](history reset)[/]")
                                 StatusBar.start cwd cfg
@@ -1673,7 +1673,7 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                         cfg   <- newCfg
                         let! freshSession = agent.CreateSessionAsync(CancellationToken.None)
                         session <- freshSession
-                        Fugue.Tools.AiFunctions.GetConversationFn.setSession session
+                        sessionRef.Value <- session
                         let prov, _ = providerInfo cfg.Provider
                         AnsiConsole.MarkupLine($"[green]✓[/] model → [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape newModel}[/] [dim](history reset)[/]")
                         StatusBar.start cwd cfg
@@ -1857,10 +1857,10 @@ Please generate a clear, actionable onboarding checklist."""
                 try
                     let! newSession = agent.CreateSessionAsync(CancellationToken.None)
                     session <- newSession
-                    Fugue.Tools.AiFunctions.GetConversationFn.setSession session
+                    sessionRef.Value <- session
                 with ex ->
                     session <- null
-                    Fugue.Tools.AiFunctions.GetConversationFn.setSession session
+                    sessionRef.Value <- session
                     AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                     AnsiConsole.WriteLine()
                 turnNumber <- 0
@@ -2664,7 +2664,7 @@ Please generate a clear, actionable onboarding checklist."""
                     try
                         let! newSession = agent.CreateSessionAsync(CancellationToken.None)
                         session <- newSession
-                        Fugue.Tools.AiFunctions.GetConversationFn.setSession session
+                        sessionRef.Value <- session
                     with ex ->
                         AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                         AnsiConsole.WriteLine()
@@ -2696,7 +2696,7 @@ Please generate a clear, actionable onboarding checklist."""
                 try
                     let! newSession = agent.CreateSessionAsync(CancellationToken.None)
                     session <- newSession
-                    Fugue.Tools.AiFunctions.GetConversationFn.setSession session
+                    sessionRef.Value <- session
                     // 4. Inject synthetic orientation note so agent knows context was offloaded
                     let offloadNote = $"Previous context offloaded to session {currentSessionId}. Use GetConversation to inspect history if needed."
                     do! streamAndRender agent session offloadNote cfg cancelSrc zenMode ignore
@@ -2741,7 +2741,7 @@ Please generate a clear, actionable onboarding checklist."""
                     try
                         let! newSession = agent.CreateSessionAsync(CancellationToken.None)
                         session <- newSession
-                        Fugue.Tools.AiFunctions.GetConversationFn.setSession session
+                        sessionRef.Value <- session
                         match session with
                         | null -> ()
                         | sess ->

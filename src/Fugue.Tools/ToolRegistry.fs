@@ -1,14 +1,16 @@
 module Fugue.Tools.ToolRegistry
 
 open System.Diagnostics.CodeAnalysis
+open Microsoft.Agents.AI
 open Microsoft.Extensions.AI
 open Fugue.Tools.AiFunctions
 
 /// Build all tools as no-reflection AIFunction subclasses.
-/// The GetConversation tool reads the session via GetConversationFn.setSession / module-level state.
+/// The GetConversation tool reads the session via the supplied closure, which the
+/// caller (Program.fs/Repl.fs) implements as a ref-deref. No module-level state.
 [<RequiresUnreferencedCode("GetConversationFn uses AgentSessionExtensions over STJ state")>]
 [<RequiresDynamicCode("GetConversationFn uses AgentSessionExtensions over STJ state")>]
-let buildAll (cwd: string) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionId: string) : AIFunction list = [
+let buildAll (cwd: string) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionId: string) (getSession: unit -> AgentSession | null) : AIFunction list = [
     ReadFn.create       cwd hooksConfig sessionId
     WriteFn.create      cwd hooksConfig sessionId
     WriteBatchFn.create cwd hooksConfig sessionId
@@ -17,7 +19,7 @@ let buildAll (cwd: string) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionI
     GlobFn.create       cwd hooksConfig sessionId
     GrepFn.create       cwd hooksConfig sessionId
     TreeFn.create       cwd hooksConfig sessionId
-    GetConversationFn.create None hooksConfig sessionId
+    GetConversationFn.create getSession hooksConfig sessionId
 ]
 
 let names : string list = [ "Read"; "Write"; "WriteBatch"; "Edit"; "Bash"; "Glob"; "Grep"; "Tree"; "GetConversation" ]

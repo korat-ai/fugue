@@ -108,7 +108,8 @@ let ``getConversationJson JSON round-trip has correct top-level shape`` () =
 [<RequiresDynamicCode("Calls ToolRegistry.buildAll which uses AgentSessionExtensions over STJ state")>]
 [<Fact>]
 let ``ToolRegistry includes GetConversation and invoking it with no session returns no_session`` () = task {
-    let tools = ToolRegistry.buildAll "/tmp" Fugue.Core.Hooks.defaultConfig "test-session"
+    let getSession () : Microsoft.Agents.AI.AgentSession | null = null
+    let tools = ToolRegistry.buildAll "/tmp" Fugue.Core.Hooks.defaultConfig "test-session" getSession
 
     // Verify GetConversation is in the names list
     ToolRegistry.names |> should contain "GetConversation"
@@ -117,8 +118,7 @@ let ``ToolRegistry includes GetConversation and invoking it with no session retu
     let gc = tools |> List.tryFind (fun t -> t.Name = "GetConversation")
     gc |> should not' (equal None)
 
-    // Calling it with no session set should return no_session
-    setSession null
+    // The closure returns null → tool reports no_session.
     let gcFn = gc.Value
     let args = Microsoft.Extensions.AI.AIFunctionArguments()
     let result = gcFn.InvokeAsync(args, CancellationToken.None)

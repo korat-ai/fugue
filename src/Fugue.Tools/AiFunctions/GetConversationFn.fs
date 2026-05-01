@@ -11,12 +11,6 @@ open Microsoft.Agents.AI
 open Microsoft.Extensions.AI
 open Fugue.Tools.AiFunctions
 
-// Module-level session holder — updated by Repl after each CreateSessionAsync / /new / /clear-history.
-let mutable private currentSession : AgentSession | null = null
-
-/// Called by Repl.run after the session is created or reset.
-let setSession (s: AgentSession | null) : unit = currentSession <- s
-
 [<RequiresUnreferencedCode("Uses AgentSessionExtensions which touches STJ-backed AgentSessionStateBag")>]
 [<RequiresDynamicCode("Uses AgentSessionExtensions which touches STJ-backed AgentSessionStateBag")>]
 let getConversationJsonFiltered (session: AgentSession | null) (filterRole: string option) : string =
@@ -108,11 +102,13 @@ let private desc =
     "status is 'ok' when history is available, 'no_session' if no session exists, " +
     "or 'history_unavailable' if the session has not produced history yet."
 
-/// Create the GetConversation AIFunction. Uses the module-level session set via setSession.
-/// The optional `getSession` closure overrides the module-level state (useful in tests).
+/// Create the GetConversation AIFunction. The caller owns session state and supplies
+/// a closure that returns the current session each invocation — typically a `ref`
+/// allocated in Program.fs and mutated by Repl.fs across /new / /clear-history /
+/// session-resume transitions.
 [<RequiresUnreferencedCode("Calls getConversationJson which uses AgentSessionExtensions over STJ state")>]
 [<RequiresDynamicCode("Calls getConversationJson which uses AgentSessionExtensions over STJ state")>]
-let create (getSession: (unit -> AgentSession | null) option) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionId: string) : AIFunction =
+let create (getSession: unit -> AgentSession | null) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionId: string) : AIFunction =
     DelegatedFn.DelegatedAIFunction(
         name        = "GetConversation",
         description = desc,
@@ -121,10 +117,7 @@ let create (getSession: (unit -> AgentSession | null) option) (hooksConfig: Fugu
         sessionId   = sessionId,
         invoke      = fun args ct -> task {
             ct.ThrowIfCancellationRequested()
-            let session =
-                match getSession with
-                | Some f -> f ()
-                | None   -> currentSession
+            let session = getSession ()
             let filterRole =
                 match args.TryGetValue "filter_role" with
                 | true, (:? JsonElement as el) when el.ValueKind = JsonValueKind.String ->

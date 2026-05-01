@@ -15,9 +15,10 @@ let private noColor () =
 
 [<System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Calls ToolRegistry.buildAll which uses AgentSessionExtensions over STJ state")>]
 [<System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Calls ToolRegistry.buildAll which uses AgentSessionExtensions over STJ state")>]
-let private buildAgent (cfg: AppConfig) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (providerContext: string option) (lastSummary: string option) (sessionId: string) : AIAgent =
+let private buildAgent (cfg: AppConfig) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (providerContext: string option) (lastSummary: string option) (sessionId: string) (sessionRef: (Microsoft.Agents.AI.AgentSession | null) ref) : AIAgent =
     let cwd = Environment.CurrentDirectory
-    let rawTools = Fugue.Tools.ToolRegistry.buildAll cwd hooksConfig sessionId
+    let getSession () = sessionRef.Value
+    let rawTools = Fugue.Tools.ToolRegistry.buildAll cwd hooksConfig sessionId getSession
     let tools = if cfg.DryRun then DryRun.wrapTools rawTools else rawTools
     let basePrompt =
         match cfg.SystemPrompt with
@@ -57,7 +58,8 @@ let private runWithPrint (cfg: AppConfig) (prompt: string) : int =
                 |> Async.RunSynchronously
             if assembled = "" then None else Some assembled
     let sessionId = System.Guid.NewGuid().ToString("N")
-    let agent = buildAgent cfg hooksConfig providerContext lastSummary sessionId
+    let sessionRef : (Microsoft.Agents.AI.AgentSession | null) ref = ref null
+    let agent = buildAgent cfg hooksConfig providerContext lastSummary sessionId sessionRef
     let t = Repl.runPrint agent prompt
     try
         t.Wait()
@@ -119,10 +121,16 @@ let private runWithCfg (cfg: AppConfig) : int =
     // Stable sessionId for the lifetime of this REPL invocation. Reused on
     // /new and /model set rebuilds so hooks see consistent correlation.
     let sessionId = System.Guid.NewGuid().ToString("N")
-    let agent = buildAgent cfg hooksConfig providerContext lastSummary sessionId
+    // Single ref shared across the agent lifetime — survives /new and /model set
+    // rebuilds because we pass the same ref into every buildAgent call. The
+    // GetConversation tool reads through this ref; Repl.run mutates it after
+    // CreateSessionAsync and on each /new / /clear-history. Replaces an older
+    // module-level mutable in GetConversationFn (#50).
+    let sessionRef : (Microsoft.Agents.AI.AgentSession | null) ref = ref null
+    let agent = buildAgent cfg hooksConfig providerContext lastSummary sessionId sessionRef
     let t =
         if Console.IsInputRedirected then Repl.runHeadless agent cfg cwd
-        else Repl.run agent cfg cwd lastSummary (fun newCfg -> buildAgent newCfg hooksConfig providerContext None sessionId)
+        else Repl.run agent sessionRef cfg cwd lastSummary (fun newCfg -> buildAgent newCfg hooksConfig providerContext None sessionId sessionRef)
     try t.Wait()
     with
     | :? AggregateException as agg ->
