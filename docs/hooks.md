@@ -50,7 +50,14 @@ Hooks are defined in `~/.fugue/hooks.json`. The file is optional; if absent, no 
         "async": false
       }
     ]
-  }
+  },
+  "contextProviders": [
+    {
+      "name": "git-context",
+      "command": "git log --oneline -5",
+      "ttlSeconds": 60
+    }
+  ]
 }
 ```
 
@@ -61,6 +68,7 @@ Hooks are defined in `~/.fugue/hooks.json`. The file is optional; if absent, no 
 | `hookTimeoutMs` | int | 5000 | Global timeout (ms) for synchronous hooks. Overridden per-hook via `timeoutMs`. |
 | `onError` | string | `"log-continue"` | How to handle hook failures: `"log-continue"` (warn, keep going) or `"log-block"` (fail the session). |
 | `hooks` | object | `{}` | Container for per-event hook arrays. Possible keys: `SessionStart`, `SessionEnd`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`. |
+| `contextProviders` | array | `[]` | Context providers for system-prompt injection (see [Context providers](#context-providers)). |
 
 ### Hook definition (per hook in an array)
 
@@ -278,6 +286,145 @@ UserPromptSubmit hooks intercept **only natural-language prompts to the agent**:
 | `/scratch send <Cmd>` (scratch command) | No | Specialized repl command, not a user prompt. |
 
 If you need to intercept **all input including slash commands**, that is a future enhancement (Phase 4+). For now, UserPromptSubmit only sees natural-language prompts.
+
+## Context providers
+
+Context providers inject read-only context into the system prompt at session startup. Unlike lifecycle hooks, they do not run on every event; they run once and cache their output. Configured in `~/.fugue/hooks.json` under the `contextProviders` key (NOT under `hooks`).
+
+### Purpose
+
+Context providers let you prepend dynamic context to Fugue's system prompt. Typical use cases:
+
+- Injecting the last N commits from git
+- Embedding environment info (node/python/java versions)
+- Prepending recent issues or tickets from your project tracker
+- Reading a `.context` file from the current directory
+
+The key difference from [SessionStart](#sessionstart) hooks: SessionStart runs for side effects (environment setup, file writes), while context providers run to generate **stdout that becomes part of the system prompt**. SessionStart output is logged but discarded; context provider output is prepended as `[Context: <name>]\n<stdout>` before the base system prompt.
+
+### Config schema
+
+Context providers live in the `contextProviders` array in `~/.fugue/hooks.json`:
+
+```json
+{
+  "contextProviders": [
+    {
+      "name": "git-context",
+      "command": "git log --oneline -5",
+      "ttlSeconds": 60
+    },
+    {
+      "name": "project-info",
+      "command": "cat .context",
+      "ttlSeconds": 0
+    }
+  ]
+}
+```
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `name` | string | Yes | Identifier for this provider (e.g., `"git-context"`, `"node-version"`). Used in cache filename and prompt block label. |
+| `command` | string | Yes | Command to execute. Supports `~/` prefix. Output (stdout) is injected into the prompt. Non-zero exit or timeout → block omitted, no cache write. |
+| `ttlSeconds` | int | No | Cache lifetime in seconds. Default 0 (no cache; fetch fresh every session). Set to 60+ for slow commands (e.g., API calls). Uses UTC for TTL comparison. |
+
+### Caching
+
+Cached results live in `~/.fugue/cache/provider-{name}-{hash}.json`, where `{hash}` is the first 16 hex chars of SHA256(`command`). Cache file structure:
+
+```json
+{
+  "ttlSeconds": 60,
+  "fetchedAt": "2026-05-01T14:23:15Z",
+  "stdout": "abc1234 fix typo\ndef5678 add feature\n..."
+}
+```
+
+TTL is calculated as: `if (now_utc - fetchedAt_utc) < ttlSeconds → use cache; else → re-fetch`.
+
+**Cache misses and errors:**
+- Cache file missing or malformed → treated as miss, command re-runs.
+- Command exits non-zero → context block omitted from prompt, no cache write.
+- Command times out (> `hookTimeoutMs`) → context block omitted, no cache write.
+- Cache directory unwriteable → command fetched fresh each session (silent; no error).
+
+**Env override:** Set `FUGUE_CACHE_DIR` to override `~/.fugue/cache` (useful for tests; works for any environment).
+
+### Failure modes
+
+Context providers never block the session. If a provider fails (timeout, non-zero exit, or exception):
+
+1. That provider's block is omitted from the system prompt.
+2. No error is logged (silent failure).
+3. Session continues normally.
+4. No cache write occurs.
+
+This design keeps Fugue fast and resilient: a slow or broken provider does not delay startup.
+
+### Integration with system prompt
+
+Context providers run **exactly once at session startup**, in parallel, before the agent is built. The assembled output is prepended to the system prompt:
+
+```
+[Context: git-context]
+abc1234 fix typo in README
+def5678 implement feature X
+...
+
+[Context: project-info]
+Node.js v18.0.0
+...
+
+<rest of system prompt>
+```
+
+When `--low-bandwidth` flag is used, context provider fetching is **suppressed entirely** (no providers run, no cache reads).
+
+### Worked example
+
+Create `~/.fugue/hooks.json`:
+
+```json
+{
+  "contextProviders": [
+    {
+      "name": "git-context",
+      "command": "git log --oneline -5",
+      "ttlSeconds": 60
+    }
+  ]
+}
+```
+
+First session (cache miss): Git command runs, output cached, system prompt becomes:
+
+```
+[Context: git-context]
+abc1234 fix typo in README
+def5678 implement feature X
+...
+
+<base system prompt follows>
+```
+
+Subsequent sessions within 60 seconds: Cache hit, no git command, same output injected.
+
+After 60 seconds: Cache expired, git command runs again, cache updated.
+
+### Comparison with SessionStart
+
+| Aspect | SessionStart hook | Context provider |
+|--------|-------------------|------------------|
+| **When** | After session created, before first prompt | At startup, before agent built |
+| **Runs every** | Session (non-repeating) | Session (cached for TTL) |
+| **Stdout usage** | Logged, discarded | Injected into system prompt |
+| **Side effects** | Yes (env vars, file writes) | No (stateless read-only) |
+| **Output in prompt** | No | Yes |
+| **Timeout behavior** | Configurable, errors per `onError` | Silent miss, no error |
+| **Use case** | "Set up the environment" | "Add context the LLM should know" |
+
+Use **SessionStart** when you need to mutate session state (write files, set env vars) and the side effect is more important than the agent knowing about it. Use **context providers** when you want the agent to see fresh information at the start of every session (with smart caching for performance).
 
 ## Matcher syntax
 
@@ -637,7 +784,6 @@ Fugue **spawns** the hook and abandons it. The hook runs in the background; its 
 
 The following are planned for future phases and are **not yet supported**:
 
-- **Context-provider injection** — hooks that output text to be prepended to the system prompt (Phase 4, absorbs #191).
 - **HTTP webhooks** — webhook transport instead of local processes (#188, Phase 2+, separate issue).
 - **Shell quoting in commands** — `command` is split on the first space only; complex args with spaces require a wrapper script.
 - **Glob/regex matchers** — matcher patterns are reserved for future versions; only exact string match (`"*"` for all, or exact tool name like `"Bash"`) is supported in Phase 3.
