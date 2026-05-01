@@ -19,7 +19,7 @@ let setSession (s: AgentSession | null) : unit = currentSession <- s
 
 [<RequiresUnreferencedCode("Uses AgentSessionExtensions which touches STJ-backed AgentSessionStateBag")>]
 [<RequiresDynamicCode("Uses AgentSessionExtensions which touches STJ-backed AgentSessionStateBag")>]
-let getConversationJson (session: AgentSession | null) : string =
+let getConversationJsonFiltered (session: AgentSession | null) (filterRole: string option) : string =
     let buf = new ArrayBufferWriter<byte>()
     use w = new Utf8JsonWriter(buf)
     w.WriteStartObject()
@@ -50,43 +50,53 @@ let getConversationJson (session: AgentSession | null) : string =
             Encoding.UTF8.GetString(buf.WrittenSpan)
         else
             w.WriteString("status", "ok")
+            // turn_count reflects the SOURCE size, not the filtered output, so callers can
+            // see "I asked for role=user and got N of M" by comparing array length.
             w.WriteNumber("turn_count", messages.Count)
             w.WriteStartArray("messages")
+            let matchesFilter (role: string) =
+                match filterRole with
+                | Some r -> String.Equals(role, r, StringComparison.OrdinalIgnoreCase)
+                | None -> true
             for i in 0 .. messages.Count - 1 do
                 let msg = messages.[i]
-                w.WriteStartObject()
-                w.WriteNumber("index", i)
-                w.WriteString("role", msg.Role.Value)
-                // Concatenate all text content
-                let textParts =
-                    msg.Contents
-                    |> Seq.choose (function :? TextContent as tc -> Some tc.Text | _ -> None)
-                    |> String.concat ""
-                w.WriteString("content", textParts)
-                // Detect function call content
-                let toolCalls =
-                    msg.Contents
-                    |> Seq.choose (function :? FunctionCallContent as fc -> Some fc | _ -> None)
-                    |> Seq.toArray
-                w.WriteBoolean("has_tool_calls", toolCalls.Length > 0)
-                if toolCalls.Length > 0 then
-                    w.WriteStartArray("tool_calls")
-                    for tc in toolCalls do
-                        w.WriteStartObject()
-                        w.WriteString("name", tc.Name)
-                        w.WriteString("call_id", tc.CallId)
-                        w.WriteEndObject()
-                    w.WriteEndArray()
-                w.WriteEndObject()
+                if matchesFilter msg.Role.Value then
+                    w.WriteStartObject()
+                    w.WriteNumber("index", i)
+                    w.WriteString("role", msg.Role.Value)
+                    let textParts =
+                        msg.Contents
+                        |> Seq.choose (function :? TextContent as tc -> Some tc.Text | _ -> None)
+                        |> String.concat ""
+                    w.WriteString("content", textParts)
+                    let toolCalls =
+                        msg.Contents
+                        |> Seq.choose (function :? FunctionCallContent as fc -> Some fc | _ -> None)
+                        |> Seq.toArray
+                    w.WriteBoolean("has_tool_calls", toolCalls.Length > 0)
+                    if toolCalls.Length > 0 then
+                        w.WriteStartArray("tool_calls")
+                        for tc in toolCalls do
+                            w.WriteStartObject()
+                            w.WriteString("name", tc.Name)
+                            w.WriteString("call_id", tc.CallId)
+                            w.WriteEndObject()
+                        w.WriteEndArray()
+                    w.WriteEndObject()
             w.WriteEndArray()
             w.WriteEndObject()
             w.Flush()
             Encoding.UTF8.GetString(buf.WrittenSpan)
 
+[<RequiresUnreferencedCode("Uses AgentSessionExtensions which touches STJ-backed AgentSessionStateBag")>]
+[<RequiresDynamicCode("Uses AgentSessionExtensions which touches STJ-backed AgentSessionStateBag")>]
+let getConversationJson (session: AgentSession | null) : string =
+    getConversationJsonFiltered session None
+
 let private schema = DelegatedFn.parseSchema """{
   "type":"object",
   "properties":{
-    "filter_role":{"type":"string","description":"Optional: 'user', 'assistant', or 'tool'. If provided, only messages with that role are returned (not yet enforced in Phase 1)."}
+    "filter_role":{"type":"string","description":"Optional: 'user', 'assistant', 'tool', or 'system'. Case-insensitive. If provided, only messages with that role appear in the messages array. turn_count remains the unfiltered total so the caller can compare."}
   },
   "required":[]
 }"""
@@ -109,11 +119,19 @@ let create (getSession: (unit -> AgentSession | null) option) (hooksConfig: Fugu
         schema      = schema,
         hooksConfig = hooksConfig,
         sessionId   = sessionId,
-        invoke      = fun _args ct -> task {
+        invoke      = fun args ct -> task {
             ct.ThrowIfCancellationRequested()
             let session =
                 match getSession with
                 | Some f -> f ()
                 | None   -> currentSession
-            return getConversationJson session
+            let filterRole =
+                match args.TryGetValue "filter_role" with
+                | true, (:? JsonElement as el) when el.ValueKind = JsonValueKind.String ->
+                    match el.GetString() |> Option.ofObj with
+                    | Some s when not (String.IsNullOrWhiteSpace s) -> Some s
+                    | _ -> None
+                | true, (:? string as s) when not (String.IsNullOrWhiteSpace s) -> Some s
+                | _ -> None
+            return getConversationJsonFiltered session filterRole
         }) :> AIFunction
