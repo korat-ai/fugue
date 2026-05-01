@@ -2980,6 +2980,85 @@ Please generate a clear, actionable onboarding checklist."""
                         AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                     AnsiConsole.WriteLine()
                     StatusBar.refresh ()
+            | Some s when s = "/sessions all" ->
+                let rows = Fugue.Core.SearchIndex.listAll 50
+                if rows.IsEmpty then
+                    if Render.isColorEnabled () then AnsiConsole.MarkupLine "[dim]No sessions found.[/]"
+                    else Console.Out.WriteLine "No sessions found."
+                else
+                    if Render.isColorEnabled () then
+                        AnsiConsole.MarkupLine $"[bold]All sessions ({rows.Length})[/]"
+                        AnsiConsole.MarkupLine "[dim]ID                         Started                   Turns  Project[/]"
+                        for r in rows do
+                            let sid = if r.Id.Length > 26 then r.Id.[..25] else r.Id.PadRight 26
+                            let ts  = r.StartedAt.[..18].PadRight 25
+                            let tc  = string r.TurnCount |> fun s -> s.PadLeft 5
+                            let cwd = if r.Cwd.Length > 40 then "…" + r.Cwd.[r.Cwd.Length-39..] else r.Cwd
+                            AnsiConsole.MarkupLine $"[dim]{Markup.Escape sid}[/]  [cyan]{Markup.Escape ts}[/]  {tc}  [dim]{Markup.Escape cwd}[/]"
+                    else
+                        Console.Out.WriteLine $"All sessions ({rows.Length})"
+                        Console.Out.WriteLine "ID                         Started                   Turns  Project"
+                        for r in rows do
+                            let sid = if r.Id.Length > 26 then r.Id.[..25] else r.Id.PadRight 26
+                            let ts  = r.StartedAt.[..18].PadRight 25
+                            let tc  = string r.TurnCount |> fun s -> s.PadLeft 5
+                            let cwd = if r.Cwd.Length > 40 then "…" + r.Cwd.[r.Cwd.Length-39..] else r.Cwd
+                            Console.Out.WriteLine $"{sid}  {ts}  {tc}  {cwd}"
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s = "/sessions" ->
+                let rows = Fugue.Core.SearchIndex.listForCwd cwd 20
+                if rows.IsEmpty then
+                    if Render.isColorEnabled () then AnsiConsole.MarkupLine "[dim]No sessions for this project.[/]"
+                    else Console.Out.WriteLine "No sessions for this project."
+                else
+                    if Render.isColorEnabled () then
+                        AnsiConsole.MarkupLine $"[bold]Sessions for {Markup.Escape cwd} ({rows.Length})[/]"
+                        AnsiConsole.MarkupLine "[dim]ID                         Started                   Turns  Summary[/]"
+                        for r in rows do
+                            let sid = if r.Id.Length > 26 then r.Id.[..25] else r.Id.PadRight 26
+                            let ts  = r.StartedAt.[..18].PadRight 25
+                            let tc  = string r.TurnCount |> fun s -> s.PadLeft 5
+                            let sum = r.Summary |> Option.map (fun s -> if s.Length > 50 then s.[..49] + "…" else s) |> Option.defaultValue ""
+                            AnsiConsole.MarkupLine $"[dim]{Markup.Escape sid}[/]  [cyan]{Markup.Escape ts}[/]  {tc}  [dim]{Markup.Escape sum}[/]"
+                    else
+                        Console.Out.WriteLine $"Sessions for {cwd} ({rows.Length})"
+                        Console.Out.WriteLine "ID                         Started                   Turns  Summary"
+                        for r in rows do
+                            let sid = if r.Id.Length > 26 then r.Id.[..25] else r.Id.PadRight 26
+                            let ts  = r.StartedAt.[..18].PadRight 25
+                            let tc  = string r.TurnCount |> fun s -> s.PadLeft 5
+                            let sum = r.Summary |> Option.map (fun s -> if s.Length > 50 then s.[..49] + "…" else s) |> Option.defaultValue ""
+                            Console.Out.WriteLine $"{sid}  {ts}  {tc}  {sum}"
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/search " ->
+                let q = s.Substring("/search ".Length).Trim()
+                if q = "" then
+                    if Render.isColorEnabled () then AnsiConsole.MarkupLine "[yellow]Usage: /search <query>[/]"
+                    else Console.Out.WriteLine "Usage: /search <query>"
+                else
+                    let hits = Fugue.Core.SearchIndex.search q 10
+                    if hits.IsEmpty then
+                        if Render.isColorEnabled () then AnsiConsole.MarkupLine $"[dim]No results for: {Markup.Escape q}[/]"
+                        else Console.Out.WriteLine $"No results for: {q}"
+                    else
+                        if Render.isColorEnabled () then
+                            AnsiConsole.MarkupLine $"[bold]Search results for «{Markup.Escape q}» ({hits.Length})[/]"
+                            for h in hits do
+                                let ts  = h.StartedAt.[..18]
+                                let cw  = if h.Cwd.Length > 35 then "…" + h.Cwd.[h.Cwd.Length-34..] else h.Cwd
+                                AnsiConsole.MarkupLine $"[dim]{Markup.Escape h.SessionId.[..25]}[/]  [cyan]{Markup.Escape ts}[/]  [dim]{Markup.Escape cw}[/]"
+                                AnsiConsole.MarkupLine $"  {Markup.Escape h.Snippet}"
+                        else
+                            Console.Out.WriteLine $"Search results for «{q}» ({hits.Length})"
+                            for h in hits do
+                                let ts  = h.StartedAt.[..18]
+                                let cw  = if h.Cwd.Length > 35 then "…" + h.Cwd.[h.Cwd.Length-34..] else h.Cwd
+                                Console.Out.WriteLine $"{h.SessionId.[..25]}  {ts}  {cw}"
+                                Console.Out.WriteLine $"  {h.Snippet}"
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
             | Some userInput ->
                 let userInput = ReadLine.normalizeInput userInput
                 if ReadLine.hasZeroWidth userInput then

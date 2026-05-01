@@ -129,13 +129,14 @@ let main argv =
         |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
     if argv |> Array.exists (fun a -> a = "--help" || a = "-h") then
         Console.Write """Usage: fugue [--profile <name>] [--template <name>] [--low-bandwidth] [--offline] [--print "prompt"]
-       fugue doctor | init | aliases | man
+       fugue doctor | init | aliases | man | reindex
 
 Subcommands:
   doctor    Run environment diagnostics
   init      Bootstrap FUGUE.md in current directory
   aliases   Print/install shell aliases
   man       Display full manual page
+  reindex   Rebuild FTS5 search index from all session JSONL files
 
 Options:
   --profile <name>    Load ~/.fugue/profiles/<name>.md as system-prompt prefix
@@ -151,6 +152,10 @@ Run `fugue man` for the full manual.
         let cwd = Environment.CurrentDirectory
         let passed = Doctor.run cwd
         if passed then 0 else 1
+    elif argv |> Array.contains "reindex" then
+        match Fugue.Core.SearchIndex.reindexFromJsonl () with
+        | Ok n    -> Console.Out.WriteLine($"Reindexed {n} session(s)."); 0
+        | Error e -> Console.Error.WriteLine($"Reindex failed: {e}"); 1
     elif argv |> Array.contains "man" then
         let manContent = """fugue(1)                    Fugue Manual                    fugue(1)
 
