@@ -13,6 +13,8 @@ let private noColor () =
     || Console.IsOutputRedirected
     || Console.IsInputRedirected
 
+[<System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Calls ToolRegistry.buildAll which uses AgentSessionExtensions over STJ state")>]
+[<System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Calls ToolRegistry.buildAll which uses AgentSessionExtensions over STJ state")>]
 let private buildAgent (cfg: AppConfig) (lastSummary: string option) : AIAgent =
     let cwd = Environment.CurrentDirectory
     let rawTools = Fugue.Tools.ToolRegistry.buildAll cwd

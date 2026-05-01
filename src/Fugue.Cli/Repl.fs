@@ -574,6 +574,7 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                 cancelSrc.RequestQuit())
     let! initialSession = agent.CreateSessionAsync(CancellationToken.None)
     let mutable session : AgentSession | null = initialSession
+    Fugue.Tools.AiFunctions.GetConversationFn.setSession session
     // Pre-fill for the next ReadLine call. Used by /menu and similar pickers
     // that hand a partial command back to the user for completion.
     let mutable nextInputPrefill : string = ""
@@ -1029,10 +1030,12 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                 try
                     let! newSession = agent.CreateSessionAsync(CancellationToken.None)
                     session <- newSession
+                    Fugue.Tools.AiFunctions.GetConversationFn.setSession session
                     AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ClearHistoryDone + "[/]"))
                     AnsiConsole.WriteLine()
                 with ex ->
                     session <- null
+                    Fugue.Tools.AiFunctions.GetConversationFn.setSession session
                     AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                     AnsiConsole.WriteLine()
                 StatusBar.refresh ()
@@ -1489,6 +1492,7 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                                 cfg   <- newCfg
                                 let! freshSession = agent.CreateSessionAsync(CancellationToken.None)
                                 session <- freshSession
+                                Fugue.Tools.AiFunctions.GetConversationFn.setSession session
                                 let provName, _ = providerInfo cfg.Provider
                                 AnsiConsole.MarkupLine($"[green]✓[/] model → [cyan]{Markup.Escape provName}[/] / [green]{Markup.Escape newModel}[/] [dim](history reset)[/]")
                                 StatusBar.start cwd cfg
@@ -1629,6 +1633,7 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                         cfg   <- newCfg
                         let! freshSession = agent.CreateSessionAsync(CancellationToken.None)
                         session <- freshSession
+                        Fugue.Tools.AiFunctions.GetConversationFn.setSession session
                         let prov, _ = providerInfo cfg.Provider
                         AnsiConsole.MarkupLine($"[green]✓[/] model → [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape newModel}[/] [dim](history reset)[/]")
                         StatusBar.start cwd cfg
@@ -1800,8 +1805,10 @@ Please generate a clear, actionable onboarding checklist."""
                 try
                     let! newSession = agent.CreateSessionAsync(CancellationToken.None)
                     session <- newSession
+                    Fugue.Tools.AiFunctions.GetConversationFn.setSession session
                 with ex ->
                     session <- null
+                    Fugue.Tools.AiFunctions.GetConversationFn.setSession session
                     AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                     AnsiConsole.WriteLine()
                 turnNumber <- 0
@@ -2892,6 +2899,7 @@ Please generate a clear, actionable onboarding checklist."""
                     try
                         let! newSession = agent.CreateSessionAsync(CancellationToken.None)
                         session <- newSession
+                        Fugue.Tools.AiFunctions.GetConversationFn.setSession session
                     with ex ->
                         AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
                         AnsiConsole.WriteLine()
