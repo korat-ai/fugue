@@ -3,6 +3,8 @@ module Fugue.Core.Hooks
 open System
 open System.Diagnostics
 open System.IO
+open System.Runtime.InteropServices
+open System.Text
 open System.Text.Json
 open System.Threading
 open System.Threading.Tasks
@@ -272,16 +274,23 @@ let private expandHome (cmd: string) : string =
 
 /// Spawn the hook process and write the payload to its stdin, then close stdin.
 /// Returns the Process object (already started).
+///
+/// Wraps the user-supplied command in a shell so that paths containing
+/// spaces (`/home/my user/hook.sh`), shell metacharacters (`|`, `&&`, env
+/// vars), and inline arguments all work without bespoke quoting.
+/// On Windows uses `pwsh -EncodedCommand` (UTF-16-LE base64 — same pattern
+/// as BashTool); on Unix uses `/bin/sh -c`.
 let private spawnHook (command: string) (payloadJson: string) : Process =
     let expanded = expandHome command
-    // Split on first space to get exe + args (simple split; shell quoting not supported).
-    let exe, args =
-        let idx = expanded.IndexOf(' ')
-        if idx < 0 then expanded, ""
-        else expanded.[..idx-1], expanded.[idx+1..]
-    let psi = ProcessStartInfo()
-    psi.FileName  <- exe
-    if args <> "" then psi.Arguments <- args
+    let psi =
+        if RuntimeInformation.IsOSPlatform OSPlatform.Windows then
+            let encoded =
+                expanded
+                |> Encoding.Unicode.GetBytes
+                |> Convert.ToBase64String
+            ProcessStartInfo("pwsh", $"-NoProfile -NoLogo -EncodedCommand {encoded}")
+        else
+            ProcessStartInfo("/bin/sh", "-c \"" + expanded.Replace("\"", "\\\"") + "\"")
     psi.UseShellExecute        <- false
     psi.RedirectStandardInput  <- true
     psi.RedirectStandardOutput <- true
