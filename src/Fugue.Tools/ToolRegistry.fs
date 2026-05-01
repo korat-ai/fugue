@@ -31,4 +31,5 @@ let descriptions : (string * string) list = [
     "Glob",       "List files matching a glob pattern."
     "Grep",       "Search files for a regex pattern, returning matching lines with file and line number."
     "Tree",       "List directory contents as an ASCII tree."
+    "GetConversation", "Return the current session's conversation history as JSON (turn count, status, messages with roles and tool-call markers)."
 ]
