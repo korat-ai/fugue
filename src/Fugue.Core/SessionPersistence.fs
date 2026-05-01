@@ -43,8 +43,12 @@ let encodeCwd (cwd: string) : string =
        .Replace(':', '_')
 
 /// Root directory for all session JSONL files.
+/// Honors FUGUE_SESSIONS_DIR env override (used by tests for full isolation).
 let sessionsDir () : string =
-    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".fugue", "sessions")
+    match Environment.GetEnvironmentVariable "FUGUE_SESSIONS_DIR" |> Option.ofObj with
+    | Some d when d <> "" -> d
+    | _ ->
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".fugue", "sessions")
 
 /// Full path for a session JSONL file.
 /// Layout: ~/.fugue/sessions/<encoded-cwd>/<ulid>.jsonl
