@@ -17,7 +17,9 @@ let private noColor () =
 [<System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Calls ToolRegistry.buildAll which uses AgentSessionExtensions over STJ state")>]
 let private buildAgent (cfg: AppConfig) (lastSummary: string option) : AIAgent =
     let cwd = Environment.CurrentDirectory
-    let rawTools = Fugue.Tools.ToolRegistry.buildAll cwd
+    let hooksConfig = Fugue.Core.Hooks.load ()
+    let sessionId = System.Guid.NewGuid().ToString("N")
+    let rawTools = Fugue.Tools.ToolRegistry.buildAll cwd hooksConfig sessionId
     let tools = if cfg.DryRun then DryRun.wrapTools rawTools else rawTools
     let basePrompt =
         match cfg.SystemPrompt with
