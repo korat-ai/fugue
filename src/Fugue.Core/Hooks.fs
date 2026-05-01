@@ -12,6 +12,8 @@ open System.Threading.Tasks
 type HookEvent =
     | SessionStart
     | SessionEnd
+    | PreToolUse
+    | PostToolUse
 
 type OnError =
     | LogContinue   // default: log warning and keep going
@@ -20,19 +22,33 @@ type OnError =
 type HookDef =
     { Command   : string
       Async     : bool
-      TimeoutMs : int option }   // None → use global default
+      TimeoutMs : int option     // None → use global default
+      Matcher   : string option  // None = match all tools; "*"/"" = match all
+    }
 
 type HooksConfig =
     { HookTimeoutMs : int          // global default (ms)
       OnError       : OnError
       SessionStart  : HookDef list
-      SessionEnd    : HookDef list }
+      SessionEnd    : HookDef list
+      PreToolUse    : HookDef list
+      PostToolUse   : HookDef list }
 
 let defaultConfig : HooksConfig =
     { HookTimeoutMs = 5_000
       OnError       = LogContinue
       SessionStart  = []
-      SessionEnd    = [] }
+      SessionEnd    = []
+      PreToolUse    = []
+      PostToolUse   = [] }
+
+// ── PreToolResult ─────────────────────────────────────────────────────────────
+
+/// Result returned by runPreToolUse.
+type PreToolResult =
+    | Proceed                                         // proceed with original args
+    | Block       of reason : string                  // abort tool call; return reason to LLM
+    | ModifyArgs  of changes : (string * string) list // key/rawJsonValue pairs to overwrite
 
 // ── Payload builders ─────────────────────────────────────────────────────────
 // AOT-safe: manual JSON building, no reflection, no STJ serialization.
@@ -59,6 +75,28 @@ let sessionEndPayload (cwd: string) (durationMs: int64) (turnCount: int) : strin
     "," + q + "cwd" + q + ":" + q + esc cwd + q +
     "," + q + "durationMs" + q + ":" + string durationMs +
     "," + q + "turnCount" + q + ":" + string turnCount +
+    "}"
+
+/// Build JSON payload for PreToolUse.
+let preToolUsePayload (toolName: string) (argsJson: string) (sessionId: string) : string =
+    let q = "\""
+    "{" + q + "event" + q + ":" + q + "PreToolUse" + q +
+    "," + q + "version" + q + ":1" +
+    "," + q + "tool" + q + ":" + q + esc toolName + q +
+    "," + q + "args" + q + ":" + argsJson +
+    "," + q + "sessionId" + q + ":" + q + esc sessionId + q +
+    "}"
+
+/// Build JSON payload for PostToolUse.
+let postToolUsePayload (toolName: string) (argsJson: string) (result: string) (isError: bool) (sessionId: string) : string =
+    let q = "\""
+    "{" + q + "event" + q + ":" + q + "PostToolUse" + q +
+    "," + q + "version" + q + ":1" +
+    "," + q + "tool" + q + ":" + q + esc toolName + q +
+    "," + q + "args" + q + ":" + argsJson +
+    "," + q + "result" + q + ":" + q + esc result + q +
+    "," + q + "isError" + q + ":" + (if isError then "true" else "false") +
+    "," + q + "sessionId" + q + ":" + q + esc sessionId + q +
     "}"
 
 // ── Config loading ────────────────────────────────────────────────────────────
@@ -113,6 +151,11 @@ let load () : HooksConfig =
                 | "log-block" -> LogBlock
                 | _           -> LogContinue
 
+            // Warn if a matcher contains glob/regex metacharacters reserved for future extension.
+            let warnMatcher (m: string) =
+                if m.IndexOfAny([| '|'; '?'; '[' |]) >= 0 then
+                    eprintfn $"[hooks] matcher \"{m}\" contains reserved metacharacters (|, ?, [) — only exact match is supported in this version; hook may not fire as expected"
+
             // Parse an array of hook definitions under a given event key
             let parseHooks (eventKey: string) : HookDef list =
                 let mutable hooksEl = Unchecked.defaultof<JsonElement>
@@ -138,13 +181,31 @@ let load () : HooksConfig =
                                             | true, n when n > 0 -> Some n
                                             | _ -> None
                                         else None
-                                    yield { Command = cmd; Async = async'; TimeoutMs = perHookTimeout } ]
+                                    let matcher =
+                                        let mutable mv = Unchecked.defaultof<JsonElement>
+                                        if item.TryGetProperty("matcher", &mv) && mv.ValueKind = JsonValueKind.String then
+                                            let m = mv.GetString() |> Option.ofObj |> Option.defaultValue ""
+                                            warnMatcher m
+                                            Some m
+                                        else None
+                                    yield { Command = cmd; Async = async'; TimeoutMs = perHookTimeout; Matcher = matcher } ]
                 else []
+
+            let parseHooksPostToolUse (eventKey: string) : HookDef list =
+                // PostToolUse hooks cannot block: warn if async=false is set
+                let hooks = parseHooks eventKey
+                hooks |> List.map (fun def ->
+                    if not def.Async then
+                        eprintfn $"[hooks] PostToolUse hook \"{def.Command}\" has async:false — PostToolUse is always fire-and-forget; treating as async"
+                        { def with Async = true }
+                    else def)
 
             { HookTimeoutMs = globalTimeout
               OnError        = onError
               SessionStart   = parseHooks "SessionStart"
-              SessionEnd     = parseHooks "SessionEnd" }
+              SessionEnd     = parseHooks "SessionEnd"
+              PreToolUse     = parseHooks "PreToolUse"
+              PostToolUse    = parseHooksPostToolUse "PostToolUse" }
         with ex ->
             eprintfn $"[hooks] failed to load {path}: {ex.Message}"
             defaultConfig
@@ -212,6 +273,28 @@ let private runSyncHook (def: HookDef) (payloadJson: string) (globalTimeout: int
             eprintfn $"[hooks] {def.Command} stderr: {stderr.TrimEnd()}"
         proc.ExitCode
 
+/// Run a single sync hook and capture stdout. Drains stdout AND stderr concurrently
+/// to prevent deadlock on full pipe buffers (>4 KB). Returns (exitCode, stdout).
+let private runSyncHookWithStdout (def: HookDef) (payloadJson: string) (globalTimeout: int) : int * string =
+    let timeout = def.TimeoutMs |> Option.defaultValue globalTimeout
+    let proc = spawnHook def.Command payloadJson
+    use _ = proc
+    // Drain both streams concurrently — never read sequentially after WaitForExit.
+    let stderrTask = Task.Run(fun () -> proc.StandardError.ReadToEnd())
+    let stdoutTask = Task.Run(fun () -> proc.StandardOutput.ReadToEnd())
+    let completed = proc.WaitForExit(timeout)
+    if not completed then
+        try proc.Kill(entireProcessTree = true) with _ -> ()
+        stderrTask.Wait()
+        stdoutTask.Wait()
+        -1, ""   // sentinel for timeout
+    else
+        let stderr = stderrTask.Result
+        let stdout = stdoutTask.Result
+        if not (String.IsNullOrWhiteSpace stderr) then
+            eprintfn $"[hooks] {def.Command} stderr: {stderr.TrimEnd()}"
+        proc.ExitCode, stdout
+
 /// Fire-and-forget async hook: spawn, write stdin, abandon.
 let private fireAsyncHook (def: HookDef) (payloadJson: string) : unit =
     try
@@ -235,6 +318,7 @@ let runLifecycle (event: HookEvent) (payloadJson: string) (config: HooksConfig) 
         match event with
         | SessionStart -> config.SessionStart
         | SessionEnd   -> config.SessionEnd
+        | PreToolUse | PostToolUse -> []  // handled by runPreToolUse / runPostToolUse
     if hooks.IsEmpty then Task.FromResult(())
     else task {
         for def in hooks do
@@ -257,3 +341,75 @@ let runLifecycle (event: HookEvent) (payloadJson: string) (config: HooksConfig) 
                     else
                         eprintfn $"[hooks] hook {def.Command} {reason} (continuing)"
     }
+
+// ── Matcher ───────────────────────────────────────────────────────────────────
+
+/// True if the hook's matcher applies to the given toolName.
+let private matchesTool (def: HookDef) (toolName: string) : bool =
+    match def.Matcher with
+    | None | Some "*" | Some "" -> true
+    | Some m -> m = toolName
+
+// ── runPreToolUse / runPostToolUse ───────────────────────────────────────────
+
+/// Parse hook stdout JSON and accumulate into the running PreToolResult.
+/// block:true overrides everything; modified_args accumulates from all hooks.
+let private parsePreResult (stdout: string) (current: PreToolResult) : PreToolResult =
+    if String.IsNullOrWhiteSpace stdout then current
+    else
+        try
+            use doc = JsonDocument.Parse(stdout)
+            let root = doc.RootElement
+            let mutable blockEl = Unchecked.defaultof<JsonElement>
+            if root.TryGetProperty("block", &blockEl) && blockEl.ValueKind = JsonValueKind.True then
+                let mutable reasonEl = Unchecked.defaultof<JsonElement>
+                let reason =
+                    if root.TryGetProperty("reason", &reasonEl) && reasonEl.ValueKind = JsonValueKind.String then
+                        reasonEl.GetString() |> Option.ofObj |> Option.defaultValue "blocked by hook"
+                    else "blocked by hook"
+                Block reason
+            else
+                // Accumulate modified_args
+                let mutable modEl = Unchecked.defaultof<JsonElement>
+                if root.TryGetProperty("modified_args", &modEl) && modEl.ValueKind = JsonValueKind.Object then
+                    let newChanges = [ for prop in modEl.EnumerateObject() -> prop.Name, prop.Value.GetRawText() ]
+                    match current with
+                    | Block _ -> current   // block takes precedence
+                    | ModifyArgs existing -> ModifyArgs (existing @ newChanges)
+                    | Proceed -> if newChanges.IsEmpty then Proceed else ModifyArgs newChanges
+                else current
+        with ex ->
+            eprintfn $"[hooks] failed to parse PreToolUse hook stdout: {ex.Message}"
+            current
+
+/// Run all matching PreToolUse hooks synchronously (they can block/modify args).
+/// argsJson — args already serialized by the caller.
+let runPreToolUse (toolName: string) (argsJson: string) (sessionId: string) (config: HooksConfig) : Task<PreToolResult> =
+    let matchingHooks = config.PreToolUse |> List.filter (matchesTool >> (|>) toolName)
+    if matchingHooks.IsEmpty then Task.FromResult(Proceed)
+    else task {
+        let payload = preToolUsePayload toolName argsJson sessionId
+        let mutable result = Proceed
+        for def in matchingHooks do
+            match result with
+            | Block _ -> ()   // short-circuit: already blocked
+            | _ ->
+                let exitCode, stdout =
+                    try runSyncHookWithStdout def payload config.HookTimeoutMs
+                    with ex ->
+                        eprintfn $"[hooks] PreToolUse hook failed ({def.Command}): {ex.Message}"
+                        0, ""  // treat exceptions as proceed (LogContinue)
+                if exitCode = -1 then
+                    eprintfn $"[hooks] PreToolUse hook timed out ({def.Command}) — proceeding"
+                else
+                    result <- parsePreResult stdout result
+        return result
+    }
+
+/// Fire all matching PostToolUse hooks as fire-and-forget (cannot block).
+/// argsJson — args already serialized by the caller.
+let runPostToolUse (toolName: string) (argsJson: string) (result: string) (isError: bool) (sessionId: string) (config: HooksConfig) : unit =
+    let matchingHooks = config.PostToolUse |> List.filter (matchesTool >> (|>) toolName)
+    let payload = postToolUsePayload toolName argsJson result isError sessionId
+    for def in matchingHooks do
+        fireAsyncHook def payload
