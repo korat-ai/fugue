@@ -13,6 +13,7 @@
     <Compile Include="Domain.fs" />
     <Compile Include="SystemPrompt.fs" />
     <Compile Include="JsonContext.fs" />
+    <Compile Include="Index.fs" />
     <Compile Include="DebugLog.fs" />
     <Compile Include="ModelSchedule.fs" />
     <Compile Include="Config.fs" />

@@ -45,6 +45,7 @@
     <Compile Include="SessionAccessTests.fs" />
     <Compile Include="SessionPersistenceTests.fs" />
     <Compile Include="SearchIndexTests.fs" />
+    <Compile Include="IndexTests.fs" />
     <Compile Include="AtFileTests.fs" />
     <Compile Include="PathSafetyGuardTests.fs" />
     <Compile Include="InjectionGuardTests.fs" />

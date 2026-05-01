@@ -6,6 +6,7 @@
     <Compile Include="AgentFactory.fs" />
     <Compile Include="Discovery.fs" />
     <Compile Include="ModelDiscovery.fs" />
+    <Compile Include="Indexer.fs" />
     <Compile Include="Conversation.fs" />
   </ItemGroup>
   <ItemGroup>

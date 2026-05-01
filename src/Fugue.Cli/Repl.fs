@@ -2808,6 +2808,69 @@ Please generate a clear, actionable onboarding checklist."""
                             Console.Out.WriteLine $"{sid}  {ts}  {tc}  {sum}"
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
+            | Some s when s = "/index" || s = "/index --update" ->
+                let cfg  = Fugue.Core.Index.defaultIndexConfig
+                let prov =
+                    match cfg.ProviderKind.ToLowerInvariant() with
+                    | "lmstudio" ->
+                        Fugue.Agent.Indexer.LmStudio(cfg.LmStudioBaseUrl |> Option.defaultValue "http://localhost:1234")
+                    | _ ->
+                        Fugue.Agent.Indexer.Ollama cfg.OllamaBaseUrl
+                let runFn = if s = "/index --update" then Fugue.Agent.Indexer.runIncrementalScan else Fugue.Agent.Indexer.runFullScan
+                AnsiConsole.Status().Start("Indexing workspace…", fun _ctx ->
+                    let (n, fails) = Async.RunSynchronously (runFn cfg prov cwd)
+                    if fails > 0 then
+                        AnsiConsole.MarkupLine $"[yellow]✓[/] {n} files indexed, {fails} embedding failures (check provider URL)"
+                    else
+                        AnsiConsole.MarkupLine $"[green]✓[/] {n} files indexed"
+                )
+                StatusBar.refresh ()
+            | Some s when s.StartsWith "/sem " ->
+                let q = s.Substring("/sem ".Length).Trim()
+                if q = "" then
+                    if Render.isColorEnabled () then AnsiConsole.MarkupLine "[yellow]Usage: /sem <query>[/]"
+                    else Console.Out.WriteLine "Usage: /sem <query>"
+                else
+                    let chunksFile = Fugue.Core.Index.chunksPath cwd
+                    let chunks = Fugue.Core.Index.loadChunks chunksFile
+                    if chunks.IsEmpty then
+                        if Render.isColorEnabled () then AnsiConsole.MarkupLine "[dim]No workspace index. Run /index to build one.[/]"
+                        else Console.Out.WriteLine "No workspace index. Run /index to build one."
+                    else
+                        // Embed query then rank by cosine similarity
+                        let cfg  = Fugue.Core.Index.defaultIndexConfig
+                        let prov =
+                            match cfg.ProviderKind.ToLowerInvariant() with
+                            | "lmstudio" ->
+                                Fugue.Agent.Indexer.LmStudio(cfg.LmStudioBaseUrl |> Option.defaultValue "http://localhost:1234")
+                            | _ ->
+                                Fugue.Agent.Indexer.Ollama cfg.OllamaBaseUrl
+                        use http = new System.Net.Http.HttpClient(Timeout = TimeSpan.FromSeconds 10.0)
+                        let vecOpt = Async.RunSynchronously (Fugue.Agent.Indexer.embedAsync prov cfg.EmbeddingModel http q |> Async.AwaitTask)
+                        match vecOpt with
+                        | None ->
+                            if Render.isColorEnabled () then AnsiConsole.MarkupLine "[red]Embedding failed — check provider URL/model[/]"
+                            else Console.Out.WriteLine "Embedding failed — check provider URL/model"
+                        | Some qVec ->
+                            let top5 =
+                                chunks
+                                |> List.map (fun c -> c, Fugue.Core.Index.cosineSimilarity qVec c.Vector)
+                                |> List.sortByDescending snd
+                                |> List.truncate 5
+                            if Render.isColorEnabled () then
+                                AnsiConsole.MarkupLine $"[bold]Semantic results for «{Markup.Escape q}» ({top5.Length})[/]"
+                                for (c, score) in top5 do
+                                    AnsiConsole.MarkupLine $"[cyan]{Markup.Escape c.FilePath}[/] L{c.StartLine}-{c.EndLine}  [dim]score={score:F3}[/]"
+                                    let preview = if c.Text.Length > 120 then c.Text.[..119] + "…" else c.Text
+                                    AnsiConsole.MarkupLine $"  [dim]{Markup.Escape preview}[/]"
+                            else
+                                Console.Out.WriteLine $"Semantic results for «{q}» ({top5.Length})"
+                                for (c, score) in top5 do
+                                    Console.Out.WriteLine $"{c.FilePath} L{c.StartLine}-{c.EndLine}  score={score:F3}"
+                                    let preview = if c.Text.Length > 120 then c.Text.[..119] + "…" else c.Text
+                                    Console.Out.WriteLine $"  {preview}"
+                AnsiConsole.WriteLine()
+                StatusBar.refresh ()
             | Some s when s.StartsWith "/search " ->
                 let q = s.Substring("/search ".Length).Trim()
                 if q = "" then

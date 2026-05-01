@@ -40,6 +40,9 @@ let getAll (strings: Strings) : (string * string) list =
           "/session resume <id>",        "reload a previously offloaded session by ULID"
           "/sessions",                   "list sessions for current project"
           "/sessions all",               "list all sessions across all projects"
+          "/index",                        "build local vector index of workspace files"
+          "/index --update",             "incremental re-index of changed files"
+          "/sem <query>",                "semantic search across indexed workspace files"
           "/search <query>",             "full-text search across session history (FTS5)"
           "/new",                        strings.CmdNewDesc
           "/diff",                       strings.CmdDiffDesc
