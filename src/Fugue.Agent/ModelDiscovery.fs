@@ -7,12 +7,13 @@ open System.Threading.Tasks
 open Fugue.Core.Config
 
 /// Hardcoded — Anthropic does not expose /v1/models without an account-scoped header.
-let private anthropicKnownModels =
+let anthropicKnownModels =
     [ "claude-opus-4-7"; "claude-sonnet-4-6"; "claude-haiku-4-5-20251001" ]
 
 let private timeoutMs = 1500
 
-let private parseOpenAi (body: string) : string list =
+/// Parse the OpenAI-compat /v1/models response body. Exposed for testing.
+let parseOpenAi (body: string) : string list =
     try
         match Option.ofObj (JsonNode.Parse body) with
         | None -> []
@@ -32,7 +33,8 @@ let private parseOpenAi (body: string) : string list =
                 | _ -> []
     with _ -> []
 
-let private parseOllama (body: string) : string list =
+/// Parse the Ollama /api/tags response body. Exposed for testing.
+let parseOllama (body: string) : string list =
     try
         match Option.ofObj (JsonNode.Parse body) with
         | None -> []
