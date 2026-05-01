@@ -2431,293 +2431,6 @@ Please generate a clear, actionable onboarding checklist."""
                     AnsiConsole.WriteLine()
                     do! streamAndRender agent session summarizePrompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
-            | Some s when s.StartsWith "/breaking-changes " || s = "/breaking-changes" ->
-                // /breaking-changes <old-file> <new-file> — scan for breaking changes
-                let arg = if s = "/breaking-changes" then "" else s.Substring("/breaking-changes ".Length).Trim()
-                if arg = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /breaking-changes <old-signature-file-or-symbol> <new-version>[/]")
-                    AnsiConsole.WriteLine()
-                else
-                    let prompt =
-                        $"Analyse the following for breaking API changes: \"{arg}\"\n\nCheck:\n1. Renamed or removed public functions, types, or module members.\n2. Changed parameter types or return types.\n3. Added required parameters (non-optional).\n4. Changed DU cases that callers must pattern-match on.\n5. Removed interface members.\n\nFor each breaking change:\n- Quote the old signature vs new signature.\n- List all known call sites (use Grep tool).\n- Suggest a deprecation path (default argument, type alias, or wrapper).\n\nUse Read/Grep tools to discover call sites."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui "/breaking-changes" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/idiomatic " || s = "/idiomatic" ->
-                // /idiomatic [file] — post-generation idiomatic rewrite suggestion
-                let arg = if s = "/idiomatic" then "" else s.Substring("/idiomatic ".Length).Trim()
-                if arg = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /idiomatic <file>[/]")
-                    AnsiConsole.WriteLine()
-                else
-                    let prompt =
-                        $"Review \"{arg}\" for idiomatic style improvements.\n\nFor F#: flag non-idiomatic patterns and suggest pipe-based, DU-based, or computation-expression rewrites.\nFor Elixir: flag imperative loops (use Enum/Stream pipelines instead) and missing pattern match clauses.\nFor Kotlin: flag nullable handling that should use `?.let`/`?:` and unnecessary `!!`.\nFor TypeScript: flag mutation where `const` + spread is preferred and callback nesting that should be Promise chains.\n\nFor each suggestion: quote the original, show the idiomatic alternative, and explain why it's preferred.\n\nRead the file first, then provide structured feedback."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/idiomatic {arg}" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/incremental " || s = "/incremental" ->
-                // /incremental <description> — generate only the new function and Edit it in place
-                let desc = if s = "/incremental" then "" else s.Substring("/incremental ".Length).Trim()
-                if desc = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /incremental <description of what to add>[/]")
-                    AnsiConsole.WriteLine()
-                else
-                    let prompt =
-                        $"Add the following functionality incrementally to the existing codebase: \"{desc}\"\n\nRules:\n1. Generate ONLY the new function(s) or type(s) — no file rewrites.\n2. Find the best insertion point using Read and Grep tools.\n3. Apply changes using the Edit tool to insert at the exact location.\n4. Do not modify existing functions unless absolutely required.\n5. Ensure the new code compiles by running `dotnet build --no-restore` after editing."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui "/incremental" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/port " || s = "/port" ->
-                // /port <file> [target-lang] — idiomatic cross-language code translation
-                let arg = if s = "/port" then "" else s.Substring("/port ".Length).Trim()
-                if arg = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /port <file> [target-language][/]")
-                    AnsiConsole.WriteLine()
-                else
-                    let parts  = arg.Split(' ') |> Array.toList
-                    let file   = parts.Head
-                    let target = if parts.Length > 1 then String.concat " " parts.Tail else ""
-                    let fullPath = if IO.Path.IsPathRooted file then file else IO.Path.GetFullPath(IO.Path.Combine(cwd, file))
-                    let (code, targetLang) =
-                        if IO.File.Exists fullPath then IO.File.ReadAllText fullPath, (if target = "" then "F#" else target)
-                        else file, (if target = "" then "F#" else target)
-                    let prompt =
-                        $"Port the following code to idiomatic {targetLang}:\n\n```\n{code}\n```\n\nRequirements:\n1. Use the target language's idiomatic patterns — not a literal transliteration.\n2. For OOP→FP: use DUs/sealed traits, immutable records, pattern matching.\n3. For FP→OOP: map to classes, interfaces, exception handling.\n4. Annotate each non-obvious translation decision with a brief inline comment.\n5. Return the full translated file ready to use."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/port {file} → {targetLang}" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/scaffold " && not (s.StartsWith "/scaffold du") && not (s.StartsWith "/scaffold cqrs") && not (s.StartsWith "/scaffold actor") ->
-                // /scaffold [type] <name> — language-aware project bootstrapping
-                let arg = s.Substring("/scaffold ".Length).Trim()
-                if arg = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /scaffold <type> <name>  (e.g. /scaffold service UserService)[/]")
-                    AnsiConsole.WriteLine()
-                else
-                    let prompt =
-                        $"Generate a project scaffold for \"{arg}\".\n\nInspect the project structure first (use Glob/Read tools) to understand:\n1. Language and framework in use.\n2. Naming conventions, folder layout, and existing patterns.\n3. Test framework and tooling.\n\nThen generate the scaffold files following project conventions. Include:\n- Main implementation file(s)\n- Unit test skeleton\n- Any registration/wiring needed in existing entry points\n\nWrite each file using the Write tool."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/scaffold {arg}" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s = "/complexity" || s.StartsWith "/complexity " ->
-                // /complexity [file] — cyclomatic complexity analysis
-                let arg = if s = "/complexity" then "" else s.Substring("/complexity ".Length).Trim()
-                let target = if arg = "" then "." else arg
-                let prompt =
-                    $"Analyse cyclomatic complexity of the code in \"{target}\".\n\nFor each function/method:\n1. Compute approximate cyclomatic complexity (count decision points: if/match/loop/exception handlers).\n2. Flag functions with complexity > 10 as high-risk.\n3. Suggest refactorings for the top 3 most complex functions (extract method, simplify conditions, etc.).\n\nPresent results as a table: Function | Complexity | Risk | Refactoring suggestion.\n\nUse Glob and Read tools to discover and examine the source files."
-                AnsiConsole.Write(Render.userMessage cfg.Ui $"/complexity {target}" 0)
-                AnsiConsole.WriteLine()
-                do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/check tail-rec " || s = "/check tail-rec" ->
-                // /check tail-rec [file] — detect non-tail-recursive functions and offer rewrites
-                let arg = if s = "/check tail-rec" then "" else s.Substring("/check tail-rec ".Length).Trim()
-                let (code, label) =
-                    if arg = "" then "", ""
-                    else
-                        let fullPath = if IO.Path.IsPathRooted arg then arg else IO.Path.GetFullPath(IO.Path.Combine(cwd, arg))
-                        if IO.File.Exists fullPath then IO.File.ReadAllText fullPath, arg else arg, arg
-                if code = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /check tail-rec <file>[/]")
-                    AnsiConsole.WriteLine()
-                else
-                    let prompt =
-                        $"Analyse the following F# code for tail-recursion correctness:\n\n```fsharp\n{code}\n```\n\nFor each recursive function:\n1. Determine whether it is tail-recursive (the recursive call is the last operation in all branches).\n2. If NOT tail-recursive, explain which call site is the problem and why it would stack-overflow on large inputs.\n3. Offer a rewrite using:\n   - Accumulator pattern (preferred)\n   - Continuation-passing style (CPS) if accumulator doesn't fit\n   - `[<TailCall>]` attribute hint where F# can optimise\n4. Show the rewritten function alongside the original.\n\nSource: {label}"
-                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/check tail-rec {label}" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/check effects " || s = "/check effects" ->
-                // /check effects [file] — verify ZIO/Cats Effect type consistency
-                let arg = if s = "/check effects" then "" else s.Substring("/check effects ".Length).Trim()
-                let (code, label) =
-                    if arg = "" then "", ""
-                    else
-                        let fullPath = if IO.Path.IsPathRooted arg then arg else IO.Path.GetFullPath(IO.Path.Combine(cwd, arg))
-                        if IO.File.Exists fullPath then IO.File.ReadAllText fullPath, arg else arg, arg
-                if code = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /check effects <file>[/]")
-                    AnsiConsole.WriteLine()
-                else
-                    let prompt =
-                        $"Review the following code for effect system type consistency:\n\n```\n{code}\n```\n\nCheck:\n1. Are all effectful operations wrapped in the same effect type (IO/ZIO/Task/F# Async) consistently?\n2. Are effects mixed (e.g. ZIO and Future in the same for-comprehension) without proper lifting?\n3. Are error channels compatible across composed effects?\n4. Are any side effects performed outside the effect system (unsafe I/O, mutable state leaks)?\n\nFor each issue: show the problematic code, explain the violation, and provide a corrected version.\n\nSource: {label}"
-                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/check effects {label}" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/translate comments " || s = "/translate comments" ->
-                // /translate comments [file] — translate code comments to English
-                let arg = if s = "/translate comments" then "" else s.Substring("/translate comments ".Length).Trim()
-                if arg = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /translate comments <file>[/]")
-                    AnsiConsole.WriteLine()
-                else
-                    let prompt =
-                        $"Translate all code comments in the file \"{arg}\" to English.\n\nRules:\n1. Translate only comment text — do NOT touch identifiers, string literals, or code.\n2. Preserve comment style (// vs /// vs /* */).\n3. Keep the original meaning precisely; prefer clarity over literal translation.\n4. Apply the translations using the Edit tool (one edit per comment block or file section).\n\nRead the file first, then apply targeted edits."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/translate comments {arg}" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/derive codec " || s = "/derive codec" ->
-                let typeName = if s = "/derive codec" then "" else s.Substring("/derive codec ".Length).Trim()
-                if typeName = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /derive codec <TypeName>[/]")
-                    AnsiConsole.WriteLine()
-                else
-                    let prompt =
-                        $"Generate an AOT-safe JSON codec for the F# type \"{typeName}\".\n\n1. Read the type definition from the codebase (use the Read or Grep tools).\n2. Generate a `[<JsonSerializable>]` `JsonSerializerContext` subclass covering the type and any nested types.\n3. Add `[<JsonPropertyName>]` attributes for all fields to ensure stable serialization.\n4. If the type is a DU, add `[<JsonPolymorphic>]` and `[<JsonDerivedType>]` for each case.\n5. Show a usage example: `JsonSerializer.Serialize(value, MyContext.Default.MyType)`.\n\nTarget: System.Text.Json source generation, .NET 10, Native AOT compatible."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/derive codec {typeName}" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/scaffold cqrs " || s = "/scaffold cqrs" ->
-                let cmdName = if s = "/scaffold cqrs" then "" else s.Substring("/scaffold cqrs ".Length).Trim()
-                if cmdName = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /scaffold cqrs <CommandName>[/]")
-                    AnsiConsole.WriteLine()
-                else
-                    let prompt =
-                        $"Generate a complete CQRS slice for \"{cmdName}\".\n\nInclude:\n1. **Command record** — immutable, validated constructor.\n2. **CommandHandler** — reads from the command, applies business logic, emits an event.\n3. **Domain Event** — added as a new DU case (or new type).\n4. **EventHandler** — updates read model or side-effects.\n5. **xUnit test skeleton** — arrange/act/assert for the happy path and one error case.\n\nFollow the naming and layering conventions visible in the existing codebase (use Glob/Read tools to discover them). Return separate fenced code blocks per file."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/scaffold cqrs {cmdName}" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/scaffold actor " || s = "/scaffold actor" ->
-                let actorName = if s = "/scaffold actor" then "" else s.Substring("/scaffold actor ".Length).Trim()
-                if actorName = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /scaffold actor <ActorName> [brief responsibility description][/]")
-                    AnsiConsole.WriteLine()
-                else
-                    let prompt =
-                        $"Generate a typed actor stub for \"{actorName}\".\n\nFor F# / Proto.Actor:\n1. Command DU with all message types.\n2. `Actor` class implementing `IActor` with a `ReceiveAsync` dispatch.\n3. Supervision strategy.\n4. Props factory function.\n\nFor Scala / Akka Typed:\n1. `Command` sealed trait hierarchy.\n2. `Behavior[Command]` with `Behaviors.setup`.\n3. `SupervisorStrategy` using `Behaviors.supervise`.\n\nInfer the framework from the project (use Glob/Read to check dependencies). Return separate fenced blocks per file."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/scaffold actor {actorName}" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/scaffold du " || s = "/scaffold du" ->
-                // /scaffold du <concept> — generate F# DU / Scala sealed trait with match examples
-                let concept = if s = "/scaffold du" then "" else s.Substring("/scaffold du ".Length).Trim()
-                if concept = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /scaffold du <concept name>[/]")
-                    AnsiConsole.WriteLine()
-                else
-                    let prompt =
-                        $"Generate a complete F# discriminated union for the concept \"{concept}\".\n\nInclude:\n1. The DU definition with well-named cases and meaningful data payloads.\n2. An exhaustive `match` example covering every case.\n3. Smart constructor helpers (active patterns or module functions) for common construction patterns.\n4. `[<JsonDerivedType>]` / `[<JsonPolymorphic>]` attributes for AOT-safe System.Text.Json serialization.\n5. A brief comment per case explaining its semantics.\n\nTarget: F# 9 / .NET 10, Native AOT compatible."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/scaffold du {concept}" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/monad " || s = "/monad" ->
-                // /monad <description> — generate F# CE / Scala for-comprehension
-                let desc = if s = "/monad" then "" else s.Substring("/monad ".Length).Trim()
-                if desc = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /monad <imperative description or pseudocode>[/]")
-                    AnsiConsole.WriteLine()
-                else
-                    let prompt =
-                        $"Convert the following imperative description into idiomatic monadic F# code:\n\n\"{desc}\"\n\nSteps:\n1. Identify the primary effect (async I/O, error handling, sequence generation, cancellation, …).\n2. Choose the correct F# computation expression (`task`, `async`, `result`, `asyncResult`, `seq`, …).\n3. Generate the CE block — no nested `match`/`if` for error handling; use `let!` and `return`.\n4. If the operation mixes effects (e.g. async + Result), compose them correctly (e.g. `taskResult`).\n5. Include the type signatures.\n\nReturn only the code with a one-line comment on the CE chosen."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui "/monad" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/migrate oop-to-fp " || s = "/migrate oop-to-fp" ->
-                // /migrate oop-to-fp [file] — convert C#/Java class hierarchy to F# DUs
-                let arg = if s = "/migrate oop-to-fp" then "" else s.Substring("/migrate oop-to-fp ".Length).Trim()
-                if arg = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /migrate oop-to-fp <file-or-paste-code>[/]")
-                    AnsiConsole.WriteLine()
-                else
-                    let code =
-                        let fullPath = if IO.Path.IsPathRooted arg then arg else IO.Path.GetFullPath(IO.Path.Combine(cwd, arg))
-                        if IO.File.Exists fullPath then IO.File.ReadAllText fullPath else arg
-                    let prompt =
-                        $"Migrate the following OOP code to idiomatic F#:\n\n```\n{code}\n```\n\nMigration rules:\n1. `abstract class` / `interface` → F# discriminated union (one case per concrete class).\n2. Mutable fields → immutable record fields; setters → `with` copy-and-update expressions.\n3. `null` returns → `Option<T>`; `throw` → `Result<T, Error>` or DU error case.\n4. Virtual method dispatch → exhaustive `match` on the DU.\n5. Constructor logic → module-level factory functions.\n6. Preserve all business logic exactly.\n\nReturn the complete F# translation with brief migration notes per section."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/migrate oop-to-fp {arg}" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/rop " || s = "/rop" ->
-                // /rop <description> — generate a railway-oriented Result/Either chain
-                let desc = if s = "/rop" then "" else s.Substring(5).Trim()
-                if desc = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /rop <plain-English description of multi-step operation>[/]"  )
-                    AnsiConsole.WriteLine()
-                else
-                    let prompt =
-                        $"Generate a railway-oriented programming (ROP) pipeline for the following operation:\n\n\"{desc}\"\n\nRequirements:\n1. Use F# `Result<'ok, 'err>` types (or adapt for the target language).\n2. Define a discriminated union for all possible error cases.\n3. Compose steps with `Result.bind` (or `>>=`) — no exceptions, no `try/catch`.\n4. Unify error types across steps; if types differ, map to the common error DU.\n5. Include brief inline comments explaining each step.\n6. Return only the code (no prose preamble)."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/rop {desc}" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/infer-type " || s = "/infer-type" ->
-                // /infer-type <expression> — explain the inferred F# type
-                let expr = if s = "/infer-type" then "" else s.Substring("/infer-type ".Length).Trim()
-                if expr = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /infer-type <F# expression or snippet>[/]")
-                    AnsiConsole.WriteLine()
-                else
-                    let prompt =
-                        $"Infer and explain the type of the following F# expression:\n\n```fsharp\n{expr}\n```\n\nFormat your answer as:\n1. **Type signature** — in standard F# notation.\n2. **Parameter breakdown** — explain each type parameter, constraint, or variance annotation.\n3. **Plain-English summary** — one or two sentences explaining what this type means semantically.\n4. **Example usage** — a single concrete example showing it in action."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui "/infer-type" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/pointfree " || s = "/pointfree" ->
-                // /pointfree <function-definition> — offer point-free rewrite
-                let fn = if s = "/pointfree" then "" else s.Substring("/pointfree ".Length).Trim()
-                if fn = "" then
-                    AnsiConsole.Write(Markup "[dim]Usage: /pointfree <F# function definition>[/]")
-                    AnsiConsole.WriteLine()
-                else
-                    let prompt =
-                        $"Offer a point-free rewrite of the following F# function:\n\n```fsharp\n{fn}\n```\n\nFormat your answer as:\n1. **Original** — repeat the function as-is.\n2. **Point-free equivalent** — the rewritten version using partial application, `>>` / `<<`, or combinators.\n3. **Transformation steps** — explain each step of the rewrite.\n4. **Readability verdict** — note whether the point-free form is actually clearer, and when to prefer the explicit form.\n\nIf a point-free form is not natural or readable, say so and explain why."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui "/pointfree" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
-            | Some s when s.StartsWith "/refactor pipeline" ->
-                // /refactor pipeline [file:start-end] — rewrite let-bindings as |> pipe chain
-                let arg = s.Substring("/refactor pipeline".Length).Trim()
-                let code, label =
-                    if arg = "" then "", ""
-                    else
-                        // Parse file:start-end
-                        let colonIdx = arg.LastIndexOf ':'
-                        if colonIdx > 0 then
-                            let filePart  = arg.[..colonIdx-1]
-                            let rangePart = arg.[colonIdx+1..]
-                            let fullPath  = if IO.Path.IsPathRooted filePart then filePart else IO.Path.GetFullPath(IO.Path.Combine(cwd, filePart))
-                            if IO.File.Exists fullPath then
-                                let lines  = IO.File.ReadAllLines fullPath
-                                let parsed =
-                                    let parts = rangePart.Split '-'
-                                    if parts.Length = 2 then
-                                        match System.Int32.TryParse parts.[0], System.Int32.TryParse parts.[1] with
-                                        | (true, s), (true, e) -> Some (max 0 (s-1), min (lines.Length-1) (e-1))
-                                        | _ -> None
-                                    else None
-                                match parsed with
-                                | Some (s, e) -> String.concat "\n" lines.[s..e], $"{filePart}:{s+1}-{e+1}"
-                                | None        -> String.concat "\n" lines, filePart
-                            else "", ""
-                        else
-                            let fullPath = if IO.Path.IsPathRooted arg then arg else IO.Path.GetFullPath(IO.Path.Combine(cwd, arg))
-                            if IO.File.Exists fullPath then IO.File.ReadAllText fullPath, arg
-                            else "", ""
-                if code.Trim() = "" then
-                    AnsiConsole.Write(Markup("[dim]Usage: /refactor pipeline [file:start-end][/]"))
-                    AnsiConsole.WriteLine()
-                else
-                    let prompt =
-                        $"Refactor the following F# code into an idiomatic pipe chain (`|>`).\n\nRules:\n1. Identify a linear data-flow sequence where each binding feeds into the next.\n2. Replace the sequence with a single `|>` chain.\n3. Use partial application where possible; inline lambdas only when necessary.\n4. Preserve all semantics exactly — no behaviour changes.\n5. Return only the refactored code block.\n\nSource ({label}):\n```fsharp\n{code}\n```"
-                    AnsiConsole.Write(Render.userMessage cfg.Ui $"/refactor pipeline {label}" 0)
-                    AnsiConsole.WriteLine()
-                    do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
-                StatusBar.refresh ()
             | Some s when s = "/check exhaustive" || s.StartsWith "/check exhaustive " ->
                 // Run dotnet build and feed FS0025 (incomplete pattern match) warnings back
                 let arg = if s = "/check exhaustive" then "." else s.Substring("/check exhaustive ".Length).Trim()
@@ -3059,6 +2772,123 @@ Please generate a clear, actionable onboarding checklist."""
                                 Console.Out.WriteLine $"  {h.Snippet}"
                 AnsiConsole.WriteLine()
                 StatusBar.refresh ()
+            | Some s when s.StartsWith "/" ->
+                // Generic prompt-template dispatcher — catches any /command not handled above.
+                // Tries compound-name lookup first (e.g. "/scaffold cqrs Foo" → "scaffold-cqrs"),
+                // then falls back to the simple command name ("scaffold").
+                let body = s.[1..]
+                let spaceIdx = body.IndexOf(' ')
+                let cmd0, rawArgs0 =
+                    if spaceIdx < 0 then body, ""
+                    else body.[..spaceIdx-1], body.[spaceIdx+1..].Trim()
+                // Attempt compound: cmd0 + "-" + firstWord(rawArgs0)
+                let cmd, rawArgs =
+                    if rawArgs0 = "" then cmd0, ""
+                    else
+                        let nextSpace = rawArgs0.IndexOf(' ')
+                        let firstWord, rest =
+                            if nextSpace < 0 then rawArgs0, ""
+                            else rawArgs0.[..nextSpace-1], rawArgs0.[nextSpace+1..].Trim()
+                        let compound = $"{cmd0}-{firstWord}"
+                        match PromptRegistry.find compound with
+                        | Some _ -> compound, rest
+                        | None   -> cmd0, rawArgs0
+                match PromptRegistry.find cmd with
+                | None ->
+                    // Unknown slash command — show hint
+                    if Render.isColorEnabled () then
+                        AnsiConsole.Write(Markup $"[dim yellow]Unknown command: /{Markup.Escape cmd}. Type /help for a list.[/]")
+                    else
+                        Console.Out.WriteLine $"Unknown command: /{cmd}. Type /help for a list."
+                    AnsiConsole.WriteLine()
+                    StatusBar.refresh ()
+                | Some tmpl ->
+                    // Build args map.
+                    // Special cases for commands that read files or have multi-arg parsing.
+                    let argsMap =
+                        match cmd with
+                        | "refactor-pipeline" ->
+                            // /refactor pipeline [file:start-end] — parse range
+                            let arg = rawArgs
+                            if arg = "" then Map.empty
+                            else
+                                let colonIdx = arg.LastIndexOf ':'
+                                let code, label =
+                                    if colonIdx > 0 then
+                                        let filePart  = arg.[..colonIdx-1]
+                                        let rangePart = arg.[colonIdx+1..]
+                                        let fullPath  = if IO.Path.IsPathRooted filePart then filePart else IO.Path.GetFullPath(IO.Path.Combine(cwd, filePart))
+                                        if IO.File.Exists fullPath then
+                                            let lines = IO.File.ReadAllLines fullPath
+                                            let parsed =
+                                                let parts = rangePart.Split '-'
+                                                if parts.Length = 2 then
+                                                    match System.Int32.TryParse parts.[0], System.Int32.TryParse parts.[1] with
+                                                    | (true, startL), (true, endL) -> Some (max 0 (startL-1), min (lines.Length-1) (endL-1))
+                                                    | _ -> None
+                                                else None
+                                            match parsed with
+                                            | Some (startL, endL) -> String.concat "\n" lines.[startL..endL], $"{filePart}:{startL+1}-{endL+1}"
+                                            | None                -> String.concat "\n" lines, filePart
+                                        else "", ""
+                                    else
+                                        let fullPath = if IO.Path.IsPathRooted arg then arg else IO.Path.GetFullPath(IO.Path.Combine(cwd, arg))
+                                        if IO.File.Exists fullPath then IO.File.ReadAllText fullPath, arg else "", ""
+                                Map.ofList ["code", code; "label", label]
+                        | "port" ->
+                            // /port <file> [target-lang]
+                            let parts = rawArgs.Split(' ') |> Array.toList
+                            if parts.IsEmpty || parts.Head = "" then Map.empty
+                            else
+                                let file   = parts.Head
+                                let target = if parts.Length > 1 then String.concat " " parts.Tail else "F#"
+                                let fullPath = if IO.Path.IsPathRooted file then file else IO.Path.GetFullPath(IO.Path.Combine(cwd, file))
+                                let code = if IO.File.Exists fullPath then IO.File.ReadAllText fullPath else file
+                                Map.ofList ["file", file; "code", code; "target", target]
+                        | c when List.contains c ["check-tail-rec"; "check-effects"; "migrate-oop-to-fp"] ->
+                            // File-reading commands: read file into {code}, keep {file}
+                            let arg = rawArgs
+                            if arg = "" then Map.empty
+                            else
+                                let fullPath = if IO.Path.IsPathRooted arg then arg else IO.Path.GetFullPath(IO.Path.Combine(cwd, arg))
+                                let code = if IO.File.Exists fullPath then IO.File.ReadAllText fullPath else arg
+                                Map.ofList ["file", arg; "code", code]
+                        | "complexity" ->
+                            // Default target to "." when no arg given
+                            let target = if rawArgs = "" then "." else rawArgs
+                            Map.ofList ["target", target]
+                        | _ ->
+                            // Generic single-arg: map rawArgs to the first declared arg name (or "arg")
+                            let argName =
+                                match tmpl.Args with
+                                | first :: _ when first <> "" -> first
+                                | _                           -> "arg"
+                            Map.ofList [argName, rawArgs]
+                    // Validate: if the primary arg is required and empty, show usage
+                    let primaryArg =
+                        match tmpl.Args with
+                        | first :: _ -> Map.tryFind first argsMap |> Option.defaultValue ""
+                        | []         -> rawArgs
+                    let codeArg = Map.tryFind "code" argsMap |> Option.defaultValue ""
+                    // Commands that need code must have it; commands that just need a label/file check rawArgs
+                    let needsCode = List.contains cmd ["check-tail-rec"; "check-effects"; "migrate-oop-to-fp"; "refactor-pipeline"]
+                    let isEmpty =
+                        if needsCode then codeArg.Trim() = ""
+                        else primaryArg = ""
+                    if isEmpty then
+                        let argList = tmpl.Args |> List.map (fun a -> $"<{a}>") |> String.concat " "
+                        let usage = if argList = "" then $"/{cmd}" else $"/{cmd.Replace('-', ' ')} {argList}"
+                        if Render.isColorEnabled () then
+                            AnsiConsole.Write(Markup $"[dim]Usage: {Markup.Escape usage}[/]")
+                        else
+                            Console.Out.Write $"Usage: {usage}"
+                        AnsiConsole.WriteLine()
+                    else
+                        let prompt = PromptRegistry.render tmpl argsMap
+                        AnsiConsole.Write(Render.userMessage cfg.Ui s 0)
+                        AnsiConsole.WriteLine()
+                        do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
+                    StatusBar.refresh ()
             | Some userInput ->
                 let userInput = ReadLine.normalizeInput userInput
                 if ReadLine.hasZeroWidth userInput then
