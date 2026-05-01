@@ -24,10 +24,10 @@ let save (cwd: string) (startedAt: int64) (summary: string) : unit =
         let path = Path.Combine(dir, key + ".ndjson")
         // Manual JSON construction — AOT-safe, no reflection required.
         let escapedSummary = JsonSerializer.Serialize summary  // handles escaping of the string value
+        let sessionId = Guid.NewGuid().ToString "N"
+        let endedAt   = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
         let line =
-            sprintf """{"sessionId":"%s","projectKey":"%s","startedAt":%d,"endedAt":%d,"summary":%s}"""
-                (Guid.NewGuid().ToString "N") key startedAt
-                (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) escapedSummary
+            $"""{{"sessionId":"{sessionId}","projectKey":"{key}","startedAt":{startedAt},"endedAt":{endedAt},"summary":{escapedSummary}}}"""
         File.AppendAllText(path, line + "\n")
     with _ -> ()
 

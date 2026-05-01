@@ -340,7 +340,7 @@ let saveToFile (cfg: AppConfig) : unit =
     let schemaUrl = "https://raw.githubusercontent.com/korat-ai/fugue/main/docs/config.schema.json"
     let withSchema =
         if json.StartsWith '{' then
-            sprintf "{\"$schema\":\"%s\"," schemaUrl + json.[1..]
+            $"{{\"$schema\":\"{schemaUrl}\"," + json.[1..]
         else json
     File.WriteAllText(path, withSchema)
 
