@@ -27,8 +27,14 @@ type SearchHit = {
     StartedAt : string
 }
 
+/// Override for test isolation — set to Some path before calling any function.
+/// Production code leaves this as None (uses ~/.fugue/index.db).
+let mutable dbPathOverride : string option = None
+
 let dbPath () : string =
-    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".fugue", "index.db")
+    match dbPathOverride with
+    | Some p -> p
+    | None   -> Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".fugue", "index.db")
 
 let private openConn () : SqliteConnection =
     let path = dbPath ()
@@ -80,12 +86,16 @@ ON CONFLICT(id) DO UPDATE SET
     ended_at   = excluded.ended_at,
     turn_count = excluded.turn_count,
     summary    = excluded.summary;"""
+            let optVal (o: string option) : obj | null =
+                match o with
+                | Some s -> s
+                | None   -> DBNull.Value
             cmd.Parameters.AddWithValue("$id",  row.Id)   |> ignore
             cmd.Parameters.AddWithValue("$cwd", row.Cwd)  |> ignore
             cmd.Parameters.AddWithValue("$sa",  row.StartedAt) |> ignore
-            cmd.Parameters.AddWithValue("$ea",  row.EndedAt |> Option.toObj |> box) |> ignore
+            cmd.Parameters.AddWithValue("$ea",  optVal row.EndedAt)  |> ignore
             cmd.Parameters.AddWithValue("$tc",  row.TurnCount) |> ignore
-            cmd.Parameters.AddWithValue("$sum", row.Summary |> Option.toObj |> box) |> ignore
+            cmd.Parameters.AddWithValue("$sum", optVal row.Summary) |> ignore
             cmd.ExecuteNonQuery() |> ignore)
     with _ -> ()  // best-effort; same policy as SessionPersistence.appendRecord
 
