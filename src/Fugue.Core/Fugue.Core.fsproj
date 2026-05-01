@@ -17,5 +17,6 @@
     <Compile Include="Annotation.fs" />
     <Compile Include="ErrorTrend.fs" />
     <Compile Include="ConversationIntent.fs" />
+    <Compile Include="Hooks.fs" />
   </ItemGroup>
 </Project>
