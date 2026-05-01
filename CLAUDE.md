@@ -1,7 +1,7 @@
 # Fugue
 
 > A small, fast, F#-on-.NET-AOT terminal coding agent.
-> Cold-starts in ~40ms. Single 44MB native binary. Provider-agnostic (Anthropic / OpenAI-compat / Ollama).
+> Cold-starts in ~40ms. Single 47MB native binary. Provider-agnostic (Anthropic / OpenAI-compat / Ollama).
 > Inspired by Claude Code's workflow but built for engineers who don't want a 300MB Node tree.
 
 **Repo:** `korat-ai/fugue` · **Status:** MVP shipped (Phase 1–5 closed, 2026-04-30) · **Default branch:** `main`
@@ -85,10 +85,10 @@ Always confirm with the user before:
 
 ## Status (2026-04-30)
 
-**Phase 1–5 closed.** Acceptance criteria met (with one accepted deferral on binary size — 44MB vs 35MB target; root cause: `FSharp.Core` + `System.Text.Json` rooted via `TrimmerRootAssembly`; mitigation in v0.2 via STJ source-gen for F# DTOs).
+**Phase 1–5 closed.** Acceptance criteria met (with one accepted deferral on binary size — 47MB vs 35MB target; root cause: `FSharp.Core` + `System.Text.Json` rooted via `TrimmerRootAssembly`, plus features added since MVP close (hooks, sessions, SQLite); mitigation in v0.2 via STJ source-gen for F# DTOs).
 
 Verified metrics:
-- Binary: **44 MB** osx-arm64 single-file AOT
+- Binary: **47 MB** osx-arm64 single-file AOT
 - Cold start: **40 ms**
 - Peak RSS: **47 MB**
 - Tests: **120+/120+** pass

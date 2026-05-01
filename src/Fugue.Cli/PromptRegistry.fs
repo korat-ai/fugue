@@ -26,13 +26,8 @@ let parseTemplate (text: string) : PromptTemplate =
     if not hasFm then
         { Command = ""; Args = []; Description = ""; Body = text; SourcePath = "embedded" }
     else
-        // Find closing ---
+        // Find closing --- (skip the opening one at index 0)
         let endIdx =
-            lines
-            |> Array.tryFindIndex (fun (l: string) -> l.Trim() = "---")
-            |> Option.defaultValue 0
-        let endIdx =
-            // Skip the opening --- at index 0; look for second ---
             let mutable found = -1
             for i in 1 .. lines.Length - 1 do
                 if found < 0 && lines.[i].Trim() = "---" then found <- i
@@ -121,6 +116,17 @@ let clearCache () = cache <- None
 
 let private buildCache () : PromptTemplate list =
     let dir = overridesDir ()
+    // Diagnostic: count manifest resources matching the prompts prefix and
+    // warn if it diverges from the embeddedNames whitelist. This catches the
+    // common mistake where a developer drops a new .md file under prompts/
+    // but forgets to register it in embeddedNames above.
+    let manifestCount =
+        Assembly.GetExecutingAssembly().GetManifestResourceNames()
+        |> Array.filter (fun n -> n.StartsWith "Fugue.Cli.prompts." && n.EndsWith ".md")
+        |> Array.length
+    if manifestCount <> embeddedNames.Length then
+        eprintfn "fugue: warning: %d embedded prompt resources but %d names registered — register all prompts/*.md in PromptRegistry.embeddedNames"
+            manifestCount embeddedNames.Length
     // 1. All embedded templates
     let embedded =
         embeddedNames
