@@ -3,6 +3,13 @@
 All notable changes to Fugue are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.1] — 2026-05-01
+
+### Fixed
+- `/model` picker crashed on render with `InvalidOperationException: Could not find color or style 's\'`. Spectre.Console markup escapes literal brackets as `[[` / `]]`, not `\[` / `\]` — the picker used the wrong escape, broke on every redraw.
+
+[0.2.1]: https://github.com/korat-ai/fugue/releases/tag/v0.2.1
+
 ## [0.2.0] — 2026-05-01
 
 ### Added
