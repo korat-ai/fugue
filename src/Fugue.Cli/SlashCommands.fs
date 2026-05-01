@@ -12,6 +12,7 @@ open Fugue.Core.Localization
 let getAll (strings: Strings) : (string * string) list =
     [ // Core
       "/help",                       strings.CmdHelpDesc
+      "/menu",                       strings.CmdMenuDesc
       "/ask <q>",                    strings.CmdAskDesc
       "/clear",                      strings.CmdClearDesc
       "/summary",                    strings.CmdSummaryDesc

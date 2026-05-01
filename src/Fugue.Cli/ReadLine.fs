@@ -391,7 +391,7 @@ let private redraw (st: S) =
     else writeRaw "\r"
     st.RowsBelowCursor <- upBy   // save for next redraw's erase pass
 
-let readAsync (prompt: string) (strings: Strings) (callbacks: ReadLineCallbacks) (colorEnabled: bool) (ct: CancellationToken) : Task<string option> = task {
+let readAsync (prompt: string) (strings: Strings) (callbacks: ReadLineCallbacks) (colorEnabled: bool) (initial: string) (ct: CancellationToken) : Task<string option> = task {
     // Strip ANSI escapes for visible-length calc (rough — assumes only \x1b[...m sequences).
     let visLen =
         let mutable n = 0
@@ -405,9 +405,11 @@ let readAsync (prompt: string) (strings: Strings) (callbacks: ReadLineCallbacks)
                 i <- i + 1
         n
     let slashHelp = SlashCommands.getAll strings
+    let initialBuf = ResizeArray<char>()
+    for c in initial do initialBuf.Add c
     let st : S =
-        { Buffer          = ResizeArray<char>()
-          Cursor          = 0
+        { Buffer          = initialBuf
+          Cursor          = initialBuf.Count
           LinesRendered   = 0
           ExitArmed       = false
           RowsBelowCursor = 0

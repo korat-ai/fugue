@@ -574,6 +574,9 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                 cancelSrc.RequestQuit())
     let! initialSession = agent.CreateSessionAsync(CancellationToken.None)
     let mutable session : AgentSession | null = initialSession
+    // Pre-fill for the next ReadLine call. Used by /menu and similar pickers
+    // that hand a partial command back to the user for completion.
+    let mutable nextInputPrefill : string = ""
     let providerName, modelName = providerInfo cfg.Provider
     DebugLog.sessionStart providerName modelName cwd
     StatusBar.start cwd cfg
@@ -725,7 +728,9 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                     AnsiConsole.WriteLine()
                     System.Threading.Tasks.Task.FromResult(Some step)
                 | None ->
-                    ReadLine.readAsync (Render.prompt cfg.Ui modelShort) liveStrings callbacks (Render.isColorEnabled ()) cancelSrc.Token
+                    let initial = nextInputPrefill
+                    nextInputPrefill <- ""
+                    ReadLine.readAsync (Render.prompt cfg.Ui modelShort) liveStrings callbacks (Render.isColorEnabled ()) initial cancelSrc.Token
             // Colon command expansion: :q → /exit, :n → /new, :h → /help, :s → /scratch send
             let colonExpand (s: string) =
                 if not (s.StartsWith ':') || s.Length < 2 then s
@@ -766,6 +771,16 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                     AnsiConsole.WriteLine()
                 AnsiConsole.WriteLine()
                 AnsiConsole.MarkupLine "[dim]Tip: turn numbers [[N]] are searchable — use your terminal's [bold]Cmd+F[/] / [bold]Ctrl+Shift+F[/] to jump back to any past message.[/]"
+                AnsiConsole.MarkupLine "[dim]Tip: try [bold]/menu[/] for a scrollable arrow-key picker.[/]"
+                StatusBar.refresh ()
+            | Some s when s = "/menu" || s = "/commands" ->
+                let allCmds = SlashCommands.getAll liveStrings
+                match Picker.pick "Slash commands" allCmds 0 with
+                | None ->
+                    AnsiConsole.MarkupLine "[dim]Cancelled[/]"
+                | Some i ->
+                    let (name, _) = allCmds.[i]
+                    nextInputPrefill <- Picker.templateOf name
                 StatusBar.refresh ()
             | Some s when s = "/git-log" ->
                 let psi = System.Diagnostics.ProcessStartInfo()

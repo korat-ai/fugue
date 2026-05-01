@@ -26,6 +26,7 @@ type Strings =
 
       // Slash commands
       CmdHelpDesc:       string
+      CmdMenuDesc:       string
       CmdClearDesc:      string
       CmdNewDesc:        string
       CmdExitDesc:       string
@@ -240,6 +241,7 @@ let en : Strings =
       DiscoveryNoCandidates = "No providers detected."
       DiscoveryPickProvider = "Pick a provider:"
       CmdHelpDesc           = "show this help"
+      CmdMenuDesc           = "open scrollable arrow-key picker for slash commands"
       CmdClearDesc          = "clear the screen"
       CmdNewDesc            = "start fresh conversation (new session)"
       CmdExitDesc           = "exit Fugue"
@@ -378,6 +380,7 @@ let ru : Strings =
       DiscoveryNoCandidates = "Провайдеры не обнаружены."
       DiscoveryPickProvider = "Выберите провайдер:"
       CmdHelpDesc           = "показать эту справку"
+      CmdMenuDesc           = "открыть прокручиваемое меню слэш-команд (стрелками)"
       CmdClearDesc          = "очистить экран"
       CmdNewDesc            = "начать новый разговор (новая сессия)"
       CmdExitDesc           = "выйти из Fugue"
