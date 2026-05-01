@@ -1568,14 +1568,14 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                                 $"{prefix}{name}{suffix}"
                         elif idx = suggestIdx then
                             if colour then
-                                if selected then $"{prefix}[bold cyan]\\[s\\] /model suggest[/]"
-                                else            $"{prefix}[dim]\\[s\\] /model suggest[/]"
+                                if selected then $"{prefix}[bold cyan][[s]] /model suggest[/]"
+                                else            $"{prefix}[dim][[s]] /model suggest[/]"
                             else
                                 $"{prefix}[s] /model suggest"
                         else // cancelIdx
                             if colour then
-                                if selected then $"{prefix}[bold cyan]\\[q\\] cancel[/]"
-                                else            $"{prefix}[dim]\\[q\\] cancel[/]"
+                                if selected then $"{prefix}[bold cyan][[q]] cancel[/]"
+                                else            $"{prefix}[dim][[q]] cancel[/]"
                             else
                                 $"{prefix}[q] cancel"
 
