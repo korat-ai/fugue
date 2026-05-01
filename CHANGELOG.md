@@ -3,6 +3,13 @@
 All notable changes to Fugue are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.2] — 2026-05-01
+
+### Fixed
+- NuGet publishing — replaced manual `curl` OIDC fetch + raw JWT-as-api-key with official `NuGet/login@v1` action. NuGet Trusted Publishing requires an explicit token-exchange step (GitHub OIDC → NuGet temporary API key); we were skipping it, getting consistent 403 Forbidden. v0.2.0 and v0.2.1 NuGet pushes failed for this reason; v0.2.2 succeeds.
+
+[0.2.2]: https://github.com/korat-ai/fugue/releases/tag/v0.2.2
+
 ## [0.2.1] — 2026-05-01
 
 ### Fixed
