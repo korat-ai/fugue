@@ -3,6 +3,18 @@
 All notable changes to Fugue are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.4] — 2026-05-01
+
+### Fixed
+- Windows CI green again — `BashTool` no longer hardcodes `/bin/sh` (which doesn't exist on Windows). Branches on `RuntimeInformation`: `pwsh -EncodedCommand <utf16-base64>` on Windows, `/bin/sh -c` on Unix. CI on `main` had been red since `d822355` (the "use /bin/sh universally" commit) — broken-window normalisation, now reset.
+- `ConfigTests.loadProfile returns Some content` failed on Windows because `Environment.SpecialFolder.UserProfile` reads `USERPROFILE`, not `HOME`. Tests now set both env vars for platform-agnostic isolation.
+- `BashToolTests.Bash reports non-zero exit code` switched from `"false"` (sh-only builtin) to `"exit 1"` (builtin in both sh and pwsh) — same intent, cross-shell.
+
+### Refactor
+- Slash-command list unified into `Fugue.Cli.SlashCommands` module — single source of truth for both inline autocomplete (`ReadLine.fs`) and `/help` rendering (`Repl.fs`). Two parallel hand-maintained lists had drifted three times in a week (latest: v0.2.3); root-cause fix. `/help` now also surfaces 5 entries that previously appeared only in inline suggestions: `/quit`, `/diff --staged`, `/doctor`, `/model set`, `/model suggest`. Net diff: -64 LOC across `ReadLine.fs` + `Repl.fs`. (#902)
+
+[0.2.4]: https://github.com/korat-ai/fugue/releases/tag/v0.2.4
+
 ## [0.2.3] — 2026-05-01
 
 ### Fixed
