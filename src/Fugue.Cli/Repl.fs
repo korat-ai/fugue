@@ -579,6 +579,12 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
     let mutable nextInputPrefill : string = ""
     let providerName, modelName = providerInfo cfg.Provider
     DebugLog.sessionStart providerName modelName cwd
+    // Load hooks config once per session (file absent → silent no-op).
+    let hooksConfig = Fugue.Core.Hooks.load ()
+    // Fire SessionStart hooks before the first prompt is shown.
+    let sessionStartPayload =
+        Fugue.Core.Hooks.sessionStartPayload cwd modelName providerName currentSessionId
+    do! Fugue.Core.Hooks.runLifecycle Fugue.Core.Hooks.HookEvent.SessionStart sessionStartPayload hooksConfig
     StatusBar.start cwd cfg
     Render.showBanner ()
     if cfg.DryRun then
@@ -2969,6 +2975,18 @@ Please generate a clear, actionable onboarding checklist."""
         Console.CancelKeyPress.RemoveHandler handler
         Console.Out.Write "\x1b[?2004l"   // disable bracketed paste
         Console.Out.Flush()
+        // Fire SessionEnd hooks (best-effort; failures are logged, never surfaced).
+        let nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+        let durationMs = nowMs - sessionStartedAt
+        let sessionEndPayload =
+            Fugue.Core.Hooks.sessionEndPayload cwd durationMs turnNumber
+        try
+            (Fugue.Core.Hooks.runLifecycle
+                Fugue.Core.Hooks.HookEvent.SessionEnd
+                sessionEndPayload
+                hooksConfig).Wait()
+        with ex ->
+            eprintfn $"[hooks] SessionEnd hook error: {ex.Message}"
         coda cfg
         StatusBar.stop ()
 }
