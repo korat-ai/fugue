@@ -3068,8 +3068,7 @@ Please generate a clear, actionable onboarding checklist."""
                 let expandedInput = expandClipboard expandedInput liveStrings
                 let expandedInput = expandClipRing expandedInput
                 StatusBar.recordWords (expandedInput.Split([|' '; '\n'; '\r'; '\t'|], StringSplitOptions.RemoveEmptyEntries).Length)
-                turnNumber <- turnNumber + 1
-                AnsiConsole.Write(Render.userMessage cfg.Ui userInput turnNumber)
+                AnsiConsole.Write(Render.userMessage cfg.Ui userInput (turnNumber + 1))
                 AnsiConsole.WriteLine()
                 let expandedInput =
                     match Fugue.Core.ConversationIntent.classify lastResponseWasPlan expandedInput with
@@ -3105,6 +3104,7 @@ Please generate a clear, actionable onboarding checklist."""
                             | Fugue.Core.Hooks.Replace newPrompt -> newPrompt
                             | Fugue.Core.Hooks.Append  extra     -> effectiveInput + "\n" + extra
                             | _                                  -> effectiveInput
+                        turnNumber <- turnNumber + 1
                         task {
                             // Record UserTurn before streaming so ordering is preserved even on cancel.
                             Fugue.Core.SessionPersistence.appendRecord sessionFilePath
