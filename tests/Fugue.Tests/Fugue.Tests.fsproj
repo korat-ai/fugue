@@ -27,6 +27,8 @@
     <Compile Include="DiffRenderTests.fs" />
     <Compile Include="RenderTests.fs" />
     <Compile Include="StatusBarTests.fs" />
+    <Compile Include="StatusBarRenderTests.fs" />
+    <Compile Include="StatusBarPropertyTests.fs" />
     <Compile Include="ReadToolTests.fs" />
     <Compile Include="WriteToolTests.fs" />
     <Compile Include="EditToolTests.fs" />
