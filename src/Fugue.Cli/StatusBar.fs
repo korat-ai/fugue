@@ -158,7 +158,7 @@ let refresh () =
     let dimEsc = if activeTheme = "nocturne" then "\x1b[38;5;24m" else "\x1b[90m"
     let line1 =
         dimEsc + (homeRel cwd) + " " + strings.StatusBarOn + " \x1b[1m" + (branchOf cwd) + "\x1b[0m"
-    let elapsedSuffix, spinnerPrefix, cadenceSuffix =
+    let elapsedSuffix, thinkingLine, cadenceSuffix =
         match streamingSince with
         | Some since ->
             let elapsed = DateTime.UtcNow - since
@@ -167,7 +167,9 @@ let refresh () =
             let dots = [| "·"; "··"; "···" |].[(spinnerFrame / 2) % 3]
             let bpm = cadenceTokPerSec ()
             let cad = if bpm > 0 then $" · ♩={bpm}" else ""
-            " · " + formatElapsed elapsed, frame + " " + strings.Thinking + dots + " ", cad
+            " · " + formatElapsed elapsed,
+            dimEsc + frame + " " + strings.Thinking + dots + " · " + formatElapsed elapsed + cad + "\x1b[0m",
+            cad
         | None -> "", "", ""
     let sshBadge = if isSSH then " · SSH" else ""
     let dimEsc2 = if activeTheme = "nocturne" then "\x1b[38;5;67m" else "\x1b[90m"
@@ -195,10 +197,13 @@ let refresh () =
         match cfg with
         | Some c ->
             let sched = if scheduleActive then " ⏱" else ""
-            dimEsc2 + spinnerPrefix + strings.StatusBarApp + " · " + (providerLabel c) + sched + cadenceSuffix + elapsedSuffix + ctxBadge + annotBadge + tmplBadge + lowBwBadge + sshBadge + "\x1b[0m"
-        | None   -> dimEsc2 + spinnerPrefix + strings.StatusBarApp + cadenceSuffix + elapsedSuffix + annotBadge + tmplBadge + lowBwBadge + sshBadge + "\x1b[0m"
-    // save cursor, jump to bottom-1, clear two lines, write, restore
+            dimEsc2 + strings.StatusBarApp + " · " + (providerLabel c) + sched + cadenceSuffix + elapsedSuffix + ctxBadge + annotBadge + tmplBadge + lowBwBadge + sshBadge + "\x1b[0m"
+        | None   -> dimEsc2 + strings.StatusBarApp + cadenceSuffix + elapsedSuffix + annotBadge + tmplBadge + lowBwBadge + sshBadge + "\x1b[0m"
+    // save cursor, paint 3 reserved bottom lines: thinking@h-2, status1@h-1, status2@h
     writeRaw "\x1b[s"
+    writeRaw ("\x1b[" + string (height - 2) + ";1H")
+    writeRaw "\x1b[2K"
+    writeRaw thinkingLine
     writeRaw ("\x1b[" + string (height - 1) + ";1H")
     writeRaw "\x1b[2K"
     writeRaw line1
@@ -217,11 +222,13 @@ let start (initialCwd: string) (initialCfg: AppConfig) : unit =
     let width = Console.WindowWidth
     compactMode <- height < 24 || width < 60
     if not compactMode then
-        // reserve two bottom lines: emit two newlines, then set scroll region 1..(h-2)
+        // reserve three bottom lines: thinking indicator + 2 status lines.
+        // Scroll region becomes 1..(h-3); cursor parks at the last scrollable line.
         Console.WriteLine()
         Console.WriteLine()
-        writeRaw ("\x1b[1;" + string (height - 2) + "r")
-        writeRaw ("\x1b[" + string (height - 2) + ";1H")
+        Console.WriteLine()
+        writeRaw ("\x1b[1;" + string (height - 3) + "r")
+        writeRaw ("\x1b[" + string (height - 3) + ";1H")
         refresh ()
 
 let stop () : unit =
@@ -229,6 +236,8 @@ let stop () : unit =
     if not compactMode then
         let height = Console.WindowHeight
         writeRaw "\x1b[r"          // reset scroll region
+        writeRaw ("\x1b[" + string (height - 2) + ";1H")
+        writeRaw "\x1b[2K"
         writeRaw ("\x1b[" + string (height - 1) + ";1H")
         writeRaw "\x1b[2K"
         writeRaw ("\x1b[" + string height + ";1H")
