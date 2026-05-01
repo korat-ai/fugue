@@ -15,9 +15,8 @@ let private noColor () =
 
 [<System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Calls ToolRegistry.buildAll which uses AgentSessionExtensions over STJ state")>]
 [<System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Calls ToolRegistry.buildAll which uses AgentSessionExtensions over STJ state")>]
-let private buildAgent (cfg: AppConfig) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (providerContext: string option) (lastSummary: string option) : AIAgent =
+let private buildAgent (cfg: AppConfig) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (providerContext: string option) (lastSummary: string option) (sessionId: string) : AIAgent =
     let cwd = Environment.CurrentDirectory
-    let sessionId = System.Guid.NewGuid().ToString("N")
     let rawTools = Fugue.Tools.ToolRegistry.buildAll cwd hooksConfig sessionId
     let tools = if cfg.DryRun then DryRun.wrapTools rawTools else rawTools
     let basePrompt =
@@ -57,7 +56,8 @@ let private runWithPrint (cfg: AppConfig) (prompt: string) : int =
                     hooksConfig.ContextProviders hooksConfig.HookTimeoutMs
                 |> Async.RunSynchronously
             if assembled = "" then None else Some assembled
-    let agent = buildAgent cfg hooksConfig providerContext lastSummary
+    let sessionId = System.Guid.NewGuid().ToString("N")
+    let agent = buildAgent cfg hooksConfig providerContext lastSummary sessionId
     let t = Repl.runPrint agent prompt
     try
         t.Wait()
@@ -116,10 +116,13 @@ let private runWithCfg (cfg: AppConfig) : int =
                     hooksConfig.ContextProviders hooksConfig.HookTimeoutMs
                 |> Async.RunSynchronously
             if assembled = "" then None else Some assembled
-    let agent = buildAgent cfg hooksConfig providerContext lastSummary
+    // Stable sessionId for the lifetime of this REPL invocation. Reused on
+    // /new and /model set rebuilds so hooks see consistent correlation.
+    let sessionId = System.Guid.NewGuid().ToString("N")
+    let agent = buildAgent cfg hooksConfig providerContext lastSummary sessionId
     let t =
         if Console.IsInputRedirected then Repl.runHeadless agent cfg cwd
-        else Repl.run agent cfg cwd lastSummary (fun newCfg -> buildAgent newCfg hooksConfig providerContext None)
+        else Repl.run agent cfg cwd lastSummary (fun newCfg -> buildAgent newCfg hooksConfig providerContext None sessionId)
     try t.Wait()
     with
     | :? AggregateException as agg ->
