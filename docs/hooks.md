@@ -1,6 +1,6 @@
 # Hooks
 
-Hooks are user-defined scripts that run at key lifecycle points in a Fugue session. They receive structured JSON context via stdin and can log, notify, or integrate with external systems. Phase 1 ships `SessionStart` and `SessionEnd` hooks; Phase 2 adds `PreToolUse` and `PostToolUse` hooks to intercept and modify tool invocations — more lifecycle events (`UserPromptSubmit`, context-provider injection) are planned for Phase 3–4.
+Hooks are user-defined scripts that run at key lifecycle points in a Fugue session. They receive structured JSON context via stdin and can log, notify, or integrate with external systems. Phase 1 ships `SessionStart` and `SessionEnd` hooks; Phase 2 adds `PreToolUse` and `PostToolUse` hooks to intercept and modify tool invocations; Phase 3 adds `UserPromptSubmit` hooks to filter and enrich user prompts before agent processing.
 
 ## Configuration
 
@@ -42,6 +42,13 @@ Hooks are defined in `~/.fugue/hooks.json`. The file is optional; if absent, no 
         "command": "~/.fugue/hooks/audit.sh",
         "matcher": "*"
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "command": "~/.fugue/hooks/enrich-prompt.sh",
+        "async": false
+      }
     ]
   }
 }
@@ -53,7 +60,7 @@ Hooks are defined in `~/.fugue/hooks.json`. The file is optional; if absent, no 
 |-------|------|---------|-------|
 | `hookTimeoutMs` | int | 5000 | Global timeout (ms) for synchronous hooks. Overridden per-hook via `timeoutMs`. |
 | `onError` | string | `"log-continue"` | How to handle hook failures: `"log-continue"` (warn, keep going) or `"log-block"` (fail the session). |
-| `hooks` | object | `{}` | Container for per-event hook arrays. Possible keys: `SessionStart`, `SessionEnd`, `PreToolUse`, `PostToolUse`. |
+| `hooks` | object | `{}` | Container for per-event hook arrays. Possible keys: `SessionStart`, `SessionEnd`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`. |
 
 ### Hook definition (per hook in an array)
 
@@ -61,9 +68,9 @@ Hooks are defined in `~/.fugue/hooks.json`. The file is optional; if absent, no 
 |-------|------|---------|-------|
 | `type` | string | — | Must be `"command"`. |
 | `command` | string | — | Path or command to execute. Supports `~/` prefix. No shell quoting; space splits exe from args (first space only). |
-| `async` | bool | false | If true, fire-and-forget; if false, Fugue waits up to `timeoutMs`. Ignored for `PostToolUse` (always async). |
+| `async` | bool | false | If true, fire-and-forget; if false, Fugue waits up to `timeoutMs`. Ignored for `PostToolUse` and `UserPromptSubmit` (always sync). |
 | `timeoutMs` | int | (global) | Per-hook override for `hookTimeoutMs`. Ignored for async hooks. |
-| `matcher` | string | (all tools) | Restrict hook to a specific tool by exact name (e.g., `"Bash"`, `"Write"`), or `"*"` to match all tools. See [Matcher syntax](#matcher-syntax). |
+| `matcher` | string | (all tools) | Restrict hook to a specific tool by exact name (e.g., `"Bash"`, `"Write"`), or `"*"` to match all tools. **Does not apply to `UserPromptSubmit` hooks.** |
 
 ## Events
 
@@ -204,6 +211,74 @@ If your script outputs no JSON, it is treated as `{"block": false}` (proceed unc
 
 **Hook script result:** Your script's exit code and output are not processed. It runs in the background. Use for side effects only (logging, notifications, spawning formatters, etc.).
 
+### UserPromptSubmit
+
+**Fires:** After the user enters a prompt (with `@file` expansion, clipboard paste, and verbosity prefix applied) but BEFORE the prompt is dispatched to the agent.
+
+**Blocking:** Yes. If your script returns `{"block": true}`, the turn is cancelled and the user sees the reason in the REPL. Useful for prompt validation, blocking sensitive content, or preventing accidental submissions.
+
+**Important:** This hook intercepts **natural-language prompts only**. It does NOT fire for:
+- Slash commands (`/help`, `/clear`, `/new`, `/exit`, etc.)
+- Macro replay (`@recent`, `@file` initial fetch)
+- Shell shortcut (`!cmd`)
+- `/scratch send` command
+
+See [What is intercepted](#what-is-intercepted) for details.
+
+**Stdin payload:**
+
+```json
+{
+  "event": "UserPromptSubmit",
+  "version": 1,
+  "prompt": "what changed in the last commit?",
+  "sessionId": "01HVZK7F4X0000000000000000"
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `event` | string | Always `"UserPromptSubmit"`. |
+| `version` | int | Protocol version (1). Use for forward compatibility. |
+| `prompt` | string | The user's prompt text (after `@file` and clipboard expansion, but before agent processing). |
+| `sessionId` | string | Unique session identifier (ULID). |
+
+**Hook script result protocol:** Your script outputs JSON to stdout and exits with code 0. Supported fields (exclusive: only one of `block`, `replace`, or `append` applies):
+
+```json
+{
+  "block": false,
+  "reason": "optional explanation",
+  "replace": "new prompt",
+  "append": "additional context"
+}
+```
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `block` | bool | If true, cancel the turn and display `reason` to the user. Default false. |
+| `reason` | string | Message shown to user when `block: true`. Ignored if `block: false`. |
+| `replace` | string | Substitute the prompt entirely with this text. Ignored if `block: true`. Only one of `replace` or `append` applies; if both are present, `replace` wins. |
+| `append` | string | Append this text to the original prompt (newline-separated). Ignored if `block: true` or `replace` is present. Multiple hooks can append; their outputs are concatenated. |
+
+If your script outputs no JSON, it is treated as `{}` (pass through unchanged). Non-zero exit codes are treated as errors per `onError` policy.
+
+### What is intercepted
+
+UserPromptSubmit hooks intercept **only natural-language prompts to the agent**:
+
+| Input | Intercepted | Notes |
+|-------|-------------|-------|
+| `how do I refactor this?` (user prompt) | Yes | Normal agent query. |
+| `what changed` (user prompt, mentions "changed") | Yes | Hooks can enrich this with `git status`. |
+| `/help` (slash command) | No | Slash commands bypass hooks. |
+| `/clear` (slash command) | No | Slash commands bypass hooks. |
+| `!git log` (shell shortcut) | No | Shell shortcuts bypass hooks. |
+| `@recent 3` (macro) | No | Macro replay bypasses hooks. |
+| `/scratch send <Cmd>` (scratch command) | No | Specialized repl command, not a user prompt. |
+
+If you need to intercept **all input including slash commands**, that is a future enhancement (Phase 4+). For now, UserPromptSubmit only sees natural-language prompts.
+
 ## Matcher syntax
 
 The `"matcher"` field restricts a hook to specific tools:
@@ -211,6 +286,24 @@ The `"matcher"` field restricts a hook to specific tools:
 - **Omitted or `"*"`** — Hook fires for all tools (SessionStart, SessionEnd, and all six tool types).
 - **Exact name** — `"matcher": "Bash"` fires only before/after Bash tool invocations. Same for `"Read"`, `"Write"`, `"Edit"`, `"Glob"`, `"Grep"`.
 - **No glob/regex in Phase 2** — Matchers use exact string equality only. Patterns like `"B*sh"`, `"Bash|Read"`, or `[R]ead` are not yet supported. If your `hooks.json` contains `|`, `?`, or `[` in a matcher, Fugue will warn at load time: *"matcher contains reserved metacharacters — only exact match is supported in this version"*. These are reserved for future versions (glob or regex patterns). For now, if you need to match multiple tools, create separate hook entries.
+
+**Note:** `matcher` does **not** apply to `UserPromptSubmit` hooks. All UserPromptSubmit hooks fire for every natural-language prompt.
+
+## Result protocol summary
+
+Different hook types support different result fields. Here's a quick reference:
+
+| Hook | Supported fields | Semantics |
+|------|------------------|-----------|
+| `SessionStart` | (none) | Informational; exit code and output ignored. |
+| `SessionEnd` | (none) | Informational; exit code and output ignored. |
+| `PreToolUse` | `block`, `reason`, `modified_args` | `block` aborts tool; `modified_args` changes tool behavior. |
+| `PostToolUse` | (none) | Fire-and-forget; results ignored. |
+| `UserPromptSubmit` | `block`, `reason`, `replace`, `append` | `block` cancels turn; `replace` overwrites prompt; `append` adds context. |
+
+Fields are **exclusive** where noted:
+- **PreToolUse:** `block: true` overrides `modified_args`.
+- **UserPromptSubmit:** `block: true` overrides `replace` and `append`; `replace` overrides `append`.
 
 ## Worked examples
 
@@ -334,9 +427,66 @@ If the agent tries to run `rm -rf /home`, the hook blocks it:
 
 The agent sees this as the tool result and can decide to retry with a safer command.
 
+### Example 4: Enrich prompts with git status
+
+Create `~/.fugue/hooks/enrich-prompt.sh`:
+
+```bash
+#!/bin/bash
+read -r payload
+prompt=$(echo "$payload" | jq -r '.prompt')
+
+# Check if the prompt mentions "changed" or "diff"
+if echo "$prompt" | grep -qiE '(changed|diff|status)'; then
+  # Append git status to the prompt
+  changes=$(git status -s 2>/dev/null | head -10)
+  if [ -n "$changes" ]; then
+    printf '{"append": "\n[git status]\n%s"}\n' "$changes"
+  else
+    echo '{}'
+  fi
+else
+  # No enrichment needed
+  echo '{}'
+fi
+exit 0
+```
+
+Add to `~/.fugue/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "command": "~/.fugue/hooks/enrich-prompt.sh",
+        "async": false
+      }
+    ]
+  }
+}
+```
+
+When the user types `what changed?`, the hook intercepts it and appends the output of `git status -s`:
+
+```
+User input: what changed?
+Hook appends: [git status]
+                M src/foo.rs
+                A src/bar.rs
+
+Agent receives: what changed?
+[git status]
+M src/foo.rs
+A src/bar.rs
+```
+
+The agent can now see the uncommitted changes and respond accurately.
+
 ## Writing a hook script
 
-Hook scripts are normal executables (shell, Python, Go, etc.). They read JSON from stdin and process it. Exit code `0` signals success; non-zero signals failure (handled per `onError`). For PreToolUse hooks, your script's stdout is parsed as JSON; for PostToolUse and SessionStart/SessionEnd hooks, stdout is typically ignored (but can be logged if present on stderr).
+Hook scripts are normal executables (shell, Python, Go, etc.). They read JSON from stdin and process it. Exit code `0` signals success; non-zero signals failure (handled per `onError`). For PreToolUse and UserPromptSubmit hooks, your script's stdout is parsed as JSON; for PostToolUse, SessionStart, and SessionEnd hooks, stdout is typically ignored (but can be logged if present on stderr).
 
 ### Example: Session audit log (SessionStart + SessionEnd)
 
@@ -425,13 +575,15 @@ Fugue **waits** for the hook to complete, up to `timeoutMs`. Useful for validati
 
 **Phase 2 note:** `PreToolUse` hooks are typically sync (required for PreToolUse to check the result and decide whether to block). If a PreToolUse hook times out, Fugue logs the timeout and proceeds with the tool call unchanged.
 
+**Phase 3 note:** `UserPromptSubmit` hooks are always sync (user is waiting for agent response; no fire-and-forget option). If a UserPromptSubmit hook times out, Fugue logs the timeout and proceeds with the original prompt unchanged.
+
 ### Async hooks (async: true)
 
 Fugue **spawns** the hook and abandons it. The hook runs in the background; its exit code is never checked. Useful for non-critical notifications, logging, or long-running tasks. Timeouts are irrelevant for async hooks (ignored).
 
 **Phase 2 note:** `PostToolUse` hooks are **always async** (fire-and-forget), even if you set `async: false` in the config. Fugue will treat `async: false` as `async: true` for PostToolUse entries and may log a warning.
 
-**Recommendation:** Use async for side effects like sending Slack notifications, writing audit logs, or triggering webhooks. Use sync only when you need feedback (PreToolUse validation) or must wait for the hook to complete (SessionStart setup).
+**Recommendation:** Use async for side effects like sending Slack notifications, writing audit logs, or triggering webhooks. Use sync only when you need feedback (PreToolUse validation, UserPromptSubmit filtering) or must wait for the hook to complete (SessionStart setup).
 
 ## Failure modes
 
@@ -449,6 +601,7 @@ Fugue **spawns** the hook and abandons it. The hook runs in the background; its 
 - Fugue calls `proc.Kill(entireProcessTree = true)`, waits for cleanup, and returns exit code `-1` (sentinel for timeout).
 - Logged: `"[hooks] hook {command} timed out after {N} ms (continuing)"` or error if `log-block`.
 - For PreToolUse hooks that time out, the tool call proceeds unchanged (treated as `Proceed`).
+- For UserPromptSubmit hooks that time out, the turn proceeds with the original prompt unchanged.
 
 ### Hook exits non-zero
 
@@ -458,6 +611,11 @@ Fugue **spawns** the hook and abandons it. The hook runs in the background; its 
 ### PreToolUse hook outputs invalid JSON
 
 - If your script outputs unparseable JSON to stdout, Fugue logs the parse error and proceeds unchanged.
+- If you output `{"block": true}` without a `reason` field, the default reason is `"blocked by hook"`.
+
+### UserPromptSubmit hook outputs invalid JSON
+
+- If your script outputs unparseable JSON to stdout, Fugue logs the parse error and proceeds with the original prompt unchanged.
 - If you output `{"block": true}` without a `reason` field, the default reason is `"blocked by hook"`.
 
 ### `~/.fugue/hooks.json` is missing
@@ -475,15 +633,15 @@ Fugue **spawns** the hook and abandons it. The hook runs in the background; its 
 - Invalid hook definitions are silently skipped during parsing. Only hooks with `type: "command"` and a non-empty `command` field are yielded.
 - No error is raised if a section is empty or all hooks are invalid.
 
-## Limitations (Phase 2)
+## Limitations (Phase 3)
 
 The following are planned for future phases and are **not yet supported**:
 
-- **UserPromptSubmit** hooks — intercept and block/modify user prompts before agent processing (Phase 3).
 - **Context-provider injection** — hooks that output text to be prepended to the system prompt (Phase 4, absorbs #191).
 - **HTTP webhooks** — webhook transport instead of local processes (#188, Phase 2+, separate issue).
 - **Shell quoting in commands** — `command` is split on the first space only; complex args with spaces require a wrapper script.
-- **Glob/regex matchers** — matcher patterns are reserved for future versions; only exact string match (`"*"` for all, or exact tool name like `"Bash"`) is supported in Phase 2.
+- **Glob/regex matchers** — matcher patterns are reserved for future versions; only exact string match (`"*"` for all, or exact tool name like `"Bash"`) is supported in Phase 3.
+- **All-input interception** — UserPromptSubmit only intercepts natural-language prompts. Slash commands, macros, and shell shortcuts bypass hooks. Full input filtering may come in Phase 4+.
 
 ## Testing
 
@@ -580,3 +738,75 @@ You: run `echo hello`
 ```
 
 The agent will see this as the tool result and can retry with a different command, or explain to you that the command was blocked.
+
+### Testing UserPromptSubmit hooks
+
+To test a UserPromptSubmit hook that blocks or modifies prompts:
+
+1. Create a test hook that appends context:
+
+```bash
+cat > /tmp/enrich-test.sh << 'EOF'
+#!/bin/bash
+read -r payload
+prompt=$(echo "$payload" | jq -r '.prompt')
+if echo "$prompt" | grep -qi "time"; then
+  current=$(date)
+  printf '{"append": "\nCurrent time: %s"}\n' "$current"
+else
+  echo '{}'
+fi
+exit 0
+EOF
+chmod +x /tmp/enrich-test.sh
+```
+
+2. Add to `~/.fugue/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "command": "/tmp/enrich-test.sh",
+        "async": false
+      }
+    ]
+  }
+}
+```
+
+3. Run Fugue and type a prompt mentioning time:
+
+```
+You: what's the time?
+```
+
+4. The hook intercepts the prompt, appends the current time, and the agent receives the enriched prompt. Check stderr or logs to see hook execution details.
+
+If you want to test a blocking hook:
+
+```bash
+cat > /tmp/block-test.sh << 'EOF'
+#!/bin/bash
+read -r payload
+prompt=$(echo "$payload" | jq -r '.prompt')
+if echo "$prompt" | grep -qi "delete"; then
+  echo '{"block": true, "reason": "prompts about deletion require human review"}'
+else
+  echo '{}'
+fi
+exit 0
+EOF
+chmod +x /tmp/block-test.sh
+```
+
+When the user types a prompt containing "delete", the hook blocks it:
+
+```
+You: delete all files matching *.tmp
+⊘ prompt blocked by hook: prompts about deletion require human review
+```
+
+The user can revise and resubmit.
