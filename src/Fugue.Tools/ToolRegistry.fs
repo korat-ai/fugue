@@ -1,9 +1,13 @@
 module Fugue.Tools.ToolRegistry
 
+open System.Diagnostics.CodeAnalysis
 open Microsoft.Extensions.AI
 open Fugue.Tools.AiFunctions
 
 /// Build all tools as no-reflection AIFunction subclasses.
+/// The GetConversation tool reads the session via GetConversationFn.setSession / module-level state.
+[<RequiresUnreferencedCode("GetConversationFn uses AgentSessionExtensions over STJ state")>]
+[<RequiresDynamicCode("GetConversationFn uses AgentSessionExtensions over STJ state")>]
 let buildAll (cwd: string) : AIFunction list = [
     ReadFn.create      cwd
     WriteFn.create     cwd
@@ -13,9 +17,10 @@ let buildAll (cwd: string) : AIFunction list = [
     GlobFn.create      cwd
     GrepFn.create      cwd
     TreeFn.create      cwd
+    GetConversationFn.create None
 ]
 
-let names : string list = [ "Read"; "Write"; "WriteBatch"; "Edit"; "Bash"; "Glob"; "Grep"; "Tree" ]
+let names : string list = [ "Read"; "Write"; "WriteBatch"; "Edit"; "Bash"; "Glob"; "Grep"; "Tree"; "GetConversation" ]
 
 let descriptions : (string * string) list = [
     "Read",       "Read a text file. Returns lines prefixed with 1-based line numbers."

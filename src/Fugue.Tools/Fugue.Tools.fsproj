@@ -27,9 +27,11 @@
     <Compile Include="AiFunctions/GlobFn.fs" />
     <Compile Include="AiFunctions/GrepFn.fs" />
     <Compile Include="AiFunctions/TreeFn.fs" />
+    <Compile Include="AiFunctions/GetConversationFn.fs" />
     <Compile Include="ToolRegistry.fs" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Agents.AI.Abstractions" Version="1.3.0" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.5.0" />
     <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" Version="10.0.7" />
   </ItemGroup>
