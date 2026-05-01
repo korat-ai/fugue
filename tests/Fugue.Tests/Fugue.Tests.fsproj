@@ -48,6 +48,7 @@
     <Compile Include="PathSafetySymlinkTests.fs" />
     <Compile Include="MacrosTests.fs" />
     <Compile Include="ReplTests.fs" />
+    <Compile Include="HookRunnerTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
