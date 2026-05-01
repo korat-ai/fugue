@@ -568,6 +568,13 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
     // Pre-fill for the next ReadLine call. Used by /menu and similar pickers
     // that hand a partial command back to the user for completion.
     let mutable nextInputPrefill : string = ""
+    // Model name cache for /model set autocomplete.
+    // Populated in background at session start; re-fetched on provider change via /model set.
+    let cachedModels : string list ref = ref []
+    Async.Start(async {
+        let! models = Fugue.Agent.ModelDiscovery.getModels cfg.Provider cfg.BaseUrl |> Async.AwaitTask
+        cachedModels.Value <- models
+    })
     DebugLog.sessionStart providerName modelName cwd
     // Load hooks config once per session (file absent → silent no-op).
     let hooksConfig = Fugue.Core.Hooks.load ()
@@ -727,7 +734,10 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                     let initial = nextInputPrefill
                     nextInputPrefill <- ""
                     let slashHelp = SlashCommands.getAll liveStrings
-                    ReadLine.readAsync (Render.prompt cfg.Ui modelShort) liveStrings slashHelp callbacks (Render.isColorEnabled ()) initial cancelSrc.Token
+                    let modelCompleter (prefix: string) =
+                        cachedModels.Value
+                        |> List.filter (fun m -> m.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    ReadLine.readAsync (Render.prompt cfg.Ui modelShort) liveStrings slashHelp modelCompleter callbacks (Render.isColorEnabled ()) initial cancelSrc.Token
             // Colon command expansion: :q → /exit, :n → /new, :h → /help, :s → /scratch send
             let colonExpand (s: string) =
                 if not (s.StartsWith ':') || s.Length < 2 then s
@@ -1627,6 +1637,11 @@ let run (initialAgent: AIAgent) (initialCfg: AppConfig) (cwd: string) (lastSumma
                         let prov, _ = providerInfo cfg.Provider
                         AnsiConsole.MarkupLine($"[green]✓[/] model → [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape newModel}[/] [dim](history reset)[/]")
                         StatusBar.start cwd cfg
+                        // Re-fetch model list for the (potentially) new provider in background.
+                        Async.Start(async {
+                            let! models = Fugue.Agent.ModelDiscovery.getModels cfg.Provider cfg.BaseUrl |> Async.AwaitTask
+                            cachedModels.Value <- models
+                        })
                     with ex ->
                         AnsiConsole.MarkupLine($"[red]✗ failed to switch model: {Markup.Escape ex.Message}[/]")
             | Some s when s = "/onboard" ->

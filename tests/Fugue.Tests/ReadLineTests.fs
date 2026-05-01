@@ -20,7 +20,8 @@ let private mkState (text: string) (cursor: int) : S =
       Placeholder     = ""
       ColorEnabled    = false
       Width           = 80
-      SlashHelp       = [] }
+      SlashHelp       = []
+      ModelCompleter  = fun _ -> [] }
 
 let private key (c: char) (mods: ConsoleModifiers) : ConsoleKeyInfo =
     let cKey =

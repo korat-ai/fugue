@@ -80,6 +80,7 @@ type S = {
     ColorEnabled:            bool
     Width:                   int
     SlashHelp:               (string * string) list  // (name, dim description) pairs
+    ModelCompleter:          string -> string list   // prefix → matching model names
 }
 
 /// Action returned by the pure key-handler. The caller (read-loop) decides what to do.
@@ -359,18 +360,31 @@ let private redraw (st: S) =
         writeRaw ("\n\x1b[2m" + st.HintWhenArmed + "\x1b[0m")
         st.LinesRendered <- st.LinesRendered + 1
     elif st.Buffer.Count > 0 && st.Buffer.[0] = '/' then
-        // Show inline slash command suggestions, capped at maxSuggestions to keep
-        // the rendered area bounded (prevents terminal scroll from corrupting
-        // cursor-tracking in eraseLines on the next redraw).
-        let prefix = String(st.Buffer.ToArray())
-        let matches = st.SlashHelp |> List.filter (fun (name, _) -> name.StartsWith(prefix))
-        let maxSuggestions = 8
-        for (name, desc) in matches |> List.truncate maxSuggestions do
-            writeRaw ("\n\x1b[2m  " + name + "  " + desc + "\x1b[0m")
-            st.LinesRendered <- st.LinesRendered + 1
-        if matches.Length > maxSuggestions then
-            writeRaw $"\n\x1b[2m  … {matches.Length - maxSuggestions} more (keep typing)\x1b[0m"
-            st.LinesRendered <- st.LinesRendered + 1
+        let bufStr2 = String(st.Buffer.ToArray())
+        let modelSetPrefix = "/model set "
+        if bufStr2.StartsWith modelSetPrefix then
+            // ModelName context: show matching model names from the completer.
+            let typedPrefix = bufStr2.Substring(modelSetPrefix.Length)
+            let matches = st.ModelCompleter typedPrefix
+            let maxSuggestions = 8
+            for name in matches |> List.truncate maxSuggestions do
+                writeRaw ("\n\x1b[2m  " + name + "\x1b[0m")
+                st.LinesRendered <- st.LinesRendered + 1
+            if matches.Length > maxSuggestions then
+                writeRaw $"\n\x1b[2m  … {matches.Length - maxSuggestions} more (keep typing)\x1b[0m"
+                st.LinesRendered <- st.LinesRendered + 1
+        else
+            // Show inline slash command suggestions, capped at maxSuggestions to keep
+            // the rendered area bounded (prevents terminal scroll from corrupting
+            // cursor-tracking in eraseLines on the next redraw).
+            let matches = st.SlashHelp |> List.filter (fun (name, _) -> name.StartsWith(bufStr2))
+            let maxSuggestions = 8
+            for (name, desc) in matches |> List.truncate maxSuggestions do
+                writeRaw ("\n\x1b[2m  " + name + "  " + desc + "\x1b[0m")
+                st.LinesRendered <- st.LinesRendered + 1
+            if matches.Length > maxSuggestions then
+                writeRaw $"\n\x1b[2m  … {matches.Length - maxSuggestions} more (keep typing)\x1b[0m"
+                st.LinesRendered <- st.LinesRendered + 1
     // 4. position cursor at st.Cursor inside buffer.
     //    Compute (row, col) from start of prompt.
     let mutable row = 0
@@ -391,7 +405,7 @@ let private redraw (st: S) =
     else writeRaw "\r"
     st.RowsBelowCursor <- upBy   // save for next redraw's erase pass
 
-let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) list) (callbacks: ReadLineCallbacks) (colorEnabled: bool) (initial: string) (ct: CancellationToken) : Task<string option> = task {
+let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) list) (modelCompleter: string -> string list) (callbacks: ReadLineCallbacks) (colorEnabled: bool) (initial: string) (ct: CancellationToken) : Task<string option> = task {
     // Strip ANSI escapes for visible-length calc (rough — assumes only \x1b[...m sequences).
     let visLen =
         let mutable n = 0
@@ -420,7 +434,8 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
           Placeholder     = strings.InputPlaceholder
           ColorEnabled    = colorEnabled
           Width           = max 40 Console.WindowWidth
-          SlashHelp       = slashHelp }
+          SlashHelp       = slashHelp
+          ModelCompleter  = modelCompleter }
 
     Console.TreatControlCAsInput <- true
     // Tab-completion cycle state — resets on any non-Tab keypress.
@@ -457,7 +472,25 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
             let k = Console.ReadKey(intercept = true)
             if k.Key = ConsoleKey.Tab then
                 let currentInput = String(st.Buffer.ToArray())
-                if currentInput.StartsWith "/" then
+                let modelSetPrefix = "/model set "
+                if currentInput.StartsWith modelSetPrefix then
+                    // ModelName context: Tab-cycle through matching model names.
+                    let typedPrefix = currentInput.Substring(modelSetPrefix.Length)
+                    let needsReset =
+                        tabMatches.Length = 0 ||
+                        (tabIndex >= 0 && tabIndex < tabMatches.Length &&
+                         currentInput <> modelSetPrefix + tabMatches.[tabIndex])
+                    if needsReset then
+                        tabMatches <- st.ModelCompleter typedPrefix |> List.toArray
+                        tabIndex   <- -1
+                    if tabMatches.Length > 0 then
+                        tabIndex <- (tabIndex + 1) % tabMatches.Length
+                        let completed = modelSetPrefix + tabMatches.[tabIndex]
+                        st.Buffer.Clear()
+                        st.Buffer.AddRange(completed.ToCharArray())
+                        st.Cursor <- st.Buffer.Count
+                        redraw st
+                elif currentInput.StartsWith "/" then
                     let needsReset =
                         tabMatches.Length = 0 ||
                         (tabIndex >= 0 && tabIndex < tabMatches.Length &&
