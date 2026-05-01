@@ -3,7 +3,14 @@
 All notable changes to Fugue are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.2.4] — 2026-05-01
+## [0.3.0] — 2026-05-01
+
+### Added
+- `/menu` — scrollable arrow-key picker over all 74 slash commands. PgUp/PgDn pages, Home/End jumps, visible `▲ N more above` / `▼ N more below` indicators. On Enter, pre-fills the input prompt with the chosen command (zero-arg commands ready to fire, arg commands stripped of placeholders, e.g. `/scaffold du <name>` → `/scaffold du `). Generic `Fugue.Cli.Picker` module is reusable — `/model` picker can be migrated to it later.
+- `ReadLine.readAsync` now takes an `initial: string` parameter so callers can seed the buffer. Currently used only by `Repl`'s `nextInputPrefill` mutable for the `/menu` flow.
+
+### Changed
+- Streaming spinner moved out of status bar line 2 onto a dedicated line above the 2-line status bar. Previous layout inlined `♩ Thinking·· fugue · openai:gpt-4 · ...` and truncated on narrow terminals; new layout dedicates one row to the thinking indicator with elapsed time and cadence (`♩ Thinking ··· · 2.4s · ♩=14`). Cost: scroll region shrinks from `1..(h-2)` to `1..(h-3)`.
 
 ### Fixed
 - Windows CI green again — `BashTool` no longer hardcodes `/bin/sh` (which doesn't exist on Windows). Branches on `RuntimeInformation`: `pwsh -EncodedCommand <utf16-base64>` on Windows, `/bin/sh -c` on Unix. CI on `main` had been red since `d822355` (the "use /bin/sh universally" commit) — broken-window normalisation, now reset.
@@ -13,7 +20,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Refactor
 - Slash-command list unified into `Fugue.Cli.SlashCommands` module — single source of truth for both inline autocomplete (`ReadLine.fs`) and `/help` rendering (`Repl.fs`). Two parallel hand-maintained lists had drifted three times in a week (latest: v0.2.3); root-cause fix. `/help` now also surfaces 5 entries that previously appeared only in inline suggestions: `/quit`, `/diff --staged`, `/doctor`, `/model set`, `/model suggest`. Net diff: -64 LOC across `ReadLine.fs` + `Repl.fs`. (#902)
 
-[0.2.4]: https://github.com/korat-ai/fugue/releases/tag/v0.2.4
+[0.3.0]: https://github.com/korat-ai/fugue/releases/tag/v0.3.0
 
 ## [0.2.3] — 2026-05-01
 
