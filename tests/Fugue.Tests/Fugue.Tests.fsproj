@@ -30,6 +30,7 @@
     <Compile Include="StatusBarRenderTests.fs" />
     <Compile Include="StatusBarPropertyTests.fs" />
     <Compile Include="StatusBarActorTests.fs" />
+    <Compile Include="StatusBarHeartbeatTests.fs" />
     <Compile Include="ReadToolTests.fs" />
     <Compile Include="WriteToolTests.fs" />
     <Compile Include="EditToolTests.fs" />
