@@ -79,27 +79,22 @@ let private runWithCfg (cfg: AppConfig) : int =
         Console.Error.WriteLine("--offline requires a local provider (Ollama). Set FUGUE_PROVIDER=ollama or update ~/.fugue/config.json.")
         1
     else
-    // Phase 1.3c: start the Surface actor and redirect Console.Out / Error
-    // BEFORE any rendering init (Render / Spectre / Markdig). Spectre.AnsiConsole
-    // captures Console.Out at first use — if we redirect later, Spectre will
-    // already hold the original stdout reference and bypass our actor. Doing
-    // SetOut here ensures every downstream init wires Spectre to the actor.
+    // Surface actor: serialises StatusBar / Picker / ReadLine writes through
+    // a MailboxProcessor. Each subsystem explicitly posts its DrawOps via
+    // setAgent — no global Console.SetOut redirect (that approach was tried
+    // in Phase 1.3c and reverted: it produced a blank screen under
+    // `dotnet run` for reasons we couldn't pin down quickly).
+    //
+    // Streaming tokens / Markdown / slash commands / approval prompt still
+    // write directly to Console.Out. Race window is narrow because heartbeat
+    // re-renders only every 2s and uses absolute cursor moves; ReadLine
+    // re-anchors on every keystroke.
     let surfaceActor =
         if Console.IsInputRedirected then None
         else
             let actor = RealExecutor.start ()
             StatusBar.setAgent actor
-            // ReadLine routes structured RawAnsi through actor (Phase 1.3b).
             ReadLine.setAgent actor
-            // Phase 1.3c: redirect Console.Out / Error so all third-party
-            // writers (Spectre, Markdig, plain Console.WriteLine, our direct
-            // AnsiConsole.MarkupLine in slash commands / approval prompt /
-            // exit message) automatically funnel through the same mailbox.
-            // RealExecutor captured the real stdout at module load (above
-            // RealExecutor.start), so its own writes don't recurse.
-            let actorWriter = new ActorWriter(actor)
-            Console.SetOut   actorWriter
-            Console.SetError actorWriter
             Some actor
     let isClassic = cfg.Ui.Theme = "fugue-classic" || cfg.Ui.Theme = "monochrome"
     Render.initColor (not (noColor () || isClassic))
