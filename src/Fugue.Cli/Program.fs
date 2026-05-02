@@ -165,6 +165,14 @@ let main argv =
     Fugue.Core.Log.session ()
     Fugue.Core.Log.info "main" ("fugue starting, argv=[" + String.concat "; " argv + "]")
     CaBundle.install () |> ignore
+    // Phase 2a of #930 / #928: route migrated subcommands through the
+    // Fugue.Core.CliArgs DSL.  Today: `doctor`, `reindex`, `init`, `version`.
+    // argv[0] pre-check decides — anything else falls through to the legacy
+    // elif chain below (which still owns `man`, `aliases`, `env`, `config`,
+    // `--help`/`-h`, `--version` flag, default REPL, `--print` flow).
+    if ProgramArgs.isMigrated argv then
+        ProgramArgs.dispatch argv
+    else
     let profileContent =
         argv
         |> Array.tryFindIndex ((=) "--profile")
@@ -214,14 +222,6 @@ Options:
 Run `fugue man` for the full manual.
 """
         0
-    elif argv |> Array.contains "doctor" then
-        let cwd = Environment.CurrentDirectory
-        let passed = Doctor.run cwd
-        if passed then 0 else 1
-    elif argv |> Array.contains "reindex" then
-        match Fugue.Core.SearchIndex.reindexFromJsonl () with
-        | Ok n    -> Console.Out.WriteLine($"Reindexed {n} session(s)."); 0
-        | Error e -> Console.Error.WriteLine($"Reindex failed: {e}"); 1
     elif argv |> Array.contains "man" then
         let manContent = """fugue(1)                    Fugue Manual                    fugue(1)
 
@@ -328,48 +328,10 @@ SEE ALSO
                 Console.Write manContent
             try System.IO.File.Delete tmpFile with _ -> ()
             0
-    elif argv |> Array.contains "init" then
-        let cwd = Environment.CurrentDirectory
-        let fugueMd = System.IO.Path.Combine(cwd, "FUGUE.md")
-        if System.IO.File.Exists fugueMd then
-            Console.Error.WriteLine "FUGUE.md already exists. Edit it directly or delete it first."
-            1
-        else
-        // Detect project type from files in cwd
-        let hasFile pat =
-            try System.IO.Directory.GetFiles(cwd, pat, System.IO.SearchOption.TopDirectoryOnly).Length > 0
-            with _ -> false
-        let hasDir name = System.IO.Directory.Exists(System.IO.Path.Combine(cwd, name))
-        let stack =
-            if hasFile "*.fsproj"   then "F# / .NET"
-            elif hasFile "*.csproj" then "C# / .NET"
-            elif hasFile "package.json" then "Node.js / TypeScript"
-            elif hasFile "mix.exs"  then "Elixir / Mix"
-            elif hasFile "build.sbt" || hasFile "*.scala" then "Scala / SBT"
-            elif hasFile "pom.xml"  || hasFile "build.gradle" then "Java / JVM"
-            elif hasFile "Cargo.toml" then "Rust / Cargo"
-            elif hasFile "go.mod"   then "Go"
-            elif hasFile "pyproject.toml" || hasFile "setup.py" then "Python"
-            else "Unknown"
-        let template =
-            $"# Project context\n\n## Stack\n{stack}\n\n## Purpose\n<!-- Describe what this project does -->\n\n## Key constraints\n<!-- Performance, security, platform, team rules -->\n\n## Common tasks\n<!-- What does the AI help you with most often? -->\n"
-        System.IO.File.WriteAllText(fugueMd, template)
-        Console.WriteLine($"Detected: {stack}")
-        Console.WriteLine($"✓ Created FUGUE.md ({System.IO.File.ReadAllBytes(fugueMd).Length} bytes)")
-        // Add to .gitignore if it exists and doesn't already include it
-        let gitignore = System.IO.Path.Combine(cwd, ".gitignore")
-        if System.IO.File.Exists gitignore then
-            let content = System.IO.File.ReadAllText gitignore
-            if not (content.Contains "FUGUE.md") then
-                System.IO.File.AppendAllText(gitignore, "\nFUGUE.md\n")
-                Console.WriteLine "✓ Added FUGUE.md to .gitignore"
-        // Create .fugue/hooks/ dir
-        let hooksDir = System.IO.Path.Combine(cwd, ".fugue", "hooks")
-        System.IO.Directory.CreateDirectory hooksDir |> ignore
-        Console.WriteLine "✓ Created .fugue/hooks/ directory"
-        Console.WriteLine "Edit FUGUE.md to add project-specific context, then run: fugue"
-        0
-    elif argv |> Array.contains "version" || argv |> Array.contains "--version" then
+    elif argv |> Array.contains "--version" then
+        // `version` subcommand is migrated to ProgramArgs (Phase 2a, #930);
+        // the `--version` flag form stays here until Phase 2c migrates the
+        // top-level options.
         let asm = System.Reflection.Assembly.GetExecutingAssembly()
         let ver =
             let attr = asm.GetCustomAttributes(typeof<System.Reflection.AssemblyInformationalVersionAttribute>, false)

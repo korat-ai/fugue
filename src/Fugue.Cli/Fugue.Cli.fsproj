@@ -71,6 +71,7 @@
     <Compile Include="ToolRetryDiff.fs" />
     <Compile Include="Repl.fs" />
     <Compile Include="Doctor.fs" />
+    <Compile Include="ProgramArgs.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
