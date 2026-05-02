@@ -32,7 +32,6 @@
     <Compile Include="StatusBarActorTests.fs" />
     <Compile Include="StatusBarHeartbeatTests.fs" />
     <Compile Include="ReadLineActorRoutingTests.fs" />
-    <Compile Include="ActorWriterTests.fs" />
     <Compile Include="ApprovalModeTests.fs" />
     <Compile Include="ApprovalPromptTests.fs" />
     <Compile Include="ReadToolTests.fs" />
