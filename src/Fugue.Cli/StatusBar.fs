@@ -448,8 +448,15 @@ let refresh () =
     let state = captureState ()
     let ops   = renderStatusBar state
     match surfaceAgent with
-    | Some agent -> agent.Post(SurfaceMessage.Execute ops)   // serialised — no race
-    | None       -> applyOpsDirectly ops                     // fallback (headless / tests)
+    | Some agent ->
+        // Phase 1.3c v2: wrap paint ops in SaveAndRestore so the cursor
+        // returns to wherever streaming / ReadLine left it. With all
+        // writers funnelled through this same actor (Surface.fs), there
+        // is no parallel writer that can interject between save and
+        // restore — the wrap is therefore atomic.
+        agent.Post(SurfaceMessage.Execute [ DrawOp.SaveAndRestore ops ])
+    | None ->
+        applyOpsDirectly ops                                 // fallback (headless / tests)
 
 /// Update the config the status bar reads from. Use after `/model set` and
 /// other config-mutating commands. `start` early-returns once the bar is
@@ -475,10 +482,11 @@ let start (initialCwd: string) (initialCfg: AppConfig) : unit =
         writeRaw ("\x1b[1;" + string (height - 3) + "r")
         writeRaw ("\x1b[" + string (height - 3) + ";1H")
         refresh ()
-        // Idle heartbeat — keep timer / branch / cwd / ctx% indicators fresh
-        // when the user is just thinking. Coexists with the streaming spinner
-        // timer; coalesce in the actor dedups overlapping paints.
-        startHeartbeat refresh
+        // No idle heartbeat: each event-driven refresh (post-stream, post-tool,
+        // /model set, etc.) is enough. Periodic ticks added cursor save/restore
+        // noise without buying us live data — branch/cwd/ctx% don't change
+        // mid-thought, and elapsed time is only meaningful during streaming
+        // (where spinnerTimer drives the 300ms tick).
 
 let stop () : unit =
     if not active || not (Render.isColorEnabled ()) then () else

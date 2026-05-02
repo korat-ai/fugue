@@ -474,7 +474,7 @@ let private streamAndRender
                     | Conversation.Failed ex -> raise ex
                 else hasNext <- false
             if assistantStreaming then
-                Surface.newline ()
+                Surface.write "\r\n"  // CRLF — guarantees col 0 for the rewind
                 let text = responseText.ToString()
                 // Emit AssistantTurn with full content (Phase 3: FTS5 indexer capture).
                 if text.Length > 0 then
@@ -483,6 +483,11 @@ let private streamAndRender
                     // Replace raw streamed text with formatted markdown.
                     // Count how many terminal rows the raw output occupied, move cursor
                     // back to the start of the response, clear to end, then re-render.
+                    //
+                    // Off-by-one fix: the +1 accounts for the \r\n we just emitted —
+                    // without it the move-up lands inside the streamed text rather
+                    // than above it, and the markdown re-render concatenates onto
+                    // the existing line (visible duplication).
                     let termW = max 20 Console.WindowWidth
                     let rawLines =
                         text.TrimEnd([|'\n'; '\r'|]).Split('\n')
@@ -490,7 +495,7 @@ let private streamAndRender
                             let l = line.Length
                             if l = 0 then 1 else (l + termW - 1) / termW)
                     if rawLines > 0 then
-                        Surface.write($"\x1b[{rawLines}A\x1b[J")
+                        Surface.write($"\r\x1b[{rawLines + 1}A\x1b[J")
                     if Render.isTypewriterMode () then
                         // Render to ANSI string, then write line-by-line with async delay.
                         let lines = Render.captureLines (Render.assistantFinal text)
