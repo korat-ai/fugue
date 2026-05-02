@@ -7,11 +7,18 @@ open Fugue.Core.Config
 open Fugue.Agent
 open Fugue.Surface
 
+/// Snapshot of `Console.IsOutputRedirected` taken at module load, before
+/// Phase 1.3c installs `Console.SetOut(ActorWriter)`. After that SetOut runs,
+/// the runtime always reports stdout as redirected (we redirected it!), which
+/// would force `noColor () = true` and disable the entire TUI. Capturing here
+/// preserves the real terminal-vs-pipe answer.
+let private originalIsOutputRedirected : bool = Console.IsOutputRedirected
+
 let private noColor () =
     let isSet name = Environment.GetEnvironmentVariable name |> isNull |> not
     isSet "NO_COLOR" || isSet "FUGUE_NO_COLOR"
     || Environment.GetEnvironmentVariable "TERM" = "dumb"
-    || Console.IsOutputRedirected
+    || originalIsOutputRedirected
     || Console.IsInputRedirected
 
 [<System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Calls ToolRegistry.buildAll which uses AgentSessionExtensions over STJ state")>]
