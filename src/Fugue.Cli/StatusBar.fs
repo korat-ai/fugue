@@ -210,7 +210,27 @@ let mutable private lowBandwidthMode = false
 let mutable private templateName : string option = None
 let mutable private scheduleActive = false
 let mutable private spinnerTimer  : System.Threading.Timer option = None
+let mutable private idleTimer     : System.Threading.Timer option = None
+let mutable internal heartbeatPeriodMs : int = 2000
 let mutable private onTick        : (unit -> unit) = fun () -> ()
+
+/// Idle heartbeat — repaints status bar every `heartbeatPeriodMs` ms even
+/// when no explicit events fire, so timer / branch / cwd indicators don't go
+/// stale. During streaming the 300ms `spinnerTimer` ALSO runs in parallel;
+/// the actor's coalesce pass in `RealExecutor` dedups overlapping same-region
+/// paints, so the cost is one coalesce walk per overlap.
+let internal startHeartbeat (onTickFn: unit -> unit) : unit =
+    let t = new System.Threading.Timer(
+                System.Threading.TimerCallback(fun _ ->
+                    try onTickFn ()
+                    with _ -> ()),  // never let a render exception kill the timer
+                null, heartbeatPeriodMs, heartbeatPeriodMs)
+    idleTimer <- Some t
+
+let internal stopHeartbeat () : unit =
+    match idleTimer with
+    | Some t -> t.Dispose(); idleTimer <- None
+    | None   -> ()
 
 /// The Surface MailboxProcessor actor — set once by Program.fs before Repl.run.
 /// When set, refresh() posts DrawOps via the actor (serialises all writes).
@@ -420,9 +440,15 @@ let start (initialCwd: string) (initialCfg: AppConfig) : unit =
         writeRaw ("\x1b[1;" + string (height - 3) + "r")
         writeRaw ("\x1b[" + string (height - 3) + ";1H")
         refresh ()
+        // Idle heartbeat — keep timer / branch / cwd / ctx% indicators fresh
+        // when the user is just thinking. Coexists with the streaming spinner
+        // timer; coalesce in the actor dedups overlapping paints.
+        startHeartbeat refresh
 
 let stop () : unit =
     if not active || not (Render.isColorEnabled ()) then () else
+    // Stop the heartbeat first — no point firing more refreshes while we erase.
+    stopHeartbeat ()
     if not compactMode then
         let height = Console.WindowHeight
         // Erase the 3 reserved rows and reset scroll region.
