@@ -49,6 +49,7 @@ These are **hard rules**. Don't ask, just follow.
   `dotnet build` / `dotnet test` run under JIT and will NOT catch AOT-specific failures (e.g. `MakeGenericMethod`, missing native code). Only the published native binary reveals them.
 - **`git status` stays clean.** No stray files, no half-finished `.bak`/`.tmp`. Tree is always merge-ready.
 - **No tests-on-mocks for things that hit the real boundary.** Tools tests run against `tmp/` directories; config tests isolate `HOME`.
+- **Never squash-merge PRs. Use `--merge` (merge commit) or `--rebase`.** Squash rewrites SHAs, which breaks stacked PRs (downstream branches lose their common history, GitHub auto-closes them when the base branch is deleted). Merge commits preserve original SHAs so downstream PRs see their predecessors as "already applied" and continue cleanly. Default: `gh pr merge <N> --merge --delete-branch`. Past incident: squash-merging Phase 1.2a auto-closed PR #905 and #906 (had to recreate as #907 + #908). Never repeat.
 - **Semver release policy:**
   - **New features → minor bump** (e.g. `0.1.0` → `0.2.0`). Default for any user-visible feature, command, UX change.
   - **Bug fixes → patch bump** (e.g. `0.2.0` → `0.2.1`). Only when no new behavior, just fixing existing.
