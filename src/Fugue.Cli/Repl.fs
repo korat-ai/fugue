@@ -404,7 +404,7 @@ let private streamAndRender
                         toolCallsThisTurn <- toolCallsThisTurn + 1
                         recordFn (Fugue.Core.SessionRecord.ToolCall(DateTimeOffset.UtcNow, name, args, id))
                         if assistantStreaming then
-                            Surface.newline ()
+                            Surface.lineBreak ()
                             assistantStreaming <- false
                         // Show a retry diff when the same tool previously failed with different args.
                         match failedArgs.TryGetValue name with
@@ -468,43 +468,20 @@ let private streamAndRender
                             else Render.Completed(name, args, output, elapsed)
                         if not zen then
                             Surface.writeRenderable(Render.toolBullet strings state)
-                            Surface.newline ()
+                            Surface.lineBreak ()
                         StatusBar.refresh()
                     | Conversation.Finished -> ()
                     | Conversation.Failed ex -> raise ex
                 else hasNext <- false
             if assistantStreaming then
-                Surface.write "\r\n"  // CRLF — guarantees col 0 for the rewind
                 let text = responseText.ToString()
                 // Emit AssistantTurn with full content (Phase 3: FTS5 indexer capture).
                 if text.Length > 0 then
                     recordFn (Fugue.Core.SessionRecord.AssistantTurn(DateTimeOffset.UtcNow, text))
-                if Render.isColorEnabled () then
-                    // Replace raw streamed text with formatted markdown.
-                    // Count how many terminal rows the raw output occupied, move cursor
-                    // back to the start of the response, clear to end, then re-render.
-                    //
-                    // Off-by-one fix: the +1 accounts for the \r\n we just emitted —
-                    // without it the move-up lands inside the streamed text rather
-                    // than above it, and the markdown re-render concatenates onto
-                    // the existing line (visible duplication).
-                    let termW = max 20 Console.WindowWidth
-                    let rawLines =
-                        text.TrimEnd([|'\n'; '\r'|]).Split('\n')
-                        |> Array.sumBy (fun line ->
-                            let l = line.Length
-                            if l = 0 then 1 else (l + termW - 1) / termW)
-                    if rawLines > 0 then
-                        Surface.write($"\r\x1b[{rawLines + 1}A\x1b[J")
-                    if Render.isTypewriterMode () then
-                        // Render to ANSI string, then write line-by-line with async delay.
-                        let lines = Render.captureLines (Render.assistantFinal text)
-                        for line in lines do
-                            Surface.writeLine line
-                            do! Task.Delay 12
-                    else
-                        Surface.writeRenderable(Render.assistantFinal text)
-                        Surface.newline ()
+                let final =
+                    if Render.isColorEnabled () then Some (Render.assistantFinal text)
+                    else None
+                do! StreamRender.finalizeTurn text final (Render.isTypewriterMode ())
                 let wordCount = text.Split([|' '; '\n'; '\r'; '\t'|], StringSplitOptions.RemoveEmptyEntries).Length
                 StatusBar.recordWords wordCount
                 if wordCount >= 20 then
@@ -526,13 +503,13 @@ let private streamAndRender
                 lastResponseWasPlan <- Fugue.Core.ConversationIntent.looksLikePlan (responseText.ToString())
         with
         | :? OperationCanceledException ->
-            if assistantStreaming then Surface.newline ()
+            if assistantStreaming then Surface.lineBreak ()
             Surface.writeRenderable(Render.cancelled strings)
-            Surface.newline ()
+            Surface.lineBreak ()
         | ex ->
-            if assistantStreaming then Surface.newline ()
+            if assistantStreaming then Surface.lineBreak ()
             Surface.writeRenderable(Render.errorLine strings ex.Message)
-            Surface.newline ()
+            Surface.lineBreak ()
             lastFailedTurn <- Some { BugReport.UserPrompt = input; BugReport.ToolCalls = errorToolCalls |> Seq.toList; BugReport.AiResponse = responseText.ToString(); BugReport.ErrorText = Some ex.Message }
     finally
         StatusBar.stopStreaming()
@@ -607,7 +584,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
             Surface.markupLine "[yellow bold]⚑ dry-run[/] [dim]— tools will log calls without executing[/]"
         else
             Surface.writeLine "⚑ dry-run — tools will log calls without executing"
-        Surface.newline ()
+        Surface.lineBreak ()
     // Show last-session resuming hint if available
     let strings0 = pick cfg.Ui.Locale
     lastSummary |> Option.iter (fun s ->
@@ -617,14 +594,14 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
             Surface.markupLine($"[dim]{Markup.Escape msg}[/]")
         else
             Surface.writeLine msg
-        Surface.newline ())
+        Surface.lineBreak ())
     // Show template badge on startup
     cfg.TemplateName |> Option.iter (fun name ->
         if Render.isColorEnabled () then
             Surface.markupLine($"[dim cyan]▸ template: {Markup.Escape name}[/]")
         else
             Surface.writeLine($"template: {name}")
-        Surface.newline ())
+        Surface.lineBreak ())
     prelude cfg
     Surface.write "\x1b[?2004h"   // enable bracketed paste
 
@@ -644,7 +621,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
             Surface.markupLine($"[dim]▸ .env detected ({lines.Length} vars){badge} — /env load to import[/]")
         else
             Surface.writeLine($".env detected ({lines.Length} vars) — /env load to import")
-        Surface.newline ()
+        Surface.lineBreak ()
 
     // Load .fugue/ignore patterns (lines starting with # are comments)
     let ignorePatterns =
@@ -736,10 +713,10 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
             let watchTriggers = FileWatcher.drain ()
             for wcmd in watchTriggers do
                 Surface.writeRenderable(Markup($"[dim]⟳ watch → {Markup.Escape wcmd}[/]"))
-                Surface.newline ()
+                Surface.lineBreak ()
                 turnNumber <- turnNumber + 1
                 Surface.writeRenderable(Render.userMessage cfg.Ui $"[watch] {wcmd}" turnNumber)
-                Surface.newline ()
+                Surface.lineBreak ()
                 prelude cfg
                 do! streamAndRender agent session wcmd cfg cancelSrc zenMode ignore
                 coda cfg
@@ -753,7 +730,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 match Macros.dequeueStep() with
                 | Some step ->
                     Surface.writeRenderable(Markup($"[dim]▶ {Markup.Escape step}[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                     System.Threading.Tasks.Task.FromResult(Some step)
                 | None ->
                     let initial = nextInputPrefill
@@ -803,12 +780,12 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 cancelSrc.RequestQuit()
             | Some s when s = "/help" ->
                 Surface.writeRenderable(Markup("[bold]" + Markup.Escape liveStrings.HelpHeader + "[/]"))
-                Surface.newline ()
+                Surface.lineBreak ()
                 let helpItems = SlashCommands.getAll liveStrings
                 for (name, desc) in helpItems do
                     Surface.writeRenderable(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
-                    Surface.newline ()
-                Surface.newline ()
+                    Surface.lineBreak ()
+                Surface.lineBreak ()
                 Surface.markupLine "[dim]Tip: turn numbers [[N]] are searchable — use your terminal's [bold]Cmd+F[/] / [bold]Ctrl+Shift+F[/] to jump back to any past message.[/]"
                 Surface.markupLine "[dim]Tip: try [bold]/menu[/] for a scrollable arrow-key picker.[/]"
                 StatusBar.refresh ()
@@ -837,19 +814,19 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                     match proc.Start() with
                     | false ->
                         Surface.writeRenderable(Render.errorLine liveStrings liveStrings.GitLogNoRepo)
-                        Surface.newline ()
+                        Surface.lineBreak ()
                     | true ->
                         let out = proc.StandardOutput.ReadToEnd()
                         proc.WaitForExit()
                         if proc.ExitCode <> 0 || String.IsNullOrWhiteSpace out then
                             Surface.writeRenderable(Render.errorLine liveStrings liveStrings.GitLogNoRepo)
-                            Surface.newline ()
+                            Surface.lineBreak ()
                         else
                             let prompt = liveStrings.GitLogPrompt.Replace("%s", out)
                             do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 with ex ->
                     Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
                 Surface.write "\x1b[2J\x1b[H"
@@ -859,7 +836,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 let n = if String.IsNullOrWhiteSpace rawArg then 0 else (try int rawArg with _ -> 0)
                 if n <= 0 then
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.SquashUsage + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 else
                     let psi = System.Diagnostics.ProcessStartInfo()
                     psi.FileName <- "git"
@@ -875,29 +852,29 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         match proc.Start() with
                         | false ->
                             Surface.writeRenderable(Render.errorLine liveStrings liveStrings.SquashNoRepo)
-                            Surface.newline ()
+                            Surface.lineBreak ()
                         | true ->
                             let out = proc.StandardOutput.ReadToEnd()
                             proc.WaitForExit()
                             if proc.ExitCode <> 0 || String.IsNullOrWhiteSpace out then
                                 Surface.writeRenderable(Render.errorLine liveStrings liveStrings.SquashNoRepo)
-                                Surface.newline ()
+                                Surface.lineBreak ()
                             else
                                 let prompt = $"""Here are the last {n} commits to be squashed:\n\n{out}\n\nPlease generate a single conventional commit message that summarizes all these changes.\nFollow the format: type(scope): description\n\nAlso show the git command to execute the squash:\n  git reset --soft HEAD~{n} && git commit -m "<your message>"\n\nDo NOT run the command — just show it for the user to review and run manually."""
                                 do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                     with ex ->
                         Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
-                        Surface.newline ()
+                        Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/short" ->
                 verbosityPrefix <- Some "[VERBOSITY: respond briefly, 1-2 sentences per point, no elaboration unless asked]\n\n"
                 Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.VerbosityShortSet + "[/]"))
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/long" ->
                 verbosityPrefix <- Some "[VERBOSITY: respond in detail, include explanations, examples, and context]\n\n"
                 Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.VerbosityLongSet + "[/]"))
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/zen" ->
                 zenMode <- not zenMode
@@ -907,7 +884,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 else
                     StatusBar.start cwd cfg
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ZenOff + "[/]"))
-                Surface.newline ()
+                Surface.lineBreak ()
                 if not zenMode then StatusBar.refresh ()
             | Some s when s.StartsWith "/snippet" ->
                 let parts = s.Split(' ', StringSplitOptions.RemoveEmptyEntries)
@@ -920,8 +897,8 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         for KeyValue(name, (lang, code, src)) in snippetStore do
                             let preview = code.Split('\n').[0].[..60].Trim()
                             Surface.writeRenderable(Markup($"  [cyan]{Markup.Escape name}[/] [dim]({Markup.Escape lang} · {Markup.Escape src})[/]  {Markup.Escape preview}"))
-                            Surface.newline ()
-                    Surface.newline ()
+                            Surface.lineBreak ()
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
                 | "save" when parts.Length >= 4 ->
                     let name = parts.[2]
@@ -930,7 +907,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                     let colonIdx = fileRef.LastIndexOf ':'
                     if colonIdx < 1 then
                         Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.SnippetUsage + "[/]"))
-                        Surface.newline ()
+                        Surface.lineBreak ()
                     else
                         let filePart = fileRef.[..colonIdx-1]
                         let rangePart = fileRef.[colonIdx+1..]
@@ -949,10 +926,10 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                                 let lang = if ext = "" then "text" else ext
                                 snippetStore <- snippetStore |> Map.add name (lang, code, fileRef)
                                 Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetSaved, name)) + "[/]"))
-                            Surface.newline ()
+                            Surface.lineBreak ()
                         | _ ->
                             Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.SnippetUsage + "[/]"))
-                            Surface.newline ()
+                            Surface.lineBreak ()
                     StatusBar.refresh ()
                 | "inject" when parts.Length >= 3 ->
                     let query = parts.[2..] |> String.concat " "
@@ -964,10 +941,10 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                     match found with
                     | None ->
                         Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetNotFound, query)) + "[/]"))
-                        Surface.newline ()
+                        Surface.lineBreak ()
                     | Some(lang, code, _) ->
                         Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetInjected, query)) + "[/]"))
-                        Surface.newline ()
+                        Surface.lineBreak ()
                         let block = $"```{lang}\n{code}\n```"
                         do! streamAndRender agent session block cfg cancelSrc zenMode ignore
                     StatusBar.refresh ()
@@ -978,11 +955,11 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetRemoved, name)) + "[/]"))
                     else
                         Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetNotFound, name)) + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
                 | _ ->
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.SnippetUsage + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
             | Some s when s = "/bookmarks" || (s.StartsWith "/bookmark " && s.Contains " remove ") || s.StartsWith "/bookmark" ->
                 let parts = s.Split(' ', StringSplitOptions.RemoveEmptyEntries)
@@ -991,11 +968,11 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 if isBookmarks then
                     if bookmarks.IsEmpty then
                         Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.BookmarkNone + "[/]"))
-                        Surface.newline ()
+                        Surface.lineBreak ()
                     else
                         for (i, (name, file, s1, e1)) in bookmarks |> List.indexed do
                             Surface.writeRenderable(Markup($"  [cyan]{i+1}.[/] [bold]{Markup.Escape name}[/] [dim]{Markup.Escape file}:{s1}-{e1}[/]"))
-                            Surface.newline ()
+                            Surface.lineBreak ()
                     StatusBar.refresh ()
                 elif isRemove then
                     let name = parts.[2..] |> String.concat " "
@@ -1005,7 +982,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.BookmarkRemoved, name)) + "[/]"))
                     else
                         Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.BookmarkNotFound, name)) + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
                 elif parts.Length >= 2 then
                     let name = parts.[1]
@@ -1048,11 +1025,11 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                     | Some(fullPath, s1, e1) ->
                         bookmarks <- bookmarks @ [(name, fullPath, s1, e1)]
                         Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.BookmarkSaved, name)) + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
                 else
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.BookmarkUsage + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
             | Some s when s = "/clear-history" ->
                 match box session with
@@ -1064,18 +1041,18 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                     session <- newSession
                     sessionRef.Value <- session
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ClearHistoryDone + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 with ex ->
                     session <- null
                     sessionRef.Value <- session
                     Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/http " || s = "/http" ->
                 let raw = if s = "/http" then "" else s.Substring("/http ".Length)
                 if raw.Trim() = "" then
                     Surface.writeRenderable(Markup("[dim]Usage: /http METHOD URL [-H \"K: V\"] [-d BODY] [--timeout N] [--inject][/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 else
                     // Parse: METHOD URL [-H "K: V"]... [-d BODY] [--timeout N] [--inject]
                     let argv = raw.Trim().Split(' ', System.StringSplitOptions.RemoveEmptyEntries) |> Array.toList
@@ -1112,7 +1089,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         | _ -> i <- i + 1
                     if url = "" then
                         Surface.writeRenderable(Markup("[red]Missing URL[/]"))
-                        Surface.newline ()
+                        Surface.lineBreak ()
                     else
                         use client = new System.Net.Http.HttpClient()
                         client.Timeout <- System.TimeSpan.FromSeconds(float timeoutSec)
@@ -1135,23 +1112,23 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                                 Surface.writeLine($"HTTP {status} {resp.StatusCode}")
                             let preview = if respBody.Length > 4096 then respBody.[..4095] + $"\n… [{respBody.Length} chars total]" else respBody
                             Surface.writeRenderable(Render.assistantFinal preview)
-                            Surface.newline ()
+                            Surface.lineBreak ()
                             if inject then
                                 let ctx = $"[HTTP response from {method'} {url} — status {status}]\n{respBody}"
                                 turnNumber <- turnNumber + 1
                                 Surface.writeRenderable(Render.userMessage cfg.Ui $"[injected HTTP response from {method'} {url}]" turnNumber)
-                                Surface.newline ()
+                                Surface.lineBreak ()
                                 do! streamAndRender agent session ctx cfg cancelSrc zenMode ignore
                         with ex ->
                             Surface.writeRenderable(Render.errorLine liveStrings $"HTTP error: {ex.Message}")
-                            Surface.newline ()
+                            Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/tools" ->
                 Surface.writeRenderable(Markup("[bold]" + Markup.Escape liveStrings.ToolsHeader + "[/]"))
-                Surface.newline ()
+                Surface.lineBreak ()
                 for (name, desc) in Fugue.Tools.ToolRegistry.descriptions do
                     Surface.writeRenderable(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/compat" ->
                 let env (k: string) = System.Environment.GetEnvironmentVariable k |> Option.ofObj |> Option.defaultValue ""
@@ -1250,7 +1227,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                             benchAborted <- true
                 if benchAborted then
                     Surface.writeRenderable(Render.errorLine liveStrings liveStrings.BenchAborted)
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 elif ttfts.Count > 0 then
                     let pct (data: System.Collections.Generic.List<int64>) (p: int) =
                         let sorted = data |> Seq.sort |> Seq.toArray
@@ -1283,7 +1260,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 let records = Fugue.Core.SessionSummary.loadHistory cwd nArg
                 if records.IsEmpty then
                     Surface.writeRenderable(Markup("[dim]no session history yet[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 else
                     for (idx, (ts, summary)) in records |> List.mapi (fun i r -> i, r) do
                         let ago =
@@ -1294,11 +1271,11 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         if Render.isColorEnabled () then
                             Surface.markupLine($"[dim]#{idx + 1} ({ago})[/]")
                             Surface.writeRenderable(MarkdownRender.toRenderable summary)
-                            Surface.newline ()
+                            Surface.lineBreak ()
                         else
                             Surface.writeLine($"#{idx + 1} ({ago})")
                             Surface.writeLine summary
-                            Surface.newline ()
+                            Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some "/turns" ->
                 let records = Fugue.Core.SessionPersistence.readRecords sessionFilePath
@@ -1427,7 +1404,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 let rawArg = if s = "/issue" then "" else s.Substring(7).TrimStart()
                 if String.IsNullOrWhiteSpace rawArg then
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.IssueUsage + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 else
                     let psi = System.Diagnostics.ProcessStartInfo()
                     psi.FileName <- "gh"
@@ -1446,14 +1423,14 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         match proc.Start() with
                         | false ->
                             Surface.writeRenderable(Render.errorLine liveStrings (String.Format(liveStrings.IssueNotFound, rawArg)))
-                            Surface.newline ()
+                            Surface.lineBreak ()
                         | true ->
                             let output = proc.StandardOutput.ReadToEnd()
                             proc.WaitForExit()
                             if proc.ExitCode <> 0 then
                                 let err = proc.StandardError.ReadToEnd().Trim()
                                 Surface.writeRenderable(Render.errorLine liveStrings (String.Format(liveStrings.IssueNotFound, err)))
-                                Surface.newline ()
+                                Surface.lineBreak ()
                             else
                                 // Extract a string field from compact gh JSON output (AOT-safe, no JsonSerializer)
                                 let extractField (field: string) (json: string) =
@@ -1483,7 +1460,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                                 let body  = extractField "body"  output
                                 let issueContext = $"Issue #{rawArg}: {title}\n\n{body}"
                                 Surface.markupLine($"[dim]{Markup.Escape (String.Format(liveStrings.IssueFetched, rawArg, title))}[/]")
-                                Surface.newline ()
+                                Surface.lineBreak ()
                                 // Best-effort branch creation
                                 let slugify (src: string) =
                                     src.ToLowerInvariant()
@@ -1510,17 +1487,17 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                                         gitProc.WaitForExit()
                                         if gitProc.ExitCode = 0 then
                                             Surface.markupLine($"[dim]created branch {Markup.Escape branchName}[/]")
-                                            Surface.newline ()
+                                            Surface.lineBreak ()
                                 with _ -> ()   // git unavailable or not a repo — silent
                                 // Inject issue context into conversation
                                 do! streamAndRender agent session issueContext cfg cancelSrc zenMode ignore
                     with ex ->
                         Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
-                        Surface.newline ()
+                        Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/model suggest" ->
                 Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.AskingModelRecommendation + "[/]"))
-                Surface.newline ()
+                Surface.lineBreak ()
                 do! streamAndRender agent session liveStrings.ModelSuggestPrompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s = "/model" || s = "/model list" ->
@@ -1594,12 +1571,12 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         if colour then "[dim]↑/↓ navigate · Enter select · Esc cancel[/]"
                         else "↑/↓ navigate · Enter select · Esc cancel"
 
-                    Surface.newline ()
+                    Surface.lineBreak ()
                     // Initial render. Each row + blank line + footer.
                     for i in 0 .. totalRows - 1 do
                         if colour then Surface.markupLine(renderRow i (i = 0))
                         else Surface.writeLine(renderRow i (i = 0))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                     if colour then Surface.markupLine footer
                     else Surface.writeLine footer
 
@@ -1613,7 +1590,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                             if colour then Surface.markupLine(renderRow i (i = idx))
                             else Surface.writeLine(renderRow i (i = idx))
                         Surface.write "\x1b[K"
-                        Surface.newline ()
+                        Surface.lineBreak ()
                         Surface.write "\x1b[K"
                         if colour then Surface.markupLine footer
                         else Surface.writeLine footer
@@ -1665,7 +1642,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         Surface.markupLine "[dim]Cancelled[/]"
                     | Some i when i = suggestIdx ->
                         Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.AskingModelRecommendation + "[/]"))
-                        Surface.newline ()
+                        Surface.lineBreak ()
                         do! streamAndRender agent session liveStrings.ModelSuggestPrompt cfg cancelSrc zenMode ignore
                     | Some i ->
                         do! pickModel modelsArr.[i]
@@ -1749,24 +1726,24 @@ Please generate a clear, actionable onboarding checklist."""
                 do! streamAndRender agent session onboardPrompt cfg cancelSrc zenMode ignore
             | Some s when s = "/review pr" || s = "/review pr " ->
                 Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrUsage + "[/]"))
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/review pr " ->
                 let arg = s.Substring(11).Trim()
                 match System.Int32.TryParse arg with
                 | false, _ ->
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrUsage + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 | true, prNum when prNum < 1 ->
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrUsage + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 | true, prNum ->
                     let meta = runCmd "gh" [| "pr"; "view"; string prNum; "--json"; "title,body" |] cwd
                     let diff = runCmd "gh" [| "pr"; "diff"; string prNum |] cwd
                     match diff with
                     | None ->
                         Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrNotFound + "[/]"))
-                        Surface.newline ()
+                        Surface.lineBreak ()
                     | Some diffText ->
                         let truncatedDiff =
                             if diffText.Length > 8000 then diffText.[..7999] + "\n[diff truncated]"
@@ -1778,23 +1755,23 @@ Please generate a clear, actionable onboarding checklist."""
                                 .Replace("{1}", titleBody)
                                 .Replace("{2}", truncatedDiff)
                         Surface.writeRenderable(Render.userMessage cfg.Ui $"Reviewing PR #{prNum}…" 0)
-                        Surface.newline ()
+                        Surface.lineBreak ()
                         do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/ask " ->
                 let question = s.Substring(5).Trim()
                 if String.IsNullOrWhiteSpace question then
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.AskUsage + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 else
                     let augmented = $"[System: answer from your training knowledge only — do not invoke any tools, do not read files, do not run commands]\n\nUser: {question}"
                     Surface.writeRenderable(Render.userMessage cfg.Ui question 0)
-                    Surface.newline ()
+                    Surface.lineBreak ()
                     do! streamAndRender agent session augmented cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s = "/ask" ->
                 Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.AskUsage + "[/]"))
-                Surface.newline ()
+                Surface.lineBreak ()
             | Some s when s = "/diff" || s = "/diff --staged" ||
                           (s.StartsWith("/diff ") && s <> "/diff --staged") ->
                 let rest = if s.Length > 6 then s.Substring(6).Trim() else ""
@@ -1829,22 +1806,22 @@ Please generate a clear, actionable onboarding checklist."""
                     if proc.ExitCode <> 0 && not (isTwoFile && proc.ExitCode = 1) then
                         let msg = if errOut <> "" then errOut else $"git diff exited {proc.ExitCode}"
                         Surface.writeRenderable(Render.errorLine liveStrings msg)
-                        Surface.newline ()
+                        Surface.lineBreak ()
                     elif System.String.IsNullOrWhiteSpace output then
                         Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.NoDiff + "[/]"))
-                        Surface.newline ()
+                        Surface.lineBreak ()
                     else
                         Surface.writeRenderable(DiffRender.toRenderable output)
-                        Surface.newline ()
+                        Surface.lineBreak ()
                 with ex ->
                     Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/init" ->
                 let fugueMdPath = System.IO.Path.Combine(cwd, "FUGUE.md")
                 if System.IO.File.Exists fugueMdPath then
                     Surface.writeRenderable(Markup("[yellow]" + Markup.Escape liveStrings.InitExists + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
                 else
                     let initPrompt =
@@ -1859,7 +1836,7 @@ Please generate a clear, actionable onboarding checklist."""
                         "Keep it concise — aim for 50-150 lines. Use Markdown headers.\n" +
                         "Write the file to ./FUGUE.md using the Write tool."
                     Surface.writeRenderable(Render.userMessage cfg.Ui "/init" 0)
-                    Surface.newline ()
+                    Surface.lineBreak ()
                     do! streamAndRender agent session initPrompt cfg cancelSrc zenMode ignore
                     StatusBar.refresh ()
             | Some s when s = "/new" ->
@@ -1876,7 +1853,7 @@ Please generate a clear, actionable onboarding checklist."""
                     session <- null
                     sessionRef.Value <- session
                     Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 turnNumber <- 0
                 sessionNotes <- []
                 lastFile <- None
@@ -1925,7 +1902,7 @@ Please generate a clear, actionable onboarding checklist."""
                             proc.WaitForExit()
                         with ex ->
                             Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
-                            Surface.newline ()
+                            Surface.lineBreak ()
                     finally
                         cancelSrc.ExitChild ()
                         StatusBar.start cwd cfg
@@ -1949,7 +1926,7 @@ Please generate a clear, actionable onboarding checklist."""
                     else
                         Surface.writeLine($"Bug report saved to {tmpPath}")
                         Surface.writeLine($"To file: gh issue create -R korat-ai/fugue --title '...' --body-file {tmpPath}")
-                Surface.newline ()
+                Surface.lineBreak ()
             | Some s when s = "/summary" ->
                 let summaryPrompt =
                     "Please generate a structured summary of our session so far.\n\n" +
@@ -1959,7 +1936,7 @@ Please generate a clear, actionable onboarding checklist."""
                     "- Any open questions or next steps\n\n" +
                     "Be concise but complete."
                 Surface.writeRenderable(Render.userMessage cfg.Ui "/summary" 0)
-                Surface.newline ()
+                Surface.lineBreak ()
                 do! streamAndRender agent session summaryPrompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/document" ->
@@ -1971,13 +1948,13 @@ Please generate a clear, actionable onboarding checklist."""
                         if clean.StartsWith "docs/" then clean else "docs/" + clean
                 let docPrompt = System.String.Format(liveStrings.DocumentPrompt, docPath)
                 Surface.writeRenderable(Render.userMessage cfg.Ui $"/document {docPath}" 0)
-                Surface.newline ()
+                Surface.lineBreak ()
                 do! streamAndRender agent session docPrompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s = "/activity" ->
                 if activityStore.IsEmpty then
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ActivityNone + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 else
                     let maxCount = activityStore |> Map.toSeq |> Seq.map snd |> Seq.max
                     let sorted = activityStore |> Map.toSeq |> Seq.sortByDescending snd |> Seq.truncate 20
@@ -1994,7 +1971,7 @@ Please generate a clear, actionable onboarding checklist."""
                             Surface.markupLine($"  [cyan]{heat}[/] [dim]{Markup.Escape label}[/] [grey]{count}x[/]")
                         else
                             printfn "  %s %s %dx" bar label count
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/macro" ->
                 let rest = s.Substring("/macro".Length).Trim()
@@ -2035,7 +2012,7 @@ Please generate a clear, actionable onboarding checklist."""
                         Surface.markupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroNotFound, arg))}[/]")
                 | _ ->
                     Surface.markupLine($"[dim]{Markup.Escape liveStrings.MacroUsage}[/]")
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/theme" ->
                 let sub = s.Substring("/theme".Length).Trim()
@@ -2060,7 +2037,7 @@ Please generate a clear, actionable onboarding checklist."""
                     try Config.saveToFile { cfg with Ui = savedUi } with _ -> ()
                 | _ ->
                     Surface.markupLine($"[dim]{Markup.Escape liveStrings.ThemeUsage}[/]")
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/alias" ->
                 let parts = s.Split(' ', StringSplitOptions.RemoveEmptyEntries)
@@ -2072,13 +2049,13 @@ Please generate a clear, actionable onboarding checklist."""
                     else
                         for KeyValue(name, expansion) in aliasStore do
                             Surface.writeRenderable(Markup($"  [cyan]/{Markup.Escape name}[/] [dim]→ {Markup.Escape expansion}[/]"))
-                            Surface.newline ()
-                    Surface.newline ()
+                            Surface.lineBreak ()
+                    Surface.lineBreak ()
                 | "remove" when parts.Length >= 3 ->
                     let name = parts.[2]
                     aliasStore <- aliasStore |> Map.remove name
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.AliasRemoved, name)) + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 | _ ->
                     // Parse: /alias <name> = <expansion>
                     let rest = s.Substring("/alias ".Length)
@@ -2093,7 +2070,7 @@ Please generate a clear, actionable onboarding checklist."""
                             Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.AliasSet, name, expansion)) + "[/]"))
                         else
                             Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.AliasUsage + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/cron" || s.StartsWith "/cron " ->
                 let desc = (if s = "/cron" then "" else s.Substring(5)).Trim().ToLowerInvariant()
@@ -2290,75 +2267,75 @@ Please generate a clear, actionable onboarding checklist."""
                     let text = scratchLines |> String.concat "\n"
                     scratchLines <- []
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ScratchSent + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                     do! streamAndRender agent session text cfg cancelSrc zenMode ignore
                 | "send" ->
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ScratchEmpty + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 | "clear" ->
                     scratchLines <- []
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ScratchCleared + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 | "show" ->
                     if scratchLines.IsEmpty then
                         Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ScratchEmpty + "[/]"))
                     else
                         Surface.writeRenderable(Markup("[bold]" + Markup.Escape liveStrings.ScratchShowHeader + "[/]"))
-                        Surface.newline ()
+                        Surface.lineBreak ()
                         for line in scratchLines do
                             Surface.writeRenderable(Markup("[dim]  " + Markup.Escape line + "[/]"))
-                            Surface.newline ()
-                    Surface.newline ()
+                            Surface.lineBreak ()
+                    Surface.lineBreak ()
                 | text when not (String.IsNullOrWhiteSpace text) ->
                     scratchLines <- scratchLines @ [text]
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.ScratchAppended, scratchLines.Length)) + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 | _ ->
                     // /scratch alone with no subcommand: show usage
                     Surface.writeRenderable(Markup("[dim]usage: /scratch <text> | /scratch send | /scratch show | /scratch clear[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/watches" ->
                 let ws = FileWatcher.list ()
                 if ws.IsEmpty then
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.WatchNone + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 else
                     for (path, cmd) in ws do
                         Surface.writeRenderable(Markup($"  [cyan]{Markup.Escape path}[/] → [dim]{Markup.Escape cmd}[/]"))
-                        Surface.newline ()
+                        Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/unwatch " ->
                 let path = s.Substring("/unwatch ".Length).Trim()
                 let absPath = System.IO.Path.GetFullPath(path)
                 FileWatcher.remove absPath
                 Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.WatchRemoved, path)) + "[/]"))
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/watch " ->
                 let rest = s.Substring("/watch ".Length).Trim()
                 let spaceIdx = rest.IndexOf ' '
                 if spaceIdx <= 0 then
                     Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.WatchUsage + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 else
                     let path = rest.Substring(0, spaceIdx).Trim()
                     let cmd  = rest.Substring(spaceIdx + 1).Trim()
                     let absPath = System.IO.Path.GetFullPath(path)
                     if not (System.IO.File.Exists absPath) then
                         Surface.writeRenderable(Markup($"[dim]{Markup.Escape (System.String.Format(liveStrings.AtFileNotFound, path))}[/]"))
-                        Surface.newline ()
+                        Surface.lineBreak ()
                     else
                         FileWatcher.add absPath cmd
                         Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.WatchAdded, path, cmd)) + "[/]"))
-                        Surface.newline ()
+                        Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/note " ->
                 let text = s.Substring("/note ".Length).Trim()
                 if not (String.IsNullOrWhiteSpace text) then
                     sessionNotes <- sessionNotes @ [(turnNumber, text)]
                     Surface.markupLine($"[dim]{Markup.Escape liveStrings.NoteAdded}[/]")
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/notes" ->
                 if sessionNotes.IsEmpty then
@@ -2369,7 +2346,7 @@ Please generate a clear, actionable onboarding checklist."""
                             Surface.markupLine($"[dim][[turn {turn}]][/] {Markup.Escape text}")
                         else
                             Surface.writeLine($"[turn {turn}] {text}")
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/undo" ->
                 match Fugue.Core.Checkpoint.undo () with
@@ -2379,7 +2356,7 @@ Please generate a clear, actionable onboarding checklist."""
                     Surface.markupLine($"[green]✓[/] {Markup.Escape liveStrings.UndoRestored}: [dim]{Markup.Escape path}[/]")
                 | Fugue.Core.Checkpoint.Deleted path ->
                     Surface.markupLine($"[yellow]✓[/] {Markup.Escape liveStrings.UndoDeleted}: [dim]{Markup.Escape path}[/]")
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/todo" ->
                 let tryRun (exe: string) (args: string[]) =
@@ -2411,10 +2388,10 @@ Please generate a clear, actionable onboarding checklist."""
                 match results with
                 | None ->
                     Surface.writeRenderable(Render.errorLine liveStrings "rg and grep unavailable")
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 | Some "" ->
                     Surface.markupLine("[dim]" + Markup.Escape liveStrings.TodoNone + "[/]")
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 | Some output ->
                     let lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                     let truncated, note =
@@ -2430,7 +2407,7 @@ Please generate a clear, actionable onboarding checklist."""
                 let query = s.Substring("/find ".Length).Trim()
                 if String.IsNullOrWhiteSpace query then
                     Surface.writeRenderable(Markup("[dim]Usage: /find <query>[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 else
                     // Two-pass: filename fuzzy match + content grep for query terms
                     let fuzzyScore (q: string) (candidate: string) =
@@ -2486,13 +2463,13 @@ Please generate a clear, actionable onboarding checklist."""
                             else
                                 Surface.writeLine($"{rel}{snipStr}")
                         Surface.markupLine($"[dim]{Markup.Escape liveStrings.FindInjectHint}[/]")
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/summarize" ->
                 let rawArg = s.Substring("/summarize".Length).Trim()
                 if System.String.IsNullOrWhiteSpace rawArg then
                     Surface.writeRenderable(Markup("[dim]Usage: /summarize <path>[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 else
                     let targetPath =
                         if System.IO.Path.IsPathRooted rawArg then rawArg
@@ -2505,7 +2482,7 @@ Please generate a clear, actionable onboarding checklist."""
                         else
                             $"The path '{rawArg}' does not exist. Please let me know."
                     Surface.writeRenderable(Render.userMessage cfg.Ui ("/summarize " + rawArg) 0)
-                    Surface.newline ()
+                    Surface.lineBreak ()
                     do! streamAndRender agent session summarizePrompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s = "/check exhaustive" || s.StartsWith "/check exhaustive " ->
@@ -2533,13 +2510,13 @@ Please generate a clear, actionable onboarding checklist."""
                     |> Array.toList
                 if fs0025.IsEmpty then
                     Surface.markupLine "[green]No FS0025 incomplete pattern match warnings found.[/]"
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 else
                     let diagnostics = String.concat "\n" fs0025
                     let prompt =
                         $"The build found incomplete pattern match warnings (FS0025):\n\n```\n{diagnostics}\n```\n\nPlease:\n1. Read each affected file.\n2. Add the missing match cases using `failwith \"TODO: <CaseName>\"` as placeholders.\n3. Apply the fixes using the Edit tool.\n\nFix all warnings before responding."
                     Surface.writeRenderable(Render.userMessage cfg.Ui "/check exhaustive" 0)
-                    Surface.newline ()
+                    Surface.lineBreak ()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s = "/context show" || s.StartsWith "/context show" ->
@@ -2560,7 +2537,7 @@ Please generate a clear, actionable onboarding checklist."""
                     Surface.markupLine "[dim]  (turn history token count requires provider usage reporting)[/]"
                 else
                     Surface.writeLine($"System prompt: ~{sysTok} tokens / {contextLimit} limit ({pctUsed}%%)")
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/tokens" ->
                 let wordsToTokens (text: string) =
@@ -2583,7 +2560,7 @@ Please generate a clear, actionable onboarding checklist."""
                     Surface.markupLine "[dim]  Use /context show for a full budget breakdown.[/]"
                 else
                     Surface.writeLine($"Provider: {prov}  Model: {friendly}  System: ~{sysTok} tokens")
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/locale " || s = "/locale" ->
                 let arg = if s = "/locale" then "" else s.Substring("/locale ".Length).Trim()
@@ -2614,7 +2591,7 @@ Please generate a clear, actionable onboarding checklist."""
                             Surface.markupLine($"[dim yellow]Could not save config: {Markup.Escape ex.Message}[/]")
                         else
                             Surface.writeLine($"Could not save config: {ex.Message}")
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/pin " ->
                 let msg = s.Substring("/pin ".Length).Trim()
@@ -2632,7 +2609,7 @@ Please generate a clear, actionable onboarding checklist."""
                         Surface.markupLine($"[dim green]Pinned ({pinnedMessages.Length} total): [/]{Markup.Escape msg}")
                     else
                         Surface.writeLine($"Pinned ({pinnedMessages.Length} total): {msg}")
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/pin" ->
                 if pinnedMessages.IsEmpty then
@@ -2642,7 +2619,7 @@ Please generate a clear, actionable onboarding checklist."""
                     pinnedMessages |> List.iteri (fun i m ->
                         if Render.isColorEnabled () then Surface.markupLine($"  [cyan]{i+1}.[/] {Markup.Escape m}")
                         else Surface.writeLine($"  {i+1}. {m}"))
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/compress" ->
                 // Compress context: ask AI to summarise history, then reset session and inject summary.
@@ -2683,7 +2660,7 @@ Please generate a clear, actionable onboarding checklist."""
                         sessionRef.Value <- session
                     with ex ->
                         Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
-                        Surface.newline ()
+                        Surface.lineBreak ()
                     let injection = $"[Compressed session context]\n{summary}"
                     do! streamAndRender agent session injection cfg cancelSrc zenMode ignore
                     if Render.isColorEnabled () then
@@ -2692,7 +2669,7 @@ Please generate a clear, actionable onboarding checklist."""
                         Surface.writeLine "Context compressed — previous history summarised and reset."
                 else
                     Surface.markupLine "[dim yellow]Could not generate summary — context unchanged.[/]"
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/session offload" ->
                 // 1. Flush SessionEnd to JSONL
@@ -2704,7 +2681,7 @@ Please generate a clear, actionable onboarding checklist."""
                     Surface.markupLine($"[dim]{Markup.Escape offloadMsg}[/]")
                 else
                     Surface.writeLine offloadMsg
-                Surface.newline ()
+                Surface.lineBreak ()
                 // 3. Reset in-memory history (same pattern as /clear-history)
                 match box session with
                 | :? IAsyncDisposable as d -> try do! d.DisposeAsync().AsTask() with _ -> ()
@@ -2718,7 +2695,7 @@ Please generate a clear, actionable onboarding checklist."""
                     do! streamAndRender agent session offloadNote cfg cancelSrc zenMode ignore
                 with ex ->
                     Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 // 5. Reset per-turn counters (keep currentSessionId so offload note references it)
                 turnNumber <- 0
                 sessionNotes <- []
@@ -2732,7 +2709,7 @@ Please generate a clear, actionable onboarding checklist."""
                         Surface.markupLine($"[red]Session not found: {Markup.Escape resumeId}[/]")
                     else
                         Surface.writeLine($"Session not found: {resumeId}")
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 | Some path ->
                     let records = Fugue.Core.SessionPersistence.readRecords path
                     let messages = System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>()
@@ -2770,7 +2747,7 @@ Please generate a clear, actionable onboarding checklist."""
                             Surface.writeLine($"Resumed session {resumeId} — {messages.Count} messages loaded.")
                     with ex ->
                         Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
-                    Surface.newline ()
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
             | Some s when s = "/sessions all" ->
                 let rows = Fugue.Core.SearchIndex.listAll 50
@@ -2796,7 +2773,7 @@ Please generate a clear, actionable onboarding checklist."""
                             let tc  = string r.TurnCount |> fun s -> s.PadLeft 5
                             let cwd = if r.Cwd.Length > 40 then "…" + r.Cwd.[r.Cwd.Length-39..] else r.Cwd
                             Surface.writeLine $"{sid}  {ts}  {tc}  {cwd}"
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/sessions" ->
                 let rows = Fugue.Core.SearchIndex.listForCwd cwd 20
@@ -2822,7 +2799,7 @@ Please generate a clear, actionable onboarding checklist."""
                             let tc  = string r.TurnCount |> fun s -> s.PadLeft 5
                             let sum = r.Summary |> Option.map (fun s -> if s.Length > 50 then s.[..49] + "…" else s) |> Option.defaultValue ""
                             Surface.writeLine $"{sid}  {ts}  {tc}  {sum}"
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/index" || s = "/index --update" ->
                 let cfg  = Fugue.Core.Index.defaultIndexConfig
@@ -2884,7 +2861,7 @@ Please generate a clear, actionable onboarding checklist."""
                                     Surface.writeLine $"{c.FilePath} L{c.StartLine}-{c.EndLine}  score={score:F3}"
                                     let preview = if c.Text.Length > 120 then c.Text.[..119] + "…" else c.Text
                                     Surface.writeLine $"  {preview}"
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/search " ->
                 let q = s.Substring("/search ".Length).Trim()
@@ -2911,7 +2888,7 @@ Please generate a clear, actionable onboarding checklist."""
                                 let cw  = if h.Cwd.Length > 35 then "…" + h.Cwd.[h.Cwd.Length-34..] else h.Cwd
                                 Surface.writeLine $"{h.SessionId.[..25]}  {ts}  {cw}"
                                 Surface.writeLine $"  {h.Snippet}"
-                Surface.newline ()
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/" ->
                 // Generic prompt-template dispatcher — catches any /command not handled above.
@@ -2941,7 +2918,7 @@ Please generate a clear, actionable onboarding checklist."""
                         Surface.writeRenderable(Markup $"[dim yellow]Unknown command: /{Markup.Escape cmd}. Type /help for a list.[/]")
                     else
                         Surface.writeLine $"Unknown command: /{cmd}. Type /help for a list."
-                    Surface.newline ()
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
                 | Some tmpl ->
                     // Build args map.
@@ -3023,24 +3000,24 @@ Please generate a clear, actionable onboarding checklist."""
                             Surface.writeRenderable(Markup $"[dim]Usage: {Markup.Escape usage}[/]")
                         else
                             Surface.write $"Usage: {usage}"
-                        Surface.newline ()
+                        Surface.lineBreak ()
                     else
                         let prompt = PromptRegistry.render tmpl argsMap
                         Surface.writeRenderable(Render.userMessage cfg.Ui s 0)
-                        Surface.newline ()
+                        Surface.lineBreak ()
                         do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                     StatusBar.refresh ()
             | Some userInput ->
                 let userInput = ReadLine.normalizeInput userInput
                 if ReadLine.hasZeroWidth userInput then
                     Surface.writeRenderable(Markup("[dim yellow]" + Markup.Escape liveStrings.ZeroWidthWarning + "[/]"))
-                    Surface.newline ()
+                    Surface.lineBreak ()
                 let expandedInput = expandAtFiles cwd liveStrings userInput
                 let expandedInput = expandClipboard expandedInput liveStrings
                 let expandedInput = expandClipRing expandedInput
                 StatusBar.recordWords (expandedInput.Split([|' '; '\n'; '\r'; '\t'|], StringSplitOptions.RemoveEmptyEntries).Length)
                 Surface.writeRenderable(Render.userMessage cfg.Ui userInput (turnNumber + 1))
-                Surface.newline ()
+                Surface.lineBreak ()
                 let expandedInput =
                     match Fugue.Core.ConversationIntent.classify lastResponseWasPlan expandedInput with
                     | Fugue.Core.ConversationIntent.Affirmation ->
@@ -3067,7 +3044,7 @@ Please generate a clear, actionable onboarding checklist."""
                                 Surface.markupLine $"[yellow]⊘ prompt blocked by hook:[/] {Markup.Escape reason}"
                             else
                                 Surface.writeLine $"⊘ prompt blocked by hook: {reason}"
-                            Surface.newline ()
+                            Surface.lineBreak ()
                         }
                     | _ ->
                         let effectiveInput =
@@ -3191,7 +3168,7 @@ let runHeadless (agent: AIAgent) (cfg: AppConfig) (_cwd: string) : Task<unit> = 
                 | Conversation.Finished -> ()
                 | Conversation.Failed ex -> raise ex
             else hasNext <- false
-        Surface.newline ()
+        Surface.lineBreak ()
 }
 
 [<RequiresUnreferencedCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
@@ -3229,6 +3206,6 @@ let runPrint (agent: AIAgent) (prompt: string) : Task<int> = task {
                     Console.Error.WriteLine($"error: {ex.Message}")
                     exitCode <- 1
             else hasNext <- false
-        Surface.newline ()
+        Surface.lineBreak ()
         return exitCode
 }

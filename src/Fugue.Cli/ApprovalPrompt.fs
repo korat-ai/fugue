@@ -39,7 +39,7 @@ let private headlessGate (mode: ApprovalMode) (toolName: string) : Async<bool> =
 let private interactivePrompt (toolName: string) (argsJson: string) : Async<bool> =
     async {
         let summary = trim argsJson 80
-        Surface.newline ()
+        Surface.lineBreak ()
         Surface.writeLine (sprintf "\x1b[33m? approve %s(%s) [y/N]\x1b[0m" toolName summary)
         Surface.flush ()  // ensure prompt is visible before ReadKey blocks
         let key = Console.ReadKey(intercept = true)

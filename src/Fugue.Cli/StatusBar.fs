@@ -436,6 +436,15 @@ let private applyOpsDirectly (ops: DrawOp list) : unit =
         | DrawOp.ResetScrollRegion ->
             let w = Console.WindowWidth
             writeRaw $"\x1b[1;{h}r\x1b[{h};{w}H"
+        | DrawOp.LineBreak ->
+            writeRaw "\r\n"
+        | DrawOp.MoveCursorUp rows ->
+            if rows > 0 then writeRaw $"\x1b[{rows}A"
+        | DrawOp.MoveCursorUpToCol0 rows ->
+            if rows > 0 then writeRaw $"\r\x1b[{rows}A"
+            else writeRaw "\r"
+        | DrawOp.ClearToEndOfScreen ->
+            writeRaw "\x1b[J"
         | DrawOp.RawAnsi text ->
             // Fallback path mirrors the actor: write verbatim.
             writeRaw text

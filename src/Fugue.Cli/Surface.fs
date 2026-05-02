@@ -23,23 +23,45 @@ let setAgent (a: MailboxProcessor<SurfaceMessage>) : unit =
 /// to know whether they need to flush themselves.
 let isWired () : bool = agent.IsSome
 
-/// Post a raw ANSI/text string into the actor as a RawAnsi DrawOp.
-/// Empty / null strings are dropped (no-op). When the actor is not wired
-/// (very early boot, --print mode, headless, tests) we fall back to
-/// direct Console.Out.Write + Flush — same shape as the writeRaw fallback
-/// that ReadLine had pre-1.3c.
+/// Post `ops` through the actor, or run `fallback` against `Console.Out`
+/// when no actor is wired (very early boot, --print mode, headless, tests).
+/// Centralises the Some/None ceremony so each public helper stays a one-liner.
+let inline private postOrFallback (ops: DrawOp list) (fallback: unit -> unit) : unit =
+    match agent with
+    | Some a -> a.Post(SurfaceMessage.Execute ops)
+    | None ->
+        fallback ()
+        Console.Out.Flush ()
+
+/// Post a raw ANSI/text string. Empty strings drop silently (no zero-length op).
 let write (s: string) : unit =
     if String.IsNullOrEmpty s then () else
-    match agent with
-    | Some a -> a.Post(SurfaceMessage.Execute [ DrawOp.RawAnsi s ])
-    | None   -> Console.Out.Write s; Console.Out.Flush ()
+    postOrFallback [ DrawOp.RawAnsi s ] (fun () -> Console.Out.Write s)
 
-/// Write text plus a trailing newline.
+/// Post a single line break — typed `DrawOp.LineBreak`. The executor decides
+/// the bytes (today: "\r\n"; tomorrow: whatever the target terminal needs).
+let lineBreak () : unit =
+    postOrFallback [ DrawOp.LineBreak ] (fun () -> Console.Out.Write "\r\n")
+
+/// Write text plus a trailing line break, atomic in the actor batch.
 let writeLine (s: string) : unit =
-    write (s + "\n")
+    if String.IsNullOrEmpty s then lineBreak () else
+    postOrFallback
+        [ DrawOp.RawAnsi s; DrawOp.LineBreak ]
+        (fun () -> Console.Out.Write s; Console.Out.Write "\r\n")
 
-/// Just a newline.
-let newline () : unit = write "\n"
+/// Rewind the cursor up `rows` rows AND to column 0 (CR + CUU as one typed op).
+/// Used by streaming finalisation to rewind to the start of the streamed
+/// region before clearing and re-rendering as Markdown.
+let rewindLines (rows: int) : unit =
+    let bytes () =
+        if rows > 0 then Console.Out.Write $"\r\x1b[{rows}A"
+        else Console.Out.Write "\r"
+    postOrFallback [ DrawOp.MoveCursorUpToCol0 rows ] bytes
+
+/// Clear from cursor to end of screen (within scroll region if active).
+let clearBelow () : unit =
+    postOrFallback [ DrawOp.ClearToEndOfScreen ] (fun () -> Console.Out.Write "\x1b[J")
 
 /// Render via Spectre.AnsiConsole into an in-memory buffer, then post the
 /// resulting ANSI string through the actor. Each call gets its own

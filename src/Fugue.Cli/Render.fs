@@ -62,7 +62,7 @@ let showBanner () : unit =
     if not colorEnabled then () else
     let title = gradientMarkup (59, 130, 246) (168, 85, 247) "Fugue"
     Surface.markupLine($"[dim]♩♪♫[/] {title}")
-    Surface.newline ()
+    Surface.lineBreak ()
 
 /// Supports {model} interpolation. Falls back to "› " if template is empty.
 let prompt (ui: Fugue.Core.Config.UiConfig) (modelShort: string) : string =

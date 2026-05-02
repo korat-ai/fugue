@@ -59,6 +59,7 @@
     <Compile Include="DiffRender.fs" />
     <Compile Include="StackTraceRender.fs" />
     <Compile Include="Render.fs" />
+    <Compile Include="StreamRender.fs" />
     <Compile Include="StatusBar.fs" />
     <Compile Include="ApprovalPrompt.fs" />
     <Compile Include="FileWatcher.fs" />

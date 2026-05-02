@@ -73,7 +73,7 @@ let private checkConfig () =
 [<RequiresDynamicCode("Calls Config.load which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 let run (cwd: string) =
     Surface.markupLine "[bold]fugue doctor[/]"
-    Surface.newline ()
+    Surface.lineBreak ()
 
     let checks =
         [ "Config",           checkConfig ()

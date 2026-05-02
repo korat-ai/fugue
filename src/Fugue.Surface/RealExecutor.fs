@@ -162,6 +162,25 @@ module RealExecutor =
                 // Reset scroll region to full screen, move cursor to bottom.
                 write $"\x1b[1;{h}r\x1b[{h};{w}H"
 
+            | DrawOp.LineBreak ->
+                // Always emit CR+LF so the cursor lands at col 0 — regardless
+                // of `onlcr` tty mode, scroll region state, or bracketed-paste.
+                write "\r\n"
+
+            | DrawOp.MoveCursorUp rows ->
+                if rows > 0 then write $"\x1b[{rows}A"
+
+            | DrawOp.MoveCursorUpToCol0 rows ->
+                // CR brings col to 0, then CUU moves up. Single batched write
+                // keeps it atomic against any other op the actor might apply
+                // (heartbeat / spinner) — those run between `applyOne` calls,
+                // not within one.
+                if rows > 0 then write $"\r\x1b[{rows}A"
+                else write "\r"
+
+            | DrawOp.ClearToEndOfScreen ->
+                write "\x1b[J"
+
             | DrawOp.RawAnsi text ->
                 // Caller pre-built a compound ANSI sequence (typically ReadLine
                 // redrawing the prompt + buffer + cursor). Write as-is.

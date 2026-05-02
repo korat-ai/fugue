@@ -121,7 +121,7 @@ let pick (title: string) (items: (string * string) list) (initialIdx: int) : int
                 Surface.write "\x1b[1B"
             Surface.write($"\x1b[{totalLines}F")
 
-        Surface.newline ()
+        Surface.lineBreak ()
         renderAll ()
 
         let mutable picked: int option = None

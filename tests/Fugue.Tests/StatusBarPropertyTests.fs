@@ -121,6 +121,10 @@ module StatusBarProperties =
                 | DrawOp.Append t         -> ("append", Region.ScrollContent, t)
                 | DrawOp.SaveAndRestore _ -> ("sar", Region.ScrollContent, "")
                 | DrawOp.ResetScrollRegion -> ("reset", Region.ScrollContent, "")
+                | DrawOp.LineBreak        -> ("linebreak", Region.ScrollContent, "")
+                | DrawOp.MoveCursorUp n   -> ("cursorup", Region.ScrollContent, string n)
+                | DrawOp.MoveCursorUpToCol0 n -> ("rewind", Region.ScrollContent, string n)
+                | DrawOp.ClearToEndOfScreen -> ("clearbelow", Region.ScrollContent, "")
                 | DrawOp.RawAnsi t        -> ("rawansi", Region.ScrollContent, t))
         structureOf (renderStatusBar state) = structureOf (renderStatusBar state)
 
