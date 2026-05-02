@@ -102,3 +102,25 @@ let flush () : unit =
         |> Async.RunSynchronously
     | None ->
         Console.Out.Flush ()
+
+/// Post a list of DrawOps as a single Execute message — the entire batch is
+/// applied atomically by the executor with no other op interleaved.
+/// Use this when a sequence of cursor moves must NOT be split by a spinner /
+/// status-bar SaveAndRestore that could land between individual posts (e.g.
+/// the streaming-finalise rewind + clear + re-render dance).
+let batch (ops: DrawOp list) : unit =
+    if List.isEmpty ops then () else
+    match agent with
+    | Some a -> a.Post(SurfaceMessage.Execute ops)
+    | None ->
+        // Fallback for headless: render each op directly.  Order matches actor.
+        for op in ops do
+            match op with
+            | DrawOp.RawAnsi s             -> Console.Out.Write s
+            | DrawOp.LineBreak             -> Console.Out.Write "\r\n"
+            | DrawOp.MoveCursorUp n        -> if n > 0 then Console.Out.Write $"\x1b[{n}A"
+            | DrawOp.MoveCursorUpToCol0 n  ->
+                if n > 0 then Console.Out.Write $"\r\x1b[{n}A" else Console.Out.Write "\r"
+            | DrawOp.ClearToEndOfScreen    -> Console.Out.Write "\x1b[J"
+            | _                            -> ()  // structured paint ops irrelevant in fallback
+        Console.Out.Flush ()

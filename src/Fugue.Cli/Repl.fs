@@ -501,6 +501,16 @@ let private streamAndRender
                 if errorToolCalls.Count > 0 then
                     lastFailedTurn <- Some { BugReport.UserPrompt = input; BugReport.ToolCalls = errorToolCalls |> Seq.toList; BugReport.AiResponse = responseText.ToString(); BugReport.ErrorText = None }
                 lastResponseWasPlan <- Fugue.Core.ConversationIntent.looksLikePlan (responseText.ToString())
+            elif toolCallsThisTurn = 0 then
+                // The agent finished with no TextContent and no tool calls — the
+                // model produced nothing renderable.  Common cause (#923): the
+                // OpenAI-compat adapter for the active model returns only
+                // UsageContent, no TextContent (observed with LM Studio + Gemma).
+                // Without this hint the user sees their prompt echoed and silence,
+                // and assumes Fugue hung.
+                Surface.lineBreak ()
+                Surface.markupLine "[yellow]⚠ model returned no content[/] [dim](only usage / tool-call stats — check provider + model loading; try /model set <other>)[/]"
+                Surface.lineBreak ()
         with
         | :? OperationCanceledException ->
             if assistantStreaming then Surface.lineBreak ()
@@ -705,10 +715,15 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                   OnAnnotateUp        = fun () -> doAnnotate Fugue.Core.Annotation.Up
                   OnAnnotateDown      = fun () -> doAnnotate Fugue.Core.Annotation.Down
                   OnCycleApprovalMode =
+                    // Status bar already shows the mode icon + risk colour
+                    // (◆ plan / ● default / ◑ auto-edit / ○ yolo).  An inline
+                    // toast collides with the active ReadLine prompt area
+                    // (its newline isn't accounted for by st.LinesRendered,
+                    // so the next redraw erases the wrong rows — visible
+                    // as a stack of accumulated "→ approval mode:" lines).
                     fun () ->
-                        let m = StatusBar.cycleApprovalMode ()
-                        StatusBar.refresh ()
-                        Surface.markupLine($"[dim]→ approval mode: {Fugue.Core.ApprovalMode.label m}[/]") }
+                        StatusBar.cycleApprovalMode () |> ignore
+                        StatusBar.refresh () }
             // Drain file-watch triggers from background FileSystemWatcher
             let watchTriggers = FileWatcher.drain ()
             for wcmd in watchTriggers do
@@ -1665,8 +1680,14 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         let! freshSession = agent.CreateSessionAsync(CancellationToken.None)
                         session <- freshSession
                         sessionRef.Value <- session
+                        // Persist the model change to ~/.fugue/config.json so it
+                        // survives a session restart. Best-effort: I/O failures
+                        // shouldn't bring down the active session — the in-memory
+                        // change is already applied above. Same shape as the /short
+                        // and /long handlers (#922).
+                        try Fugue.Core.Config.saveToFile cfg with _ -> ()
                         let prov, _ = providerInfo cfg.Provider
-                        Surface.markupLine($"[green]✓[/] model → [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape newModel}[/] [dim](history reset)[/]")
+                        Surface.markupLine($"[green]✓[/] model → [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape newModel}[/] [dim](saved · history reset)[/]")
                         StatusBar.setCfg cfg
                         // Re-fetch model list for the (potentially) new provider in background.
                         // On empty result (HTTP failure proxy), keep the previous list and
