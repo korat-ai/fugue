@@ -212,6 +212,15 @@ let mutable private scheduleActive = false
 let mutable private spinnerTimer  : System.Threading.Timer option = None
 let mutable private onTick        : (unit -> unit) = fun () -> ()
 
+/// The Surface MailboxProcessor actor — set once by Program.fs before Repl.run.
+/// When set, refresh() posts DrawOps via the actor (serialises all writes).
+/// When None, falls back to applyOpsDirectly (sync, used in tests / headless).
+let mutable private surfaceAgent : MailboxProcessor<SurfaceMessage> option = None
+
+/// Wire the Surface actor.  Call once before StatusBar.start.
+let setAgent (agent: MailboxProcessor<SurfaceMessage>) : unit =
+    surfaceAgent <- Some agent
+
 // Cadence — rolling window of token arrival timestamps for tok/s display.
 let private tokenQueue = System.Collections.Generic.Queue<int64>()
 let private tokenWindowSize = 12
@@ -381,7 +390,9 @@ let refresh () =
     if not active || compactMode || not (Render.isColorEnabled ()) then () else
     let state = captureState ()
     let ops   = renderStatusBar state
-    applyOpsDirectly ops
+    match surfaceAgent with
+    | Some agent -> agent.Post(SurfaceMessage.Execute ops)   // serialised — no race
+    | None       -> applyOpsDirectly ops                     // fallback (headless / tests)
 
 /// Update the config the status bar reads from. Use after `/model set` and
 /// other config-mutating commands. `start` early-returns once the bar is
@@ -414,13 +425,30 @@ let stop () : unit =
     if not active || not (Render.isColorEnabled ()) then () else
     if not compactMode then
         let height = Console.WindowHeight
-        writeRaw "\x1b[r"          // reset scroll region
-        writeRaw ("\x1b[" + string (height - 2) + ";1H")
-        writeRaw "\x1b[2K"
-        writeRaw ("\x1b[" + string (height - 1) + ";1H")
-        writeRaw "\x1b[2K"
-        writeRaw ("\x1b[" + string height + ";1H")
-        writeRaw "\x1b[2K"
-        writeRaw "\x1b[u"
+        // Erase the 3 reserved rows and reset scroll region.
+        // If the Surface agent is running, use ExecuteAndAck so the terminal is
+        // fully clean before Program.fs exits and the agent is shut down.
+        let eraseOps = [
+            DrawOp.EraseLine Region.ThinkingLine
+            DrawOp.EraseLine Region.StatusBarLine1
+            DrawOp.EraseLine Region.StatusBarLine2
+            DrawOp.ResetScrollRegion
+        ]
+        match surfaceAgent with
+        | Some agent ->
+            // Synchronous barrier: wait for the agent to flush the erase ops
+            // before we proceed to shut it down.
+            agent.PostAndAsyncReply(fun ch -> SurfaceMessage.ExecuteAndAck(eraseOps, ch))
+            |> Async.RunSynchronously
+        | None ->
+            // Fallback: erase directly (headless / tests / no agent wired).
+            writeRaw "\x1b[r"          // reset scroll region
+            writeRaw ("\x1b[" + string (height - 2) + ";1H")
+            writeRaw "\x1b[2K"
+            writeRaw ("\x1b[" + string (height - 1) + ";1H")
+            writeRaw "\x1b[2K"
+            writeRaw ("\x1b[" + string height + ";1H")
+            writeRaw "\x1b[2K"
+            writeRaw "\x1b[u"
     active <- false
     compactMode <- false
