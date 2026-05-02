@@ -501,6 +501,16 @@ let private streamAndRender
                 if errorToolCalls.Count > 0 then
                     lastFailedTurn <- Some { BugReport.UserPrompt = input; BugReport.ToolCalls = errorToolCalls |> Seq.toList; BugReport.AiResponse = responseText.ToString(); BugReport.ErrorText = None }
                 lastResponseWasPlan <- Fugue.Core.ConversationIntent.looksLikePlan (responseText.ToString())
+            elif toolCallsThisTurn = 0 then
+                // The agent finished with no TextContent and no tool calls — the
+                // model produced nothing renderable.  Common cause (#923): the
+                // OpenAI-compat adapter for the active model returns only
+                // UsageContent, no TextContent (observed with LM Studio + Gemma).
+                // Without this hint the user sees their prompt echoed and silence,
+                // and assumes Fugue hung.
+                Surface.lineBreak ()
+                Surface.markupLine "[yellow]⚠ model returned no content[/] [dim](only usage / tool-call stats — check provider + model loading; try /model set <other>)[/]"
+                Surface.lineBreak ()
         with
         | :? OperationCanceledException ->
             if assistantStreaming then Surface.lineBreak ()
