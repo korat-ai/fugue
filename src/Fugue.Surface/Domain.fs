@@ -41,6 +41,11 @@ type DrawOp =
     | Append      of text: string
     /// Reset scroll region to full screen — call on shutdown.
     | ResetScrollRegion
+    /// Verbatim ANSI escape string. Escape hatch for callers (ReadLine,
+    /// Picker) that build complex compound sequences with cursor-relative
+    /// motion that doesn't fit the structured ops above. The actor writes
+    /// it as-is — coalesce does NOT touch RawAnsi (no region key).
+    | RawAnsi     of text: string
 
 module Style =
     let normal : Style = { Bold = false; Italic = false; Color = Color.Default }

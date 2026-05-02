@@ -5,6 +5,20 @@ open System.Collections.Generic
 open System.Threading
 open System.Threading.Tasks
 open Fugue.Core.Localization
+open Fugue.Surface
+
+/// Optional Surface MailboxProcessor — when set, every ReadLine write is posted
+/// through it instead of going straight to Console.Out. Serialises ReadLine
+/// against StatusBar / Picker / heartbeat paints, eliminating cursor races
+/// (closes #913 and the timing half of #910).
+///
+/// Set once by Program.fs, before the first call to `read`. Headless / tests
+/// keep the direct-write fallback (None).
+let mutable private surfaceAgent : MailboxProcessor<SurfaceMessage> option = None
+
+/// Wire the Surface actor for ReadLine. Idempotent.
+let setAgent (agent: MailboxProcessor<SurfaceMessage>) : unit =
+    surfaceAgent <- Some agent
 
 // Bracketed paste mode escape sequences.
 let private pasteBeginSeq = "\x1b[200~"
@@ -326,9 +340,32 @@ let applyPastedText (text: string) (s: S) : unit =
     s.Buffer.AddRange(normalized.ToCharArray())
     s.Cursor <- s.Buffer.Count
 
+/// Write a raw ANSI-bearing string. When the Surface actor is wired,
+/// the write is queued as a `RawAnsi` DrawOp so it's serialised against
+/// concurrent paints from StatusBar / heartbeat / Picker. Otherwise we fall
+/// back to direct Console.Out (headless / tests).
+///
+/// Note: even with the actor, we keep `Console.Out.Flush()` on the fallback
+/// path because some terminals buffer until newline; the actor's executor
+/// already flushes after each batch.
 let private writeRaw (s: string) =
-    Console.Out.Write s
-    Console.Out.Flush()
+    match surfaceAgent with
+    | Some agent ->
+        agent.Post(SurfaceMessage.Execute [ DrawOp.RawAnsi s ])
+    | None ->
+        Console.Out.Write s
+        Console.Out.Flush()
+
+/// Synchronous flush barrier — ensures any pending ReadLine writes have been
+/// applied before the caller proceeds. Used at points where we need to read
+/// the real cursor position or hand off to another renderer (e.g. before
+/// asking the user for approval). Becomes a no-op when no actor is wired.
+let private flushBarrier () : unit =
+    match surfaceAgent with
+    | Some agent ->
+        agent.PostAndAsyncReply(fun ch -> SurfaceMessage.ExecuteAndAck([], ch))
+        |> Async.RunSynchronously
+    | None -> ()
 
 /// Clear `count` rows starting at the cursor's current row and moving downward.
 /// Cursor is left at column 0 of the top row of the cleared area.
@@ -346,7 +383,7 @@ let private eraseLines (count: int) : unit =
         if count > 1 then writeRaw ("\x1b[" + string (count - 1) + "A")
         writeRaw "\r"
 
-let private redraw (st: S) =
+let internal redraw (st: S) =
     // 1. cursor up to start of our previous render, clear per-line (not full screen end)
     // Before erasing, move cursor to the bottom of the previously-rendered area so
     // eraseLines (which walks UP count-1 rows) starts from the correct position.

@@ -115,6 +115,11 @@ module MockExecutor =
             // No-op for mock — no real scroll region to reset.
             ()
 
+        | DrawOp.RawAnsi _ ->
+            // Mock cannot interpret arbitrary ANSI; recording in WriteLog (above)
+            // is enough for tests that only assert "the actor processed it".
+            ()
+
     /// Apply a list of DrawOps to the mock terminal.
     /// Mutates term.Lines, term.CursorRow/Col, term.WriteLog in place.
     /// Returns the same terminal for convenient chaining.

@@ -25,9 +25,20 @@ module RealExecutor =
     // ANSI helpers
     // -----------------------------------------------------------------------
 
+    /// Original Console.Out captured at module load. Used by `write` so the
+    /// actor's own output bypasses any `ActorWriter` redirect that gets
+    /// installed later (which would otherwise post the actor's writes back
+    /// to itself, growing the mailbox without bound).
+    ///
+    /// This value is captured the FIRST time the module is touched. Program.fs
+    /// must call `RealExecutor.start ()` BEFORE redirecting Console.Out, which
+    /// is the natural order anyway (you need the actor before you can build
+    /// an ActorWriter that wraps it).
+    let private originalStdout : System.IO.TextWriter = Console.Out
+
     let private write (s: string) =
-        Console.Out.Write s
-        Console.Out.Flush ()
+        originalStdout.Write s
+        originalStdout.Flush ()
 
     let private termWidth  () = Console.WindowWidth
     let private termHeight () = Console.WindowHeight
@@ -150,6 +161,11 @@ module RealExecutor =
                 let w = termWidth  ()
                 // Reset scroll region to full screen, move cursor to bottom.
                 write $"\x1b[1;{h}r\x1b[{h};{w}H"
+
+            | DrawOp.RawAnsi text ->
+                // Caller pre-built a compound ANSI sequence (typically ReadLine
+                // redrawing the prompt + buffer + cursor). Write as-is.
+                write text
         for op in ops do applyOne op
 
     // -----------------------------------------------------------------------
@@ -184,15 +200,22 @@ module RealExecutor =
                     // Now drain any additional pending Execute batches and coalesce.
                     let pending = drainExecute inbox
                     let all     = coalesce (ops :: pending)
-                    applyOps all
+                    // try/catch: a Console.Out write throwing (e.g. terminal
+                    // detached, IO closed) MUST NOT kill the actor — that would
+                    // cause subsequent ExecuteAndAck / Shutdown to hang their
+                    // PostAndAsyncReply callers, manifesting as the user
+                    // having to SIGINT-kill fugue (#918).
+                    try applyOps all with _ -> ()
                     return! loop ()
 
                 | SurfaceMessage.ExecuteHighPriority ops ->
-                    applyOps ops
+                    try applyOps ops with _ -> ()
                     return! loop ()
 
                 | SurfaceMessage.ExecuteAndAck(ops, reply) ->
-                    applyOps ops
+                    try applyOps ops with _ -> ()
+                    // ALWAYS reply — even on exception. Caller is blocked on
+                    // PostAndAsyncReply; never not-replying is not an option.
                     reply.Reply ()
                     return! loop ()
 
@@ -204,7 +227,8 @@ module RealExecutor =
                     return! loop ()
 
                 | SurfaceMessage.Shutdown reply ->
-                    applyOps [ DrawOp.ResetScrollRegion ]
+                    try applyOps [ DrawOp.ResetScrollRegion ] with _ -> ()
+                    // ALWAYS reply — see comment on ExecuteAndAck above.
                     reply.Reply ()
                     // Loop exits — agent terminates.
             }

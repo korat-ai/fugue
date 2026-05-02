@@ -176,6 +176,11 @@ type Strings =
       // Streaming waiting label
       Thinking: string
 
+      // Shown between user-requested exit (Ctrl+D, double Ctrl+C) and actual
+      // process termination, so the brief shutdown delay (actor flush + scroll
+      // region reset) doesn't look like a hang.
+      ExitingMessage: string
+
       // /watch command
       CmdWatchDesc:  string
       WatchAdded:    string
@@ -332,6 +337,7 @@ let en : Strings =
       TestFileHint          = "[test file found: {0} — include it with @{1}]"
       InputPlaceholder      = "Type a message or /help"
       Thinking              = "thinking"
+      ExitingMessage        = "exiting…"
       CmdWatchDesc          = "watch a file and re-run a command on save"
       WatchAdded            = "watching {0} → will run: {1}"
       WatchRemoved          = "stopped watching {0}"
@@ -471,6 +477,7 @@ let ru : Strings =
       TestFileHint          = "[найден тест-файл: {0} — подключите его через @{1}]"
       InputPlaceholder      = "Введите сообщение или /help"
       Thinking              = "думаю"
+      ExitingMessage        = "выхожу…"
       CmdWatchDesc          = "следить за файлом и перезапускать команду при сохранении"
       WatchAdded            = "слежу за {0} → запущу: {1}"
       WatchRemoved          = "перестал следить за {0}"
