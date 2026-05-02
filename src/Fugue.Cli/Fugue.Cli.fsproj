@@ -49,6 +49,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="Surface.fs" />
     <Compile Include="PromptRegistry.fs" />
     <Compile Include="SlashCommands.fs" />
     <Compile Include="Picker.fs" />

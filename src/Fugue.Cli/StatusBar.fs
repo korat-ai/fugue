@@ -203,9 +203,12 @@ let renderStatusBar (state: StatusBarState) : DrawOp list =
         paintRaw Region.StatusBarLine2 line2Text
     ]
 
-let private writeRaw (s: string) =
-    Console.Out.Write s
-    Console.Out.Flush()
+/// Direct-write fallback for the `applyOpsDirectly` headless / test path.
+/// When the actor is wired, refresh () posts ops via `agent.Post` and never
+/// touches this. Phase 1.3c v2: also delegate to Surface so the very rare
+/// path where applyOpsDirectly is hit but the actor IS wired (shouldn't
+/// happen) goes through the same mailbox.
+let private writeRaw (s: string) = Surface.write s
 
 let mutable private cwd: string = "."
 let mutable private cfg: AppConfig option = None
@@ -468,9 +471,7 @@ let start (initialCwd: string) (initialCfg: AppConfig) : unit =
     if not compactMode then
         // reserve three bottom lines: thinking indicator + 2 status lines.
         // Scroll region becomes 1..(h-3); cursor parks at the last scrollable line.
-        Console.WriteLine()
-        Console.WriteLine()
-        Console.WriteLine()
+        Surface.write "\n\n\n"
         writeRaw ("\x1b[1;" + string (height - 3) + "r")
         writeRaw ("\x1b[" + string (height - 3) + ";1H")
         refresh ()

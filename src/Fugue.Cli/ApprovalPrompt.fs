@@ -39,14 +39,13 @@ let private headlessGate (mode: ApprovalMode) (toolName: string) : Async<bool> =
 let private interactivePrompt (toolName: string) (argsJson: string) : Async<bool> =
     async {
         let summary = trim argsJson 80
-        Console.Out.WriteLine ()
-        Console.Out.WriteLine (sprintf "\x1b[33m? approve %s(%s) [y/N]\x1b[0m" toolName summary)
-        Console.Out.Flush ()
+        Surface.newline ()
+        Surface.writeLine (sprintf "\x1b[33m? approve %s(%s) [y/N]\x1b[0m" toolName summary)
+        Surface.flush ()  // ensure prompt is visible before ReadKey blocks
         let key = Console.ReadKey(intercept = true)
         let approved = key.KeyChar = 'y' || key.KeyChar = 'Y'
         let label = if approved then "\x1b[32mallow\x1b[0m" else "\x1b[31mdeny\x1b[0m"
-        Console.Out.WriteLine (sprintf "  → %s" label)
-        Console.Out.Flush ()
+        Surface.writeLine (sprintf "  → %s" label)
         return approved
     }
 
