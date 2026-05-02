@@ -35,12 +35,19 @@ test-only filter:
 publish target="osx-arm64":
     dotnet publish src/Fugue.Cli -c Release -r {{target}}
 
-# Build + publish + run the binary. The fastest one-shot path from clean tree
-# to interactive REPL — what you want during local UX iteration.
-run target="osx-arm64": (publish target)
+# Run via JIT — fastest path for UX iteration. ~10s build, ~300ms cold-start.
+# Functionally identical to AOT for 99% of features; use this for any tweak
+# loop that doesn't need to measure cold-start, RSS, or AOT-specific bugs.
+run *args:
+    dotnet run --project src/Fugue.Cli -c Release -- {{args}}
+
+# Same as `run` but explicit name for the AOT path. ~60-90s (full publish)
+# but ~40ms cold-start and 47MB single-file binary. Use for cold-start /
+# RSS / binary-size measurement and AOT-specific regression checks.
+run-aot target="osx-arm64": (publish target)
     ./src/Fugue.Cli/bin/Release/net10.0/{{target}}/publish/fugue
 
-# Run the binary with an explicit approval mode (plan / default / auto-edit /
+# Run the AOT binary with an explicit approval mode (plan / default / auto-edit /
 # yolo). Useful for testing the gate.
 run-mode mode target="osx-arm64": (publish target)
     ./src/Fugue.Cli/bin/Release/net10.0/{{target}}/publish/fugue --mode {{mode}}

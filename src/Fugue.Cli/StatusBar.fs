@@ -433,6 +433,9 @@ let private applyOpsDirectly (ops: DrawOp list) : unit =
         | DrawOp.ResetScrollRegion ->
             let w = Console.WindowWidth
             writeRaw $"\x1b[1;{h}r\x1b[{h};{w}H"
+        | DrawOp.RawAnsi text ->
+            // Fallback path mirrors the actor: write verbatim.
+            writeRaw text
     writeRaw "\x1b[s"
     for op in ops do applyOne op
     writeRaw "\x1b[u"
@@ -442,8 +445,15 @@ let refresh () =
     let state = captureState ()
     let ops   = renderStatusBar state
     match surfaceAgent with
-    | Some agent -> agent.Post(SurfaceMessage.Execute ops)   // serialised — no race
-    | None       -> applyOpsDirectly ops                     // fallback (headless / tests)
+    | Some agent ->
+        // Phase 1.3c: with Console.Out redirected through ActorWriter, the
+        // actor is the SOLE writer to the real terminal. SaveAndRestore is
+        // therefore safe in all states — no parallel Repl thread can interject
+        // between save and restore, because Repl's streams now go through the
+        // same mailbox and are serialised by construction.
+        agent.Post(SurfaceMessage.Execute [ DrawOp.SaveAndRestore ops ])
+    | None ->
+        applyOpsDirectly ops                                 // fallback (headless / tests)
 
 /// Update the config the status bar reads from. Use after `/model set` and
 /// other config-mutating commands. `start` early-returns once the bar is

@@ -79,6 +79,28 @@ let private runWithCfg (cfg: AppConfig) : int =
         Console.Error.WriteLine("--offline requires a local provider (Ollama). Set FUGUE_PROVIDER=ollama or update ~/.fugue/config.json.")
         1
     else
+    // Phase 1.3c: start the Surface actor and redirect Console.Out / Error
+    // BEFORE any rendering init (Render / Spectre / Markdig). Spectre.AnsiConsole
+    // captures Console.Out at first use — if we redirect later, Spectre will
+    // already hold the original stdout reference and bypass our actor. Doing
+    // SetOut here ensures every downstream init wires Spectre to the actor.
+    let surfaceActor =
+        if Console.IsInputRedirected then None
+        else
+            let actor = RealExecutor.start ()
+            StatusBar.setAgent actor
+            // ReadLine routes structured RawAnsi through actor (Phase 1.3b).
+            ReadLine.setAgent actor
+            // Phase 1.3c: redirect Console.Out / Error so all third-party
+            // writers (Spectre, Markdig, plain Console.WriteLine, our direct
+            // AnsiConsole.MarkupLine in slash commands / approval prompt /
+            // exit message) automatically funnel through the same mailbox.
+            // RealExecutor captured the real stdout at module load (above
+            // RealExecutor.start), so its own writes don't recurse.
+            let actorWriter = new ActorWriter(actor)
+            Console.SetOut   actorWriter
+            Console.SetError actorWriter
+            Some actor
     let isClassic = cfg.Ui.Theme = "fugue-classic" || cfg.Ui.Theme = "monochrome"
     Render.initColor (not (noColor () || isClassic))
     let emojiEnabled =
@@ -129,14 +151,6 @@ let private runWithCfg (cfg: AppConfig) : int =
     // module-level mutable in GetConversationFn (#50).
     let sessionRef : (Microsoft.Agents.AI.AgentSession | null) ref = ref null
     let aiAgent = buildAgent cfg hooksConfig providerContext lastSummary sessionId sessionRef
-    // Start the Surface actor — serialises all terminal writes and eliminates the
-    // timer-thread race.  Wire it into StatusBar before start() is called.
-    let surfaceActor =
-        if Console.IsInputRedirected then None
-        else
-            let actor = RealExecutor.start ()
-            StatusBar.setAgent actor
-            Some actor
     let t =
         if Console.IsInputRedirected then Repl.runHeadless aiAgent cfg cwd
         else Repl.run aiAgent sessionRef cfg cwd lastSummary (fun newCfg -> buildAgent newCfg hooksConfig providerContext None sessionId sessionRef)

@@ -8,5 +8,6 @@
     <Compile Include="Builder.fs" />
     <Compile Include="MockExecutor.fs" />
     <Compile Include="RealExecutor.fs" />
+    <Compile Include="ActorWriter.fs" />
   </ItemGroup>
 </Project>

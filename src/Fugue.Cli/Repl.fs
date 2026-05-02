@@ -791,9 +791,14 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
             | _ -> ()
             match processedLine with
             | None ->
+                // Show "exiting…" so the brief shutdown blocking on actor flush
+                // doesn't look like a hang. Goes straight to Console.Out — actor
+                // is about to be drained and shut down anyway.
+                AnsiConsole.MarkupLine($"[dim italic]{Markup.Escape liveStrings.ExitingMessage}[/]")
                 cancelSrc.RequestQuit()
             | Some s when System.String.IsNullOrWhiteSpace s -> ()
             | Some s when s = "/exit" || s = "/quit" ->
+                AnsiConsole.MarkupLine($"[dim italic]{Markup.Escape liveStrings.ExitingMessage}[/]")
                 cancelSrc.RequestQuit()
             | Some s when s = "/help" ->
                 AnsiConsole.Write(Markup("[bold]" + Markup.Escape liveStrings.HelpHeader + "[/]"))
