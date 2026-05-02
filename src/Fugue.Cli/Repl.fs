@@ -1665,8 +1665,14 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         let! freshSession = agent.CreateSessionAsync(CancellationToken.None)
                         session <- freshSession
                         sessionRef.Value <- session
+                        // Persist the model change to ~/.fugue/config.json so it
+                        // survives a session restart. Best-effort: I/O failures
+                        // shouldn't bring down the active session — the in-memory
+                        // change is already applied above. Same shape as the /short
+                        // and /long handlers (#922).
+                        try Fugue.Core.Config.saveToFile cfg with _ -> ()
                         let prov, _ = providerInfo cfg.Provider
-                        Surface.markupLine($"[green]✓[/] model → [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape newModel}[/] [dim](history reset)[/]")
+                        Surface.markupLine($"[green]✓[/] model → [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape newModel}[/] [dim](saved · history reset)[/]")
                         StatusBar.setCfg cfg
                         // Re-fetch model list for the (potentially) new provider in background.
                         // On empty result (HTTP failure proxy), keep the previous list and
