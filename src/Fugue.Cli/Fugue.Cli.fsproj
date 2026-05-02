@@ -59,6 +59,7 @@
     <Compile Include="StackTraceRender.fs" />
     <Compile Include="Render.fs" />
     <Compile Include="StatusBar.fs" />
+    <Compile Include="ApprovalPrompt.fs" />
     <Compile Include="FileWatcher.fs" />
     <Compile Include="ClipRing.fs" />
     <Compile Include="Macros.fs" />

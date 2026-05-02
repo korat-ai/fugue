@@ -581,6 +581,11 @@ SEE ALSO
             Fugue.Core.Config.saveToFile cfg
             // Apply --mode to StatusBar before any rendering begins.
             StatusBar.setApprovalMode initialApprovalMode
+            // Install approval gate before tools are invoked. Interactive iff stdin
+            // is a TTY (matches the Surface-actor allocation rule).
+            let interactive = not Console.IsInputRedirected
+            Fugue.Tools.AiFunctions.DelegatedFn.setApprovalGate
+                (Fugue.Cli.ApprovalPrompt.buildGate StatusBar.getApprovalMode interactive)
             match printPrompt with
             | Some p -> runWithPrint cfg p
             | None   -> runWithCfg cfg
@@ -594,6 +599,11 @@ SEE ALSO
         let fullCfg = { cfg with ProfileContent = profileContent; TemplateContent = templateContent; TemplateName = templateName; LowBandwidth = lowBandwidth; Offline = offline; DryRun = dryRun }
         // Apply --mode to StatusBar before any rendering begins.
         StatusBar.setApprovalMode initialApprovalMode
+        // Install approval gate before tools are invoked. Interactive iff stdin
+        // is a TTY (matches the Surface-actor allocation rule).
+        let interactive = not Console.IsInputRedirected
+        Fugue.Tools.AiFunctions.DelegatedFn.setApprovalGate
+            (Fugue.Cli.ApprovalPrompt.buildGate StatusBar.getApprovalMode interactive)
         match printPrompt with
         | Some p -> runWithPrint fullCfg p
         | None   -> runWithCfg fullCfg
