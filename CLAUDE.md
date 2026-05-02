@@ -1,13 +1,13 @@
 # Fugue
 
 > A small, fast F# terminal coding agent. **Two binaries, two runtimes:**
-> `fugue-headless` (Native AOT, ~40ms cold start) for CI / pipes / `--print`.
+> `fugue-aot` (Native AOT, ~40ms cold start) for CI / pipes / `--print`.
 > `fugue` (JIT + ReadyToRun) for interactive REPL — long-lived, JIT warms once.
 > Provider-agnostic (Anthropic / OpenAI-compat / Ollama).
 
 **Repo:** `korat-ai/fugue` · **Status:** MVP shipped (Phase 1–5 closed, 2026-04-30) · **Default branch:** `main`
 
-**🪡 AOT/JIT split locked 2026-05-02** — see [§ AOT vs JIT](#aot-vs-jit--two-binaries) below.  Trim/AOT discipline applies ONLY to `Fugue.Cli.Headless` and its closure. REPL code (`Fugue.Cli`, `Fugue.Surface`) is JIT-only — write idiomatic F# without trim ceremony.
+**🪡 AOT/JIT split locked 2026-05-02** — see [§ AOT vs JIT](#aot-vs-jit--two-binaries) below.  Trim/AOT discipline applies ONLY to `Fugue.Cli.Aot` and its closure. REPL code (`Fugue.Cli`, `Fugue.Surface`) is JIT-only — write idiomatic F# without trim ceremony.
 
 ---
 
@@ -22,7 +22,7 @@ src/
   Fugue.Core/         — domain types, config, localization, system prompt, JSON DTOs    [AOT-clean]
   Fugue.Agent/        — Microsoft.Agents.AI factory + streaming + provider Discovery     [AOT-clean]
   Fugue.Tools/        — Read / Write / Edit / Bash / Glob / Grep, no-reflection          [AOT-clean]
-  Fugue.Cli.Headless/ — entry point for --print / pipe-input mode                        [AOT-only, single-file]
+  Fugue.Cli.Aot/ — entry point for --print / pipe-input mode                        [AOT-only, single-file]
   Fugue.Surface/      — typed DrawOps + MailboxProcessor surface, MockExecutor           [JIT-only]
   Fugue.Cli/          — REPL: ReadLine, MarkdownRender, DiffRender, StatusBar, Repl      [JIT-only, ReadyToRun]
 tests/
@@ -42,10 +42,10 @@ Fugue ships as **two distributions** with different runtime tradeoffs. Pivot loc
 
 | Binary             | Runtime                    | Cold start | Use case                                                       |
 |--------------------|----------------------------|-----------:|----------------------------------------------------------------|
-| `fugue-headless`   | **Native AOT** single-file | ~40 ms     | CI / scripting / pipe-input / `--print` / `-p` flag            |
+| `fugue-aot`   | **Native AOT** single-file | ~40 ms     | CI / scripting / pipe-input / `--print` / `-p` flag            |
 | `fugue`            | **JIT + ReadyToRun**       | ~150 ms    | Interactive REPL / TUI sessions (long-lived, JIT warms once)   |
 
-**Headless trigger** (decided in one place, `Fugue.Cli.Headless/Program.fs`):
+**Headless trigger** (decided in one place, `Fugue.Cli.Aot/Program.fs`):
 ```fsharp
 let isHeadless (argv: string[]) : bool =
     argv |> Array.exists (fun a -> a = "--print" || a = "-p")
@@ -56,7 +56,7 @@ let isHeadless (argv: string[]) : bool =
 
 **What this means for contributors:**
 - Code in `Fugue.Cli` (REPL) and `Fugue.Surface` (TUI primitives) is **JIT-only**. Write idiomatic F# without trim ceremony — reflection, dynamic loading, full Spectre features all OK.
-- Code in `Fugue.Core`, `Fugue.Tools`, `Fugue.Agent`, `Fugue.Cli.Headless` is **AOT-clean**. Same constraints as before for these modules: no `MakeGenericMethod` outside annotated boundaries, STJ source-gen for new DTOs, etc.
+- Code in `Fugue.Core`, `Fugue.Tools`, `Fugue.Agent`, `Fugue.Cli.Aot` is **AOT-clean**. Same constraints as before for these modules: no `MakeGenericMethod` outside annotated boundaries, STJ source-gen for new DTOs, etc.
 - New features that don't fit AOT (MCP discovery, plugins, dynamic theme loading) live in `Fugue.Cli` / `Fugue.Surface` and are **interactive-only by design**. If a feature can't pass AOT publish, it doesn't belong in the headless surface — that's a deliberate signal, not a bug.
 - Argument parsing uses `System.CommandLine` (AOT source-gen friendly) wrapped in a thin F# DSL (`Cli.command "print" (fun args -> ...)`). One parser, both binaries.
 
@@ -67,13 +67,13 @@ These are **hard rules**. Don't ask, just follow.
 - **F# only under `src/`.** No C# files. C# is allowed only as external NuGet dependencies.
 - **`.slnx`, not `.sln`.** Modern .NET solution format.
 - **No `Co-Authored-By` trailers in commits.**
-- **`TreatWarningsAsErrors=true`** stays in `Fugue.Core`, `Fugue.Tools`, `Fugue.Agent`, `Fugue.Cli.Headless` (the AOT closure). For these, `<NoWarn>` is allowed only for known third-party trim/AOT warnings (`IL2026`, `IL3050`, `IL3053`, `IL2104`). For `Fugue.Cli` / `Fugue.Surface` (JIT-only): `TreatWarningsAsErrors=true` still on, but trim/AOT warnings simply don't appear there.
-- **Every PR must produce an AOT-clean publish of the headless binary** (`dotnet publish src/Fugue.Cli.Headless -c Release -r osx-arm64`). The interactive `Fugue.Cli` only needs `dotnet build` + `dotnet test` to pass — it doesn't get AOT-published.
+- **`TreatWarningsAsErrors=true`** stays in `Fugue.Core`, `Fugue.Tools`, `Fugue.Agent`, `Fugue.Cli.Aot` (the AOT closure). For these, `<NoWarn>` is allowed only for known third-party trim/AOT warnings (`IL2026`, `IL3050`, `IL3053`, `IL2104`). For `Fugue.Cli` / `Fugue.Surface` (JIT-only): `TreatWarningsAsErrors=true` still on, but trim/AOT warnings simply don't appear there.
+- **Every PR must produce an AOT-clean publish of the headless binary** (`dotnet publish src/Fugue.Cli.Aot -c Release -r osx-arm64`). The interactive `Fugue.Cli` only needs `dotnet build` + `dotnet test` to pass — it doesn't get AOT-published.
 - **Every 10 commits: full AOT publish + smoke-test the headless binary locally:**
   ```
-  dotnet publish src/Fugue.Cli.Headless -c Release -r osx-arm64
-  src/Fugue.Cli.Headless/bin/Release/net10.0/osx-arm64/publish/fugue-headless --version
-  src/Fugue.Cli.Headless/bin/Release/net10.0/osx-arm64/publish/fugue-headless --print "hello"
+  dotnet publish src/Fugue.Cli.Aot -c Release -r osx-arm64
+  src/Fugue.Cli.Aot/bin/Release/net10.0/osx-arm64/publish/fugue-aot --version
+  src/Fugue.Cli.Aot/bin/Release/net10.0/osx-arm64/publish/fugue-aot --print "hello"
   ```
   `dotnet build` / `dotnet test` run under JIT and will NOT catch AOT-specific failures in the headless closure (e.g. `MakeGenericMethod`, missing native code). Only the published native binary reveals them.
 - **`git status` stays clean.** No stray files, no half-finished `.bak`/`.tmp`. Tree is always merge-ready.
@@ -189,7 +189,7 @@ This project's domain emphasises:
 
 - **`AI`, `LLM`, `Claude`, `GPT`, `Ollama`, `Anthropic`, `OpenAI`** — agent framework integration is the core feature
 - **`CLI`, `TUI`, `terminal`, `ANSI`, `scroll region`** — UX is terminal-first
-- **`AOT`, `trimming`, `IL2026`, `IL3050`, `single-file`** — deployment constraints affect headless-closure code (`Fugue.Core` / `Fugue.Tools` / `Fugue.Agent` / `Fugue.Cli.Headless`); REPL code (`Fugue.Cli` / `Fugue.Surface`) is JIT-only and free of these
+- **`AOT`, `trimming`, `IL2026`, `IL3050`, `single-file`** — deployment constraints affect headless-closure code (`Fugue.Core` / `Fugue.Tools` / `Fugue.Agent` / `Fugue.Cli.Aot`); REPL code (`Fugue.Cli` / `Fugue.Surface`) is JIT-only and free of these
 - **`F#`, `dotnet`, `.NET 10`** — language/runtime is fixed; no polyglot mixing
 - **`performance`, `cold start`, `RSS`, `binary size`** — non-functional targets are first-class
 - **`localization`, `i18n`, `en`, `ru`** — project ships in two languages from day one

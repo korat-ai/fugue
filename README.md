@@ -13,7 +13,7 @@ Fugue ships as **two distributions** with deliberately different tradeoffs:
 
 | Binary             | Runtime           | Cold start | Use case                              |
 |--------------------|-------------------|-----------:|---------------------------------------|
-| `fugue-headless`   | **Native AOT**    | ~40 ms     | CI / scripting / pipes / `--print`    |
+| `fugue-aot`   | **Native AOT**    | ~40 ms     | CI / scripting / pipes / `--print`    |
 | `fugue`            | **JIT + ReadyToRun** | ~150 ms    | Interactive REPL / TUI                |
 
 **Why split:**
@@ -28,7 +28,7 @@ Fugue ships as **two distributions** with deliberately different tradeoffs:
   discovery, full Spectre.Console feature surface).
 
 **What this means for contributors:** the `every PR must AOT-publish-clean`
-rule applies **only to `Fugue.Cli.Headless`** and its transitive closure
+rule applies **only to `Fugue.Cli.Aot`** and its transitive closure
 (`Fugue.Core` + `Fugue.Tools` + `Fugue.Agent`). Code in `Fugue.Cli` (REPL)
 and `Fugue.Surface` (TUI primitives) is JIT-only — write idiomatic F#
 without trim ceremony.
@@ -61,8 +61,8 @@ dotnet test
 dotnet run --project src/Fugue.Cli
 
 # Headless single-file native binary (Native AOT)
-dotnet publish src/Fugue.Cli.Headless -c Release -r osx-arm64
-./src/Fugue.Cli.Headless/bin/Release/net10.0/osx-arm64/publish/fugue-headless --print "hello"
+dotnet publish src/Fugue.Cli.Aot -c Release -r osx-arm64
+./src/Fugue.Cli.Aot/bin/Release/net10.0/osx-arm64/publish/fugue-aot --print "hello"
 
 # Interactive distribution (ReadyToRun, no AOT)
 dotnet publish src/Fugue.Cli -c Release -r osx-arm64
