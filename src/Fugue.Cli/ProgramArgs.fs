@@ -492,21 +492,125 @@ let private configCmd : Cmd =
             1)
 
 // --------------------------------------------------------------------------
+// Top-level options for the default REPL / --print flow (Phase 2c)
+//
+// These are NOT recursive — they only attach to the root command and apply
+// to the no-subcommand default flow.  Putting them on a subcommand (e.g.
+// `fugue doctor --low-bandwidth`) is a parse error.  Today's legacy code
+// silently ignored that combination; the new behaviour is "explicit reject
+// > silent ignore" (intentional improvement, see PR body).
+// --------------------------------------------------------------------------
+
+let private profileOpt : Opt<string> =
+    opt<string> "--profile" "Load ~/.fugue/profiles/<name>.md as a system-prompt prefix"
+    |> withDefault ""
+
+let private templateOpt : Opt<string> =
+    opt<string> "--template" "Load ~/.fugue/templates/<name>.md as a session template"
+    |> withDefault ""
+
+let private lowBandwidthOpt : Opt<bool> =
+    opt<bool> "--low-bandwidth" "Skip session summary, cap tool output to 500 lines"
+    |> withDefault false
+
+let private offlineOpt : Opt<bool> =
+    opt<bool> "--offline" "Require a local provider (Ollama). Reject remote API calls."
+    |> withDefault false
+
+let private dryRunOpt : Opt<bool> =
+    opt<bool> "--dry-run" "Mock all mutating tools; don't touch the filesystem or run shell"
+    |> withDefault false
+
+let private modeOpt : Opt<string> =
+    opt<string> "--mode" "Initial approval mode: plan | default | auto-edit | yolo (Shift+Tab cycles)"
+    |> withDefault "default"
+
+let private printOpt : Opt<string> =
+    opt<string> "--print" "Non-interactive: send one prompt, stream to stdout, exit"
+    |> alias "-p"
+    |> withDefault ""
+
+/// Strongly-typed bag of root options, handed to the default-flow callback.
+/// Empty-string fields mean "not provided" (DSL default).
+type RootOptions = {
+    Profile      : string
+    Template     : string
+    LowBandwidth : bool
+    Offline      : bool
+    DryRun       : bool
+    Mode         : string
+    Print        : string
+}
+
+// --------------------------------------------------------------------------
+// Custom usage text — replaces System.CommandLine's auto-generated --help.
+// We bypass SC's help by detecting --help / -h in main() before dispatch.
+// --------------------------------------------------------------------------
+
+let usage : string = """Usage: fugue [--profile <name>] [--template <name>] [--low-bandwidth] [--offline]
+             [--dry-run] [--mode <m>] [--print "prompt"]
+       fugue doctor | init | aliases | man | reindex | version | env | config
+
+Subcommands:
+  doctor    Run environment diagnostics
+  init      Bootstrap FUGUE.md in current directory
+  aliases   Print/install shell aliases
+  man       Display full manual page
+  reindex   Rebuild FTS5 search index from all session JSONL files
+  version   Show version (use --verbose for runtime details)
+  env       Show fugue-relevant environment variables (with API-key masking)
+  config    Manage ~/.fugue/config.json (validate | list | get <key> | set <key> <value>)
+
+Options:
+  --profile <name>    Load ~/.fugue/profiles/<name>.md as system-prompt prefix
+  --template <name>   Load ~/.fugue/templates/<name>.md as session template
+  --low-bandwidth     Skip session summary, cap tool output to 500 lines
+  --offline           Require a local provider (Ollama)
+  --dry-run           Mock mutating tools; don't touch filesystem or run shell
+  --mode <m>          Initial approval mode: plan, default, auto-edit, yolo
+                      (Shift+Tab cycles in REPL)
+  --print "prompt"    Non-interactive: send one prompt, stream to stdout, exit
+                      Reads stdin if piped: git diff | fugue --print "review this"
+  -p "prompt"         Alias for --print
+  --version           Print version and exit
+  --help, -h          Show this help and exit
+
+Run `fugue man` for the full manual.
+"""
+
+let printUsage () : unit = Console.Write usage
+
+/// True if argv contains a help flag — caller should print usage and exit 0
+/// without delegating to System.CommandLine.
+let isHelp (argv: string[]) : bool =
+    argv |> Array.exists (fun a -> a = "--help" || a = "-h")
+
+/// True if argv contains the bare `--version` FLAG (the `version` subcommand
+/// is handled by `isMigrated`).  Caller should dispatch to the version path.
+let isVersionFlag (argv: string[]) : bool =
+    argv |> Array.contains "--version"
+    && not (argv |> Array.contains "version")  // 'version' subcommand wins
+
+// --------------------------------------------------------------------------
 // Root tree + dispatch
 // --------------------------------------------------------------------------
 
-/// argv[0] values that route through the DSL instead of legacy elif-chain.
-/// Keep in sync with the subcommands attached to `rootCmd` below.
+/// argv[0] values that route through the DSL subcommand path (`dispatch`)
+/// instead of the default-flow path (`dispatchDefault`).
+/// Keep in sync with the subcommands attached to `subcommandRootCmd` below.
 let migratedSubcommands : string[] =
     [| "doctor"; "reindex"; "init"; "version"; "man"; "aliases"; "env"; "config" |]
 
 /// Returns true when argv begins with one of the migrated subcommand names —
-/// the caller should route through `dispatch` instead of legacy parsing.
+/// the caller should route through `dispatch` instead of `dispatchDefault`.
 let isMigrated (argv: string[]) : bool =
     argv.Length > 0 && Array.contains argv.[0] migratedSubcommands
 
-let private rootCmd : Cmd =
-    root "Fugue — terminal coding agent for polyglot engineers"
+/// Subcommand-only root: used by `dispatch` for argv that begins with a
+/// migrated subcommand.  Top-level options NOT attached here (they only
+/// apply to the default flow).
+let private subcommandRootCmd : Cmd =
+    root "Fugue — terminal coding agent (subcommand path)"
         [ subOf doctorCmd
           subOf reindexCmd
           subOf initCmd
@@ -516,12 +620,47 @@ let private rootCmd : Cmd =
           subOf envCmd
           subOf configCmd ]
         (fun _ ->
-            // Root handler is unreachable — `dispatch` is only called when
-            // argv[0] is a migrated subcommand (Phase-2 routing model).
-            Console.Error.WriteLine "fugue: internal — ProgramArgs root handler reached unexpectedly"
+            // Root handler unreachable on the subcommand path — `dispatch`
+            // only enters when argv[0] is a migrated subcommand name.
+            Console.Error.WriteLine "fugue: internal — ProgramArgs subcommand-root handler reached unexpectedly"
             2)
 
 [<RequiresUnreferencedCode("Routes to subcommand handlers that call STJ-reflection / Doctor.run")>]
 [<RequiresDynamicCode("Routes to subcommand handlers that call STJ-reflection / Doctor.run")>]
 let dispatch (argv: string[]) : int =
-    run argv rootCmd
+    run argv subcommandRootCmd
+
+/// Default-flow dispatch — for `fugue [options]` / `fugue --print "..."`.
+///
+/// Builds a root command with ONLY the top-level options attached (no
+/// subcommands — those go through `dispatch`).  The handler reads the
+/// parsed options into a `RootOptions` record and hands off to the
+/// caller-supplied `runDefault` callback.
+///
+/// This split keeps ProgramArgs free of REPL-specific knowledge —
+/// `runDefault` lives in Program.fs (or, after #928, in Fugue.Cli.Aot's
+/// own Program.fs which has its own headless-only runDefault).
+[<RequiresUnreferencedCode("runDefault callback typically reflects over STJ for config")>]
+[<RequiresDynamicCode("runDefault callback typically reflects over STJ for config")>]
+let dispatchDefault (argv: string[]) (runDefault: RootOptions -> int) : int =
+    let cmd =
+        root "Fugue — terminal coding agent (REPL or one-shot)"
+            [ optOf profileOpt
+              optOf templateOpt
+              optOf lowBandwidthOpt
+              optOf offlineOpt
+              optOf dryRunOpt
+              optOf modeOpt
+              optOf printOpt ]
+            (fun ctx ->
+                let opts : RootOptions = {
+                    Profile      = ctx.Get profileOpt
+                    Template     = ctx.Get templateOpt
+                    LowBandwidth = ctx.Get lowBandwidthOpt
+                    Offline      = ctx.Get offlineOpt
+                    DryRun       = ctx.Get dryRunOpt
+                    Mode         = ctx.Get modeOpt
+                    Print        = ctx.Get printOpt
+                }
+                runDefault opts)
+    run argv cmd

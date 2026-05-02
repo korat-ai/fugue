@@ -160,102 +160,26 @@ let private runWithCfg (cfg: AppConfig) : int =
     | None -> ()
     0
 
-[<EntryPoint>]
-let main argv =
-    Fugue.Core.Log.session ()
-    Fugue.Core.Log.info "main" ("fugue starting, argv=[" + String.concat "; " argv + "]")
-    CaBundle.install () |> ignore
-    // Phase 2a of #930 / #928: route migrated subcommands through the
-    // Fugue.Core.CliArgs DSL.  Today: `doctor`, `reindex`, `init`, `version`.
-    // argv[0] pre-check decides — anything else falls through to the legacy
-    // elif chain below (which still owns `man`, `aliases`, `env`, `config`,
-    // `--help`/`-h`, `--version` flag, default REPL, `--print` flow).
-    if ProgramArgs.isMigrated argv then
-        ProgramArgs.dispatch argv
-    else
+/// Default REPL / one-shot --print flow — invoked by ProgramArgs.dispatchDefault
+/// once the top-level options are parsed into `RootOptions`.
+///
+/// Owns: profile/template loading, --mode parsing, Config discovery prompt,
+/// approval-gate wiring, dispatch into Repl.run / Repl.runPrint via
+/// runWithCfg / runWithPrint above.
+[<RequiresUnreferencedCode("Calls Repl.run / Repl.runPrint / Config.saveToFile via STJ reflection")>]
+[<RequiresDynamicCode("Calls Repl.run / Repl.runPrint / Config.saveToFile via STJ reflection")>]
+let private runDefault (argv: string[]) (opts: ProgramArgs.RootOptions) : int =
     let profileContent =
-        argv
-        |> Array.tryFindIndex ((=) "--profile")
-        |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
-        |> Option.bind Fugue.Core.Config.loadProfile
+        if opts.Profile = "" then None else Fugue.Core.Config.loadProfile opts.Profile
     let templateName =
-        argv
-        |> Array.tryFindIndex ((=) "--template")
-        |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
-    let templateContent = templateName |> Option.bind Fugue.Core.Config.loadTemplate
-    let lowBandwidth = argv |> Array.contains "--low-bandwidth"
-    let offline      = argv |> Array.contains "--offline"
-    let dryRun       = argv |> Array.contains "--dry-run"
-    // --mode <plan|default|auto-edit|yolo> — initial approval mode for the
-    // session. Defaults to Default if omitted; unknown value falls back to
-    // Default with a warning.
+        if opts.Template = "" then None else Some opts.Template
+    let templateContent =
+        templateName |> Option.bind Fugue.Core.Config.loadTemplate
     let initialApprovalMode =
-        argv
-        |> Array.tryFindIndex ((=) "--mode")
-        |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
-        |> Option.bind Fugue.Core.ApprovalMode.tryParse
+        Fugue.Core.ApprovalMode.tryParse opts.Mode
         |> Option.defaultValue Fugue.Core.ApprovalMode.Default
     let printPrompt =
-        argv
-        |> Array.tryFindIndex ((=) "--print")
-        |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
-    if argv |> Array.exists (fun a -> a = "--help" || a = "-h") then
-        Console.Write """Usage: fugue [--profile <name>] [--template <name>] [--low-bandwidth] [--offline] [--mode <m>] [--print "prompt"]
-       fugue doctor | init | aliases | man | reindex
-
-Subcommands:
-  doctor    Run environment diagnostics
-  init      Bootstrap FUGUE.md in current directory
-  aliases   Print/install shell aliases
-  man       Display full manual page
-  reindex   Rebuild FTS5 search index from all session JSONL files
-
-Options:
-  --profile <name>    Load ~/.fugue/profiles/<name>.md as system-prompt prefix
-  --template <name>   Load ~/.fugue/templates/<name>.md as session template
-  --low-bandwidth     Skip session summary, cap tool output to 500 lines
-  --offline           Require a local provider (Ollama)
-  --mode <m>          Initial approval mode: plan, default, auto-edit, yolo
-                      (Shift+Tab cycles in REPL)
-  --print "prompt"    Non-interactive: send one prompt, stream to stdout, exit
-
-Run `fugue man` for the full manual.
-"""
-        0
-    elif argv |> Array.contains "--version" then
-        // `version` subcommand is migrated to ProgramArgs (Phase 2a, #930);
-        // the `--version` flag form stays here until Phase 2c migrates the
-        // top-level options.
-        let asm = System.Reflection.Assembly.GetExecutingAssembly()
-        let ver =
-            let attr = asm.GetCustomAttributes(typeof<System.Reflection.AssemblyInformationalVersionAttribute>, false)
-            if attr.Length > 0 then
-                (attr.[0] :?> System.Reflection.AssemblyInformationalVersionAttribute).InformationalVersion
-            else
-                match asm.GetName().Version |> Option.ofObj with
-                | Some v -> $"{v.Major}.{v.Minor}.{v.Build}"
-                | None   -> "0.0.0"
-        let verbose = argv |> Array.contains "--verbose"
-        if verbose then
-            let rid     = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier
-            let rtVer   = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription
-            let asmPath = System.AppContext.BaseDirectory
-            let cfgPath = Fugue.Core.Config.configFilePath ()
-            let home    = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
-            let profDir = System.IO.Path.Combine(home, ".fugue", "profiles")
-            let tmplDir = System.IO.Path.Combine(home, ".fugue", "templates")
-            Console.WriteLine($"fugue {ver}")
-            Console.WriteLine($"  Target RID:    {rid}")
-            Console.WriteLine($"  .NET runtime:  {rtVer}")
-            let binaryDisplay = if asmPath = "" then "(AOT native)" else asmPath
-            Console.WriteLine($"  Binary:        {binaryDisplay}")
-            Console.WriteLine($"  Config file:   {cfgPath}")
-            Console.WriteLine($"  Profiles dir:  {profDir}")
-            Console.WriteLine($"  Templates dir: {tmplDir}")
-        else
-            Console.WriteLine($"fugue {ver}")
-        0
-    else
+        if opts.Print = "" then None else Some opts.Print
     match Fugue.Core.Config.load argv with
     | Error (NoConfigFound help) ->
         let candidates = Discovery.discover (Discovery.defaultSources ())
@@ -274,12 +198,22 @@ Run `fugue man` for the full manual.
                     let m = if List.isEmpty models then "llama3.1" else List.head models
                     Ollama(ep, m)
                 | _ -> failwith "unsupported candidate"
-            let cfg = { Provider = provider; SystemPrompt = None; ProfileContent = profileContent; TemplateContent = templateContent; TemplateName = templateName; MaxIterations = 30; MaxTokens = None; Ui = Fugue.Core.Config.defaultUi (); BaseUrl = None; LowBandwidth = lowBandwidth; Offline = offline; DryRun = dryRun }
+            let cfg = {
+                Provider        = provider
+                SystemPrompt    = None
+                ProfileContent  = profileContent
+                TemplateContent = templateContent
+                TemplateName    = templateName
+                MaxIterations   = 30
+                MaxTokens       = None
+                Ui              = Fugue.Core.Config.defaultUi ()
+                BaseUrl         = None
+                LowBandwidth    = opts.LowBandwidth
+                Offline         = opts.Offline
+                DryRun          = opts.DryRun
+            }
             Fugue.Core.Config.saveToFile cfg
-            // Apply --mode to StatusBar before any rendering begins.
             StatusBar.setApprovalMode initialApprovalMode
-            // Install approval gate before tools are invoked. Interactive iff stdin
-            // is a TTY (matches the Surface-actor allocation rule).
             let interactive = not Console.IsInputRedirected
             Fugue.Tools.AiFunctions.DelegatedFn.setApprovalGate
                 (Fugue.Cli.ApprovalPrompt.buildGate StatusBar.getApprovalMode interactive)
@@ -287,20 +221,55 @@ Run `fugue man` for the full manual.
             | Some p -> runWithPrint cfg p
             | None   -> runWithCfg cfg
         | None ->
-            Console.Error.WriteLine(help)
+            Console.Error.WriteLine help
             1
     | Error (InvalidConfig reason) ->
-        Console.Error.WriteLine("Invalid config: " + reason)
+        Console.Error.WriteLine ("Invalid config: " + reason)
         1
     | Ok cfg ->
-        let fullCfg = { cfg with ProfileContent = profileContent; TemplateContent = templateContent; TemplateName = templateName; LowBandwidth = lowBandwidth; Offline = offline; DryRun = dryRun }
-        // Apply --mode to StatusBar before any rendering begins.
+        let fullCfg = {
+            cfg with
+                ProfileContent  = profileContent
+                TemplateContent = templateContent
+                TemplateName    = templateName
+                LowBandwidth    = opts.LowBandwidth
+                Offline         = opts.Offline
+                DryRun          = opts.DryRun
+        }
         StatusBar.setApprovalMode initialApprovalMode
-        // Install approval gate before tools are invoked. Interactive iff stdin
-        // is a TTY (matches the Surface-actor allocation rule).
         let interactive = not Console.IsInputRedirected
         Fugue.Tools.AiFunctions.DelegatedFn.setApprovalGate
             (Fugue.Cli.ApprovalPrompt.buildGate StatusBar.getApprovalMode interactive)
         match printPrompt with
         | Some p -> runWithPrint fullCfg p
         | None   -> runWithCfg fullCfg
+
+// Note: [<RequiresUnreferencedCode>] / [<RequiresDynamicCode>] cannot be
+// placed on `[<EntryPoint>]` (IL2123 / IL3057).  The trim / AOT analyser
+// treats `main` as a fixed root and warns on any reflection-using callee
+// directly.  Each callee that needs the attribute gets it (runDefault here,
+// runWithCfg / runWithPrint above, ProgramArgs.dispatch / dispatchDefault).
+[<EntryPoint>]
+let main argv =
+    Fugue.Core.Log.session ()
+    Fugue.Core.Log.info "main" ("fugue starting, argv=[" + String.concat "; " argv + "]")
+    CaBundle.install () |> ignore
+    // Phase 2c routing: every argv path is now in ProgramArgs.
+    //   1. --help / -h          → custom Usage text (bypass SC's auto-help)
+    //   2. --version (flag)     → dispatch as `version` subcommand
+    //   3. migrated subcommand  → ProgramArgs.dispatch (System.CommandLine path)
+    //   4. otherwise            → ProgramArgs.dispatchDefault (REPL / --print flow)
+    if ProgramArgs.isHelp argv then
+        ProgramArgs.printUsage ()
+        0
+    elif ProgramArgs.isVersionFlag argv then
+        // Backward-compat: `--version` flag is an alias for the `version`
+        // subcommand.  Preserve `--verbose` if also present, so legacy
+        // `fugue --version --verbose` keeps printing the runtime details
+        // block instead of just the bare version string.
+        let extra = if argv |> Array.contains "--verbose" then [| "--verbose" |] else [||]
+        ProgramArgs.dispatch (Array.append [| "version" |] extra)
+    elif ProgramArgs.isMigrated argv then
+        ProgramArgs.dispatch argv
+    else
+        ProgramArgs.dispatchDefault argv (runDefault argv)
