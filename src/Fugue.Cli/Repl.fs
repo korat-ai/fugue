@@ -715,10 +715,15 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                   OnAnnotateUp        = fun () -> doAnnotate Fugue.Core.Annotation.Up
                   OnAnnotateDown      = fun () -> doAnnotate Fugue.Core.Annotation.Down
                   OnCycleApprovalMode =
+                    // Status bar already shows the mode icon + risk colour
+                    // (◆ plan / ● default / ◑ auto-edit / ○ yolo).  An inline
+                    // toast collides with the active ReadLine prompt area
+                    // (its newline isn't accounted for by st.LinesRendered,
+                    // so the next redraw erases the wrong rows — visible
+                    // as a stack of accumulated "→ approval mode:" lines).
                     fun () ->
-                        let m = StatusBar.cycleApprovalMode ()
-                        StatusBar.refresh ()
-                        Surface.markupLine($"[dim]→ approval mode: {Fugue.Core.ApprovalMode.label m}[/]") }
+                        StatusBar.cycleApprovalMode () |> ignore
+                        StatusBar.refresh () }
             // Drain file-watch triggers from background FileSystemWatcher
             let watchTriggers = FileWatcher.drain ()
             for wcmd in watchTriggers do
