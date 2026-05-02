@@ -22,6 +22,7 @@
     <Compile Include="ErrorTrend.fs" />
     <Compile Include="ConversationIntent.fs" />
     <Compile Include="Hooks.fs" />
+    <Compile Include="ApprovalMode.fs" />
     <Compile Include="ProviderCache.fs" />
   </ItemGroup>
   <ItemGroup>

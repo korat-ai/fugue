@@ -723,9 +723,14 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 let sym = match rating with Fugue.Core.Annotation.Up -> "↑" | Fugue.Core.Annotation.Down -> "↓"
                 AnsiConsole.MarkupLine($"[dim]{sym} turn {idx}[/]")
             let callbacks : ReadLine.ReadLineCallbacks =
-                { OnClearScreen  = StatusBar.refresh
-                  OnAnnotateUp   = fun () -> doAnnotate Fugue.Core.Annotation.Up
-                  OnAnnotateDown = fun () -> doAnnotate Fugue.Core.Annotation.Down }
+                { OnClearScreen       = StatusBar.refresh
+                  OnAnnotateUp        = fun () -> doAnnotate Fugue.Core.Annotation.Up
+                  OnAnnotateDown      = fun () -> doAnnotate Fugue.Core.Annotation.Down
+                  OnCycleApprovalMode =
+                    fun () ->
+                        let m = StatusBar.cycleApprovalMode ()
+                        StatusBar.refresh ()
+                        AnsiConsole.MarkupLine($"[dim]→ approval mode: {Fugue.Core.ApprovalMode.label m}[/]") }
             // Drain file-watch triggers from background FileSystemWatcher
             let watchTriggers = FileWatcher.drain ()
             for wcmd in watchTriggers do

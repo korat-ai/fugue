@@ -60,6 +60,16 @@ let ``Shift+Enter inserts newline`` () =
     s.Cursor |> should equal 4
 
 [<Fact>]
+let ``Shift+Tab returns CycleApprovalMode without touching the buffer`` () =
+    let s = mkState "hello" 3
+    let act = applyKey (special ConsoleKey.Tab ConsoleModifiers.Shift) s
+    act |> should equal CycleApprovalMode
+    // Buffer + cursor MUST be unaffected — Shift+Tab is a session UX action,
+    // not text input.
+    String(s.Buffer.ToArray()) |> should equal "hello"
+    s.Cursor |> should equal 3
+
+[<Fact>]
 let ``Ctrl+D on empty buffer returns Quit`` () =
     let s = mkState "" 0
     let act = applyKey (special ConsoleKey.D ConsoleModifiers.Control) s

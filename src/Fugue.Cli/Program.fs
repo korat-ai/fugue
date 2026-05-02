@@ -173,12 +173,21 @@ let main argv =
     let lowBandwidth = argv |> Array.contains "--low-bandwidth"
     let offline      = argv |> Array.contains "--offline"
     let dryRun       = argv |> Array.contains "--dry-run"
+    // --mode <plan|default|auto-edit|yolo> — initial approval mode for the
+    // session. Defaults to Default if omitted; unknown value falls back to
+    // Default with a warning.
+    let initialApprovalMode =
+        argv
+        |> Array.tryFindIndex ((=) "--mode")
+        |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
+        |> Option.bind Fugue.Core.ApprovalMode.tryParse
+        |> Option.defaultValue Fugue.Core.ApprovalMode.Default
     let printPrompt =
         argv
         |> Array.tryFindIndex ((=) "--print")
         |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
     if argv |> Array.exists (fun a -> a = "--help" || a = "-h") then
-        Console.Write """Usage: fugue [--profile <name>] [--template <name>] [--low-bandwidth] [--offline] [--print "prompt"]
+        Console.Write """Usage: fugue [--profile <name>] [--template <name>] [--low-bandwidth] [--offline] [--mode <m>] [--print "prompt"]
        fugue doctor | init | aliases | man | reindex
 
 Subcommands:
@@ -193,6 +202,8 @@ Options:
   --template <name>   Load ~/.fugue/templates/<name>.md as session template
   --low-bandwidth     Skip session summary, cap tool output to 500 lines
   --offline           Require a local provider (Ollama)
+  --mode <m>          Initial approval mode: plan, default, auto-edit, yolo
+                      (Shift+Tab cycles in REPL)
   --print "prompt"    Non-interactive: send one prompt, stream to stdout, exit
 
 Run `fugue man` for the full manual.
@@ -568,6 +579,8 @@ SEE ALSO
                 | _ -> failwith "unsupported candidate"
             let cfg = { Provider = provider; SystemPrompt = None; ProfileContent = profileContent; TemplateContent = templateContent; TemplateName = templateName; MaxIterations = 30; MaxTokens = None; Ui = Fugue.Core.Config.defaultUi (); BaseUrl = None; LowBandwidth = lowBandwidth; Offline = offline; DryRun = dryRun }
             Fugue.Core.Config.saveToFile cfg
+            // Apply --mode to StatusBar before any rendering begins.
+            StatusBar.setApprovalMode initialApprovalMode
             match printPrompt with
             | Some p -> runWithPrint cfg p
             | None   -> runWithCfg cfg
@@ -579,6 +592,8 @@ SEE ALSO
         1
     | Ok cfg ->
         let fullCfg = { cfg with ProfileContent = profileContent; TemplateContent = templateContent; TemplateName = templateName; LowBandwidth = lowBandwidth; Offline = offline; DryRun = dryRun }
+        // Apply --mode to StatusBar before any rendering begins.
+        StatusBar.setApprovalMode initialApprovalMode
         match printPrompt with
         | Some p -> runWithPrint fullCfg p
         | None   -> runWithCfg fullCfg
