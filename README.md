@@ -13,7 +13,7 @@ Fugue ships as **two distributions** with deliberately different tradeoffs:
 
 | Binary             | Runtime           | Cold start | Use case                              |
 |--------------------|-------------------|-----------:|---------------------------------------|
-| `fugue-aot`   | **Native AOT**    | ~40 ms     | CI / scripting / pipes / `--print`    |
+| `fugue-aot`   | **Native AOT**    | 10–50 ms   | CI / scripting / pipes / `--print`    |
 | `fugue`            | **JIT + ReadyToRun** | ~150 ms    | Interactive REPL / TUI                |
 
 **Why split:**
