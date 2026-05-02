@@ -1,7 +1,7 @@
 # Fugue
 
 > A small, fast F# terminal coding agent. **Two binaries, two runtimes:**
-> `fugue-aot` (Native AOT, ~40ms cold start) for CI / pipes / `--print`.
+> `fugue-aot` (Native AOT, ~10–50ms start: 50ms file-system cold, 10ms warm) for CI / pipes / `--print`.
 > `fugue` (JIT + ReadyToRun) for interactive REPL — long-lived, JIT warms once.
 > Provider-agnostic (Anthropic / OpenAI-compat / Ollama).
 
@@ -42,7 +42,7 @@ Fugue ships as **two distributions** with different runtime tradeoffs. Pivot loc
 
 | Binary             | Runtime                    | Cold start | Use case                                                       |
 |--------------------|----------------------------|-----------:|----------------------------------------------------------------|
-| `fugue-aot`   | **Native AOT** single-file | ~40 ms     | CI / scripting / pipe-input / `--print` / `-p` flag            |
+| `fugue-aot`   | **Native AOT** single-file | 10–50 ms   | CI / scripting / pipe-input / `--print` / `-p` flag            |
 | `fugue`            | **JIT + ReadyToRun**       | ~150 ms    | Interactive REPL / TUI sessions (long-lived, JIT warms once)   |
 
 **Headless trigger** (decided in one place, `Fugue.Cli.Aot/Program.fs`):
@@ -118,10 +118,10 @@ Always confirm with the user before:
 **Phase 1–5 closed.** Acceptance criteria met (with one accepted deferral on binary size — 47MB vs 35MB target; root cause: `FSharp.Core` + `System.Text.Json` rooted via `TrimmerRootAssembly`, plus features added since MVP close (hooks, sessions, SQLite); mitigation in v0.2 via STJ source-gen for F# DTOs).
 
 Verified metrics:
-- Binary: **47 MB** osx-arm64 single-file AOT
-- Cold start: **40 ms**
-- Peak RSS: **47 MB**
-- Tests: **120+/120+** pass
+- Binary: **45.5 MB** osx-arm64 single-file AOT (was 47 MB before #930 modernised arg parsing)
+- Cold start: **50 ms file-system cold / 10 ms warm cache** on M-class Mac (re-measured 2026-05-02 with 5-run baseline). Earlier "40 ms" claim averaged warm runs — keep both numbers since both matter (cold = first-CI-step latency, warm = subsequent invocations within a job).
+- Peak RSS: **36.7 MB** (re-measured 2026-05-02)
+- Tests: **551/551** pass on `feat/cli-args-dsl` (#930), **540/540** on main
 - E2E smoke: passed against LM Studio (OpenAI-compat); not yet against real Anthropic / OpenAI cloud / Ollama
 - Multiple PRs in review (batch shipped 2026-04-30):
   - PR #221: `!cmd` shell shortcut, `/new` session reset, Ctrl+L, 8 UX/bug fixes
