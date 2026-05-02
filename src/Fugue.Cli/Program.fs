@@ -160,410 +160,26 @@ let private runWithCfg (cfg: AppConfig) : int =
     | None -> ()
     0
 
-[<EntryPoint>]
-let main argv =
-    Fugue.Core.Log.session ()
-    Fugue.Core.Log.info "main" ("fugue starting, argv=[" + String.concat "; " argv + "]")
-    CaBundle.install () |> ignore
+/// Default REPL / one-shot --print flow — invoked by ProgramArgs.dispatchDefault
+/// once the top-level options are parsed into `RootOptions`.
+///
+/// Owns: profile/template loading, --mode parsing, Config discovery prompt,
+/// approval-gate wiring, dispatch into Repl.run / Repl.runPrint via
+/// runWithCfg / runWithPrint above.
+[<RequiresUnreferencedCode("Calls Repl.run / Repl.runPrint / Config.saveToFile via STJ reflection")>]
+[<RequiresDynamicCode("Calls Repl.run / Repl.runPrint / Config.saveToFile via STJ reflection")>]
+let private runDefault (argv: string[]) (opts: ProgramArgs.RootOptions) : int =
     let profileContent =
-        argv
-        |> Array.tryFindIndex ((=) "--profile")
-        |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
-        |> Option.bind Fugue.Core.Config.loadProfile
+        if opts.Profile = "" then None else Fugue.Core.Config.loadProfile opts.Profile
     let templateName =
-        argv
-        |> Array.tryFindIndex ((=) "--template")
-        |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
-    let templateContent = templateName |> Option.bind Fugue.Core.Config.loadTemplate
-    let lowBandwidth = argv |> Array.contains "--low-bandwidth"
-    let offline      = argv |> Array.contains "--offline"
-    let dryRun       = argv |> Array.contains "--dry-run"
-    // --mode <plan|default|auto-edit|yolo> — initial approval mode for the
-    // session. Defaults to Default if omitted; unknown value falls back to
-    // Default with a warning.
+        if opts.Template = "" then None else Some opts.Template
+    let templateContent =
+        templateName |> Option.bind Fugue.Core.Config.loadTemplate
     let initialApprovalMode =
-        argv
-        |> Array.tryFindIndex ((=) "--mode")
-        |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
-        |> Option.bind Fugue.Core.ApprovalMode.tryParse
+        Fugue.Core.ApprovalMode.tryParse opts.Mode
         |> Option.defaultValue Fugue.Core.ApprovalMode.Default
     let printPrompt =
-        argv
-        |> Array.tryFindIndex ((=) "--print")
-        |> Option.bind (fun i -> if i + 1 < argv.Length then Some argv.[i + 1] else None)
-    if argv |> Array.exists (fun a -> a = "--help" || a = "-h") then
-        Console.Write """Usage: fugue [--profile <name>] [--template <name>] [--low-bandwidth] [--offline] [--mode <m>] [--print "prompt"]
-       fugue doctor | init | aliases | man | reindex
-
-Subcommands:
-  doctor    Run environment diagnostics
-  init      Bootstrap FUGUE.md in current directory
-  aliases   Print/install shell aliases
-  man       Display full manual page
-  reindex   Rebuild FTS5 search index from all session JSONL files
-
-Options:
-  --profile <name>    Load ~/.fugue/profiles/<name>.md as system-prompt prefix
-  --template <name>   Load ~/.fugue/templates/<name>.md as session template
-  --low-bandwidth     Skip session summary, cap tool output to 500 lines
-  --offline           Require a local provider (Ollama)
-  --mode <m>          Initial approval mode: plan, default, auto-edit, yolo
-                      (Shift+Tab cycles in REPL)
-  --print "prompt"    Non-interactive: send one prompt, stream to stdout, exit
-
-Run `fugue man` for the full manual.
-"""
-        0
-    elif argv |> Array.contains "doctor" then
-        let cwd = Environment.CurrentDirectory
-        let passed = Doctor.run cwd
-        if passed then 0 else 1
-    elif argv |> Array.contains "reindex" then
-        match Fugue.Core.SearchIndex.reindexFromJsonl () with
-        | Ok n    -> Console.Out.WriteLine($"Reindexed {n} session(s)."); 0
-        | Error e -> Console.Error.WriteLine($"Reindex failed: {e}"); 1
-    elif argv |> Array.contains "man" then
-        let manContent = """fugue(1)                    Fugue Manual                    fugue(1)
-
-NAME
-       fugue - lean AOT-native CLI coding assistant
-
-SYNOPSIS
-       fugue [--profile <name>] [--template <name>] [--low-bandwidth]
-             [--offline] [--print "prompt"]
-       fugue doctor
-       fugue init
-       fugue aliases [--install]
-       fugue man [--install]
-
-DESCRIPTION
-       fugue is a fast, single-binary terminal coding agent for polyglot
-       engineers. Cold-starts in ~40ms, uses ~47MB RSS, and works with
-       Anthropic, OpenAI-compatible, and Ollama providers.
-
-OPTIONS
-       --profile <name>
-              Load ~/.fugue/profiles/<name>.md as a system-prompt prefix.
-
-       --template <name>
-              Load ~/.fugue/templates/<name>.md as a session template.
-
-       --low-bandwidth
-              Skip session summary, cap tool output to 500 lines.
-
-       --offline
-              Require a local provider (Ollama). Reject remote API calls.
-
-       --print "prompt"
-              Non-interactive: send one prompt, stream to stdout, exit.
-              Reads stdin if piped: git diff | fugue --print "review this"
-
-SUBCOMMANDS
-       doctor     Run environment diagnostics.
-       init       Bootstrap FUGUE.md in the current project directory.
-       aliases    Print recommended shell aliases; --install appends to shell rc.
-       man        Display this manual; --install places it in man path.
-
-ENVIRONMENT
-       ANTHROPIC_API_KEY      Anthropic API key.
-       OPENAI_API_KEY         OpenAI API key.
-       ANTHROPIC_BASE_URL     Override Anthropic API endpoint.
-       OPENAI_BASE_URL        Override OpenAI API endpoint.
-       FUGUE_CA_BUNDLE        Path to PEM CA bundle for corporate TLS proxies.
-       FUGUE_NO_COLOR         Disable ANSI colour output.
-       NO_COLOR               Standard no-colour flag (https://no-color.org).
-
-SLASH COMMANDS (REPL)
-       /help       List all commands.
-       /new        Start a new session.
-       /clear      Clear the screen.
-       /rename     Set a human-readable session title.
-       /env        Manage session-scoped environment variables.
-       /gen        Generate UUID, ULID, or NanoID.
-       /cron       Convert natural-language schedule to cron expression.
-       /regex      Test a regex pattern against sample input.
-       /diff       Show current git diff.
-       /summary    Summarise the current session.
-       /tools      List available tools.
-       /exit       Exit fugue.
-
-FILES
-       ~/.fugue/config.json   Main configuration file.
-       ~/.fugue/FUGUE.md      Global project context (injected on start).
-       ~/.fugue/profiles/     Named system-prompt profiles.
-       ~/.fugue/templates/    Session templates.
-       ./FUGUE.md             Project-local context (injected on start).
-       .fugue/hooks/          Pre/post tool hooks (future).
-
-SEE ALSO
-       https://github.com/korat-ai/fugue
-
-"""
-        let install = argv |> Array.contains "--install"
-        if install then
-            let manDir = "/usr/local/share/man/man1"
-            let manFile = System.IO.Path.Combine(manDir, "fugue.1")
-            try
-                System.IO.Directory.CreateDirectory manDir |> ignore
-                System.IO.File.WriteAllText(manFile, manContent)
-                Console.WriteLine($"✓ Installed to {manFile}")
-                Console.WriteLine "  Run: man fugue"
-                0
-            with ex ->
-                Console.Error.WriteLine($"Failed to install man page (try sudo): {ex.Message}")
-                1
-        else
-            let pager =
-                let p = Environment.GetEnvironmentVariable "PAGER" |> Option.ofObj |> Option.defaultValue ""
-                if p <> "" then p else "less"
-            let tmpFile = System.IO.Path.GetTempFileName() + ".1"
-            System.IO.File.WriteAllText(tmpFile, manContent)
-            try
-                let psi = System.Diagnostics.ProcessStartInfo(pager, tmpFile)
-                psi.UseShellExecute <- true
-                match System.Diagnostics.Process.Start psi |> Option.ofObj with
-                | Some proc -> proc.WaitForExit()
-                | None -> Console.Write manContent
-            with _ ->
-                Console.Write manContent
-            try System.IO.File.Delete tmpFile with _ -> ()
-            0
-    elif argv |> Array.contains "init" then
-        let cwd = Environment.CurrentDirectory
-        let fugueMd = System.IO.Path.Combine(cwd, "FUGUE.md")
-        if System.IO.File.Exists fugueMd then
-            Console.Error.WriteLine "FUGUE.md already exists. Edit it directly or delete it first."
-            1
-        else
-        // Detect project type from files in cwd
-        let hasFile pat =
-            try System.IO.Directory.GetFiles(cwd, pat, System.IO.SearchOption.TopDirectoryOnly).Length > 0
-            with _ -> false
-        let hasDir name = System.IO.Directory.Exists(System.IO.Path.Combine(cwd, name))
-        let stack =
-            if hasFile "*.fsproj"   then "F# / .NET"
-            elif hasFile "*.csproj" then "C# / .NET"
-            elif hasFile "package.json" then "Node.js / TypeScript"
-            elif hasFile "mix.exs"  then "Elixir / Mix"
-            elif hasFile "build.sbt" || hasFile "*.scala" then "Scala / SBT"
-            elif hasFile "pom.xml"  || hasFile "build.gradle" then "Java / JVM"
-            elif hasFile "Cargo.toml" then "Rust / Cargo"
-            elif hasFile "go.mod"   then "Go"
-            elif hasFile "pyproject.toml" || hasFile "setup.py" then "Python"
-            else "Unknown"
-        let template =
-            $"# Project context\n\n## Stack\n{stack}\n\n## Purpose\n<!-- Describe what this project does -->\n\n## Key constraints\n<!-- Performance, security, platform, team rules -->\n\n## Common tasks\n<!-- What does the AI help you with most often? -->\n"
-        System.IO.File.WriteAllText(fugueMd, template)
-        Console.WriteLine($"Detected: {stack}")
-        Console.WriteLine($"✓ Created FUGUE.md ({System.IO.File.ReadAllBytes(fugueMd).Length} bytes)")
-        // Add to .gitignore if it exists and doesn't already include it
-        let gitignore = System.IO.Path.Combine(cwd, ".gitignore")
-        if System.IO.File.Exists gitignore then
-            let content = System.IO.File.ReadAllText gitignore
-            if not (content.Contains "FUGUE.md") then
-                System.IO.File.AppendAllText(gitignore, "\nFUGUE.md\n")
-                Console.WriteLine "✓ Added FUGUE.md to .gitignore"
-        // Create .fugue/hooks/ dir
-        let hooksDir = System.IO.Path.Combine(cwd, ".fugue", "hooks")
-        System.IO.Directory.CreateDirectory hooksDir |> ignore
-        Console.WriteLine "✓ Created .fugue/hooks/ directory"
-        Console.WriteLine "Edit FUGUE.md to add project-specific context, then run: fugue"
-        0
-    elif argv |> Array.contains "version" || argv |> Array.contains "--version" then
-        let asm = System.Reflection.Assembly.GetExecutingAssembly()
-        let ver =
-            let attr = asm.GetCustomAttributes(typeof<System.Reflection.AssemblyInformationalVersionAttribute>, false)
-            if attr.Length > 0 then
-                (attr.[0] :?> System.Reflection.AssemblyInformationalVersionAttribute).InformationalVersion
-            else
-                match asm.GetName().Version |> Option.ofObj with
-                | Some v -> $"{v.Major}.{v.Minor}.{v.Build}"
-                | None   -> "0.0.0"
-        let verbose = argv |> Array.contains "--verbose"
-        if verbose then
-            let rid     = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier
-            let rtVer   = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription
-            let asmPath = System.AppContext.BaseDirectory
-            let cfgPath = Fugue.Core.Config.configFilePath ()
-            let home    = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
-            let profDir = System.IO.Path.Combine(home, ".fugue", "profiles")
-            let tmplDir = System.IO.Path.Combine(home, ".fugue", "templates")
-            Console.WriteLine($"fugue {ver}")
-            Console.WriteLine($"  Target RID:    {rid}")
-            Console.WriteLine($"  .NET runtime:  {rtVer}")
-            let binaryDisplay = if asmPath = "" then "(AOT native)" else asmPath
-            Console.WriteLine($"  Binary:        {binaryDisplay}")
-            Console.WriteLine($"  Config file:   {cfgPath}")
-            Console.WriteLine($"  Profiles dir:  {profDir}")
-            Console.WriteLine($"  Templates dir: {tmplDir}")
-        else
-            Console.WriteLine($"fugue {ver}")
-        0
-    elif argv |> Array.contains "env" then
-        let maskKey (v: string) =
-            if v.Length <= 8 then String.replicate v.Length "•"
-            else v.[..3] + String.replicate (min 16 (v.Length - 8)) "•" + v.[v.Length - 4..]
-        let fuguVars = [
-            "FUGUE_PROVIDER";   "FUGUE_MODEL";      "FUGUE_CA_BUNDLE"
-            "FUGUE_NO_COLOR";   "ANTHROPIC_API_KEY"; "OPENAI_API_KEY"
-            "ANTHROPIC_BASE_URL"; "OPENAI_BASE_URL";  "OLLAMA_ENDPOINT"
-            "TERM";              "NO_COLOR";           "PAGER" ]
-        let header = String.Format("{0,-30} {1,-35} {2}", "Variable", "Value", "Status")
-        Console.WriteLine header
-        Console.WriteLine(String.replicate 75 "─")
-        let cfg0 = Fugue.Core.Config.load [||]
-        for name in fuguVars do
-            let v = Environment.GetEnvironmentVariable name |> Option.ofObj
-            let isKey = name.EndsWith "_KEY"
-            let display =
-                match v with
-                | None -> "(not set)"
-                | Some s -> if isKey then maskKey s else s
-            let status =
-                match v with
-                | None -> "—"
-                | Some _ ->
-                    match cfg0, name with
-                    | Ok c, "FUGUE_PROVIDER" ->
-                        let cfgProv = match c.Provider with Anthropic _ -> "anthropic" | OpenAI _ -> "openai" | Ollama _ -> "ollama"
-                        $"env (config: {cfgProv})"
-                    | _ -> "env"
-            Console.WriteLine($"{name,-30} {display,-35} {status}")
-        0
-    elif argv |> Array.contains "aliases" then
-        let install = argv |> Array.contains "--install"
-        let lines =
-            [ "# Fugue shell aliases"
-              "alias fask='fugue --print'"
-              "alias fnew='fugue --new-session'"
-              "alias fdoctor='fugue doctor'"
-              "alias faliases='fugue aliases'" ]
-        if install then
-            let shellRc =
-                let zshrc = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".zshrc")
-                let bashrc = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".bashrc")
-                if System.IO.File.Exists zshrc then zshrc else bashrc
-            let block = "\n" + (lines |> String.concat "\n") + "\n"
-            System.IO.File.AppendAllText(shellRc, block)
-            Console.WriteLine($"✓ Appended {lines.Length - 1} aliases to {shellRc}")
-            Console.WriteLine($"  Reload with: source {shellRc}")
-        else
-            for l in lines do Console.WriteLine l
-            Console.WriteLine()
-            Console.WriteLine "Run 'fugue aliases --install' to append these to ~/.zshrc automatically."
-        0
-    elif argv.Length >= 2 && argv.[0] = "config" then
-        let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
-        let cfgPath = Fugue.Core.Config.configFilePath ()
-        let readDoc () =
-            if System.IO.File.Exists cfgPath then
-                try Some (System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText cfgPath))
-                with _ -> None
-            else None
-        let getVal (doc: System.Text.Json.JsonDocument) (key: string) =
-            let parts = key.Split('.')
-            let mutable el = doc.RootElement
-            let mutable found = true
-            for p in parts do
-                match el.TryGetProperty p with
-                | true, v -> el <- v
-                | _ -> found <- false
-            if found then Some (el.ToString()) else None
-        match argv.[1] with
-        | "validate" ->
-            if not (System.IO.File.Exists cfgPath) then
-                Console.Error.WriteLine($"No config file at {cfgPath}"); 1
-            else
-            match Fugue.Core.Config.load [||] with
-            | Ok cfg ->
-                let prov = match cfg.Provider with
-                           | Anthropic _ -> "anthropic" | OpenAI _ -> "openai" | Ollama _ -> "ollama"
-                Console.WriteLine("✓ config.json is valid")
-                Console.WriteLine($"  provider:  {prov}")
-                Console.WriteLine($"  model:     {Fugue.Core.Config.modelDisplayName (match cfg.Provider with Anthropic(_,m)|OpenAI(_,m)|Ollama(_,m)->m)}")
-                Console.WriteLine($"  path:      {cfgPath}")
-                0
-            | Error (Fugue.Core.Config.InvalidConfig reason) ->
-                // Parse the JSON ourselves and give detailed hints.
-                try
-                    use doc = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText cfgPath)
-                    let root = doc.RootElement
-                    let mutable errors = []
-                    let str (k: string) = match root.TryGetProperty(k) with true, v when v.ValueKind = System.Text.Json.JsonValueKind.String -> v.GetString() |> Option.ofObj | _ -> None
-                    match str "provider" with
-                    | None -> errors <- errors @ ["[provider] missing — set to \"anthropic\", \"openai\", or \"ollama\""]
-                    | Some p when p <> "anthropic" && p <> "openai" && p <> "ollama" ->
-                        errors <- errors @ [$"[provider] \"{p}\" is not valid — use: anthropic, openai, ollama"]
-                    | _ -> ()
-                    match str "model" with
-                    | None -> errors <- errors @ ["[model] missing — set to a model ID (e.g. claude-opus-4-7)"]
-                    | _ -> ()
-                    if errors.IsEmpty then errors <- [reason]
-                    Console.Error.WriteLine($"✗ config.json has {errors.Length} error(s):")
-                    for e in errors do Console.Error.WriteLine($"  {e}")
-                    1
-                with _ ->
-                    Console.Error.WriteLine($"✗ {reason}"); 1
-            | Error (Fugue.Core.Config.NoConfigFound _) ->
-                Console.Error.WriteLine "✗ No config found"; 1
-        | "list" ->
-            match readDoc () with
-            | None -> Console.Error.WriteLine "No config file found."; 1
-            | Some doc ->
-                use _ = doc
-                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(doc.RootElement,
-                    System.Text.Json.JsonSerializerOptions(WriteIndented = true)))
-                0
-        | "get" when argv.Length >= 3 ->
-            match readDoc () with
-            | None -> Console.Error.WriteLine "No config file found."; 1
-            | Some doc ->
-                use _ = doc
-                match getVal doc argv.[2] with
-                | Some v -> Console.WriteLine v; 0
-                | None -> Console.Error.WriteLine($"Key not found: {argv.[2]}"); 1
-        | "set" when argv.Length >= 4 ->
-            let key   = argv.[2]
-            let value = argv.[3]
-            let json  =
-                if System.IO.File.Exists cfgPath then System.IO.File.ReadAllText cfgPath
-                else "{}"
-            // AOT-safe set: only supports top-level and one-level-nested keys (dot-separated).
-            // Rebuilds the JSON by loading into AppConfig, mutating, and re-saving.
-            // For arbitrary key paths, fall back to Config.load → cfg with → saveToFile.
-            try
-                let jsonVal =
-                    match System.Int32.TryParse value with
-                    | true, n -> $"{n}"
-                    | _ ->
-                        match System.Boolean.TryParse value with
-                        | true, b -> (if b then "true" else "false")
-                        | _ ->
-                            let escaped = value.Replace("\"", "\\\"")
-                            $"\"{escaped}\""
-                // Simple regex-style replacement: if key exists, replace; else append before closing brace.
-                let escapedKey = System.Text.RegularExpressions.Regex.Escape key
-                let pattern = $"\"({escapedKey})\"\\s*:\\s*(?:\"[^\"]*\"|[^,}}\\s]+)"
-                let newPair = $"\"{key}\": {jsonVal}"
-                let newJson =
-                    if System.Text.RegularExpressions.Regex.IsMatch(json, pattern) then
-                        System.Text.RegularExpressions.Regex.Replace(json, pattern, newPair)
-                    else
-                        let trimmed = json.TrimEnd()
-                        if trimmed.EndsWith '}' then
-                            let body = trimmed.[..trimmed.Length - 2].TrimEnd()
-                            let sep = if body.TrimEnd().EndsWith ',' || body.TrimEnd() = "{" then "" else ","
-                            $"{body}{sep}\n  {newPair}\n}}"
-                        else json
-                System.IO.File.WriteAllText(cfgPath, newJson)
-                Console.WriteLine($"Set {key} = {value}")
-                0
-            with ex ->
-                Console.Error.WriteLine($"Failed to set {key}: {ex.Message}"); 1
-        | sub ->
-            Console.Error.WriteLine($"Unknown config subcommand: {sub}. Use: fugue config list | get <key> | set <key> <value>")
-            1
-    else
+        if opts.Print = "" then None else Some opts.Print
     match Fugue.Core.Config.load argv with
     | Error (NoConfigFound help) ->
         let candidates = Discovery.discover (Discovery.defaultSources ())
@@ -582,12 +198,22 @@ SEE ALSO
                     let m = if List.isEmpty models then "llama3.1" else List.head models
                     Ollama(ep, m)
                 | _ -> failwith "unsupported candidate"
-            let cfg = { Provider = provider; SystemPrompt = None; ProfileContent = profileContent; TemplateContent = templateContent; TemplateName = templateName; MaxIterations = 30; MaxTokens = None; Ui = Fugue.Core.Config.defaultUi (); BaseUrl = None; LowBandwidth = lowBandwidth; Offline = offline; DryRun = dryRun }
+            let cfg = {
+                Provider        = provider
+                SystemPrompt    = None
+                ProfileContent  = profileContent
+                TemplateContent = templateContent
+                TemplateName    = templateName
+                MaxIterations   = 30
+                MaxTokens       = None
+                Ui              = Fugue.Core.Config.defaultUi ()
+                BaseUrl         = None
+                LowBandwidth    = opts.LowBandwidth
+                Offline         = opts.Offline
+                DryRun          = opts.DryRun
+            }
             Fugue.Core.Config.saveToFile cfg
-            // Apply --mode to StatusBar before any rendering begins.
             StatusBar.setApprovalMode initialApprovalMode
-            // Install approval gate before tools are invoked. Interactive iff stdin
-            // is a TTY (matches the Surface-actor allocation rule).
             let interactive = not Console.IsInputRedirected
             Fugue.Tools.AiFunctions.DelegatedFn.setApprovalGate
                 (Fugue.Cli.ApprovalPrompt.buildGate StatusBar.getApprovalMode interactive)
@@ -595,20 +221,55 @@ SEE ALSO
             | Some p -> runWithPrint cfg p
             | None   -> runWithCfg cfg
         | None ->
-            Console.Error.WriteLine(help)
+            Console.Error.WriteLine help
             1
     | Error (InvalidConfig reason) ->
-        Console.Error.WriteLine("Invalid config: " + reason)
+        Console.Error.WriteLine ("Invalid config: " + reason)
         1
     | Ok cfg ->
-        let fullCfg = { cfg with ProfileContent = profileContent; TemplateContent = templateContent; TemplateName = templateName; LowBandwidth = lowBandwidth; Offline = offline; DryRun = dryRun }
-        // Apply --mode to StatusBar before any rendering begins.
+        let fullCfg = {
+            cfg with
+                ProfileContent  = profileContent
+                TemplateContent = templateContent
+                TemplateName    = templateName
+                LowBandwidth    = opts.LowBandwidth
+                Offline         = opts.Offline
+                DryRun          = opts.DryRun
+        }
         StatusBar.setApprovalMode initialApprovalMode
-        // Install approval gate before tools are invoked. Interactive iff stdin
-        // is a TTY (matches the Surface-actor allocation rule).
         let interactive = not Console.IsInputRedirected
         Fugue.Tools.AiFunctions.DelegatedFn.setApprovalGate
             (Fugue.Cli.ApprovalPrompt.buildGate StatusBar.getApprovalMode interactive)
         match printPrompt with
         | Some p -> runWithPrint fullCfg p
         | None   -> runWithCfg fullCfg
+
+// Note: [<RequiresUnreferencedCode>] / [<RequiresDynamicCode>] cannot be
+// placed on `[<EntryPoint>]` (IL2123 / IL3057).  The trim / AOT analyser
+// treats `main` as a fixed root and warns on any reflection-using callee
+// directly.  Each callee that needs the attribute gets it (runDefault here,
+// runWithCfg / runWithPrint above, ProgramArgs.dispatch / dispatchDefault).
+[<EntryPoint>]
+let main argv =
+    Fugue.Core.Log.session ()
+    Fugue.Core.Log.info "main" ("fugue starting, argv=[" + String.concat "; " argv + "]")
+    CaBundle.install () |> ignore
+    // Phase 2c routing: every argv path is now in ProgramArgs.
+    //   1. --help / -h          → custom Usage text (bypass SC's auto-help)
+    //   2. --version (flag)     → dispatch as `version` subcommand
+    //   3. migrated subcommand  → ProgramArgs.dispatch (System.CommandLine path)
+    //   4. otherwise            → ProgramArgs.dispatchDefault (REPL / --print flow)
+    if ProgramArgs.isHelp argv then
+        ProgramArgs.printUsage ()
+        0
+    elif ProgramArgs.isVersionFlag argv then
+        // Backward-compat: `--version` flag is an alias for the `version`
+        // subcommand.  Preserve `--verbose` if also present, so legacy
+        // `fugue --version --verbose` keeps printing the runtime details
+        // block instead of just the bare version string.
+        let extra = if argv |> Array.contains "--verbose" then [| "--verbose" |] else [||]
+        ProgramArgs.dispatch (Array.append [| "version" |] extra)
+    elif ProgramArgs.isMigrated argv then
+        ProgramArgs.dispatch argv
+    else
+        ProgramArgs.dispatchDefault argv (runDefault argv)
