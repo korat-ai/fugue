@@ -73,7 +73,8 @@ These are **hard rules**. Don't ask, just follow.
   ```
   dotnet publish src/Fugue.Cli.Aot -c Release -r osx-arm64
   src/Fugue.Cli.Aot/bin/Release/net10.0/osx-arm64/publish/fugue-aot --version
-  src/Fugue.Cli.Aot/bin/Release/net10.0/osx-arm64/publish/fugue-aot --print "hello"
+  src/Fugue.Cli.Aot/bin/Release/net10.0/osx-arm64/publish/fugue-aot --help
+  # Phase 3.2 will add: fugue-aot --print "hello"  (headless agent driver)
   ```
   `dotnet build` / `dotnet test` run under JIT and will NOT catch AOT-specific failures in the headless closure (e.g. `MakeGenericMethod`, missing native code). Only the published native binary reveals them.
 - **`git status` stays clean.** No stray files, no half-finished `.bak`/`.tmp`. Tree is always merge-ready.
@@ -113,14 +114,15 @@ Always confirm with the user before:
 - Rotating or regenerating API keys / secrets
 - Sending anything outside the local machine (paste-bins, telemetry endpoints, gists)
 
-## Status (2026-04-30)
+## Status (2026-05-02)
 
-**Phase 1–5 closed.** Acceptance criteria met (with one accepted deferral on binary size — 47MB vs 35MB target; root cause: `FSharp.Core` + `System.Text.Json` rooted via `TrimmerRootAssembly`, plus features added since MVP close (hooks, sessions, SQLite); mitigation in v0.2 via STJ source-gen for F# DTOs).
+**Phase 1–5 closed.** Phase 3.1 of AOT/JIT split landed locally: separate `Fugue.Cli.Aot` project (PR #938) — empirical proof that the 35 MB README target is reachable.
 
 Verified metrics:
-- Binary: **45.5 MB** osx-arm64 single-file AOT (was 47 MB before #930 modernised arg parsing)
-- Cold start: **50 ms file-system cold / 10 ms warm cache** on M-class Mac (re-measured 2026-05-02 with 5-run baseline). Earlier "40 ms" claim averaged warm runs — keep both numbers since both matter (cold = first-CI-step latency, warm = subsequent invocations within a job).
-- Peak RSS: **36.7 MB** (re-measured 2026-05-02)
+- **`fugue-aot` (Phase 3.1, headless AOT)**: **13 MB** osx-arm64 single-file. Cold-start 8–23 ms, 0 trim warnings. References Core+Tools+Agent only (no Surface, no Cli, no Spectre, no Markdig). Currently a stub — `--version`, `--help`, `version` subcommand, no-args exit-2. Phase 3.2 will add `--print` headless agent driver.
+- **`fugue` (Phase 1–5, current REPL)**: **48 MB** osx-arm64 single-file AOT. Cold-start ~150 ms. Includes Cli + Surface + Spectre + Markdig + ReadLine. Phase 4 (#929) migrates this to JIT/ReadyToRun.
+- Earlier "40–47 MB" measurements referred to `fugue` before the split decision; superseded.
+- Peak RSS (`fugue`): **36.7 MB** (re-measured 2026-05-02). `fugue-aot` RSS not yet measured (stub does too little to be representative).
 - Tests: **551/551** pass on `feat/cli-args-dsl` (#930), **540/540** on main
 - E2E smoke: passed against LM Studio (OpenAI-compat); not yet against real Anthropic / OpenAI cloud / Ollama
 - Multiple PRs in review (batch shipped 2026-04-30):
