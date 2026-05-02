@@ -24,9 +24,14 @@
     <Compile Include="Hooks.fs" />
     <Compile Include="ApprovalMode.fs" />
     <Compile Include="ProviderCache.fs" />
+    <Compile Include="CliArgs.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.*" />
+    <!-- AOT/trim-friendly arg parser (no reflection-based binding in 2.0+).
+         Wrapped by Fugue.Core.CliArgs as a thin F# DSL — both fugue (JIT)
+         and fugue-aot (AOT) share the same parser. -->
+    <PackageReference Include="System.CommandLine" Version="2.0.*" />
   </ItemGroup>
   <ItemGroup>
     <!-- Microsoft.Data.Sqlite: P/Invoke interop to native SQLite amalgamation.
