@@ -4,6 +4,7 @@ open System
 open Xunit
 open FsUnit.Xunit
 open Fugue.Surface
+open Fugue.Core
 open Fugue.Core.Config
 open Fugue.Core.Localization
 open Fugue.Cli.StatusBar
@@ -43,7 +44,8 @@ let private idleState : StatusBarState =
       SessionWords  = 0
       IsSSH         = false
       Width         = 120
-      Height        = 30 }
+      Height        = 30
+      ApprovalMode  = ApprovalMode.Default }
 
 /// Apply ops to a fresh 120×30 mock terminal and return it.
 let private exec (ops: DrawOp list) : MockTerminal =

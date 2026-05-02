@@ -6,6 +6,7 @@ open FsCheck.FSharp
 open FsCheck.FSharp.GenBuilder
 open FsCheck.Xunit
 open Fugue.Surface
+open Fugue.Core
 open Fugue.Core.Config
 open Fugue.Core.Localization
 open Fugue.Cli.StatusBar
@@ -71,6 +72,8 @@ type StatusBarArbs =
             let! isSSH         = Gen.elements [ true; false ]
             let! width         = Gen.choose (60, 220)
             let! height        = Gen.choose (10, 60)
+            let! mode          = Gen.elements [ ApprovalMode.Plan; ApprovalMode.Default
+                                                ApprovalMode.AutoEdit; ApprovalMode.YOLO ]
             return {
                 Cwd           = cwd
                 Branch        = branch
@@ -86,6 +89,7 @@ type StatusBarArbs =
                 IsSSH         = isSSH
                 Width         = width
                 Height        = height
+                ApprovalMode  = mode
             }
         }
         { new Arbitrary<StatusBarState>() with

@@ -3,6 +3,7 @@ module Fugue.Cli.StatusBar
 open System
 open System.Diagnostics
 open System.IO
+open Fugue.Core
 open Fugue.Core.Localization
 open Fugue.Core.Config
 open Fugue.Surface
@@ -43,6 +44,7 @@ type StatusBarState = {
     IsSSH:          bool
     Width:          int
     Height:         int
+    ApprovalMode:   ApprovalMode
 }
 
 // ---------------------------------------------------------------------------
@@ -111,8 +113,20 @@ let renderStatusBar (state: StatusBarState) : DrawOp list =
         | OpenAI(_, m)    -> "openai:" + friendlyModel m
         | Ollama(_, m)    -> "ollama:" + friendlyModel m
 
+    // Approval-mode pill — colourised by risk: Plan (green), Default (dim),
+    // AutoEdit (yellow), YOLO (red). Goes at the start of line 1 so it's the
+    // first thing the eye lands on when triaging session safety.
+    let modeIcon = ApprovalMode.icon state.ApprovalMode
+    let modeColor =
+        match state.ApprovalMode with
+        | ApprovalMode.Plan     -> "\x1b[32m"   // green — most restrictive
+        | ApprovalMode.Default  -> dimEsc       // dim — neutral default
+        | ApprovalMode.AutoEdit -> "\x1b[33m"   // yellow — caution
+        | ApprovalMode.YOLO     -> "\x1b[31m"   // red — danger
+    let modePill = $"{modeColor}{modeIcon}\x1b[0m{dimEsc}  "
+
     let line1Text =
-        dimEsc + state.Cwd + " " + state.Strings.StatusBarOn + " \x1b[1m" + state.Branch + "\x1b[0m"
+        modePill + state.Cwd + " " + state.Strings.StatusBarOn + " \x1b[1m" + state.Branch + "\x1b[0m"
 
     // --- ThinkingLine + elapsed/cadence for Line 2 ---
     let elapsedSuffix, thinkingLineText, cadenceSuffix =
@@ -197,6 +211,22 @@ let mutable private cwd: string = "."
 let mutable private cfg: AppConfig option = None
 let mutable private active = false
 let mutable private activeTheme = ""
+let mutable private approvalMode : ApprovalMode = ApprovalMode.Default
+
+/// Set the approval mode (e.g. from --mode CLI flag at startup).
+/// Caller is responsible for calling refresh () afterwards if visible
+/// feedback is desired — kept side-effect-free so this can run pre-`start`.
+let setApprovalMode (m: ApprovalMode) : unit = approvalMode <- m
+
+/// Cycle the approval mode (Shift+Tab in REPL): Plan → Default → AutoEdit → YOLO → Plan.
+/// Returns the new mode so the caller can log / status it.
+/// Caller (ReadLine Shift+Tab handler) calls refresh () to repaint.
+let cycleApprovalMode () : ApprovalMode =
+    approvalMode <- ApprovalMode.cycle approvalMode
+    approvalMode
+
+/// Read-only accessor for callers that need to gate tool execution.
+let getApprovalMode () : ApprovalMode = approvalMode
 
 let initTheme (theme: string) = activeTheme <- theme
 let mutable private compactMode = false
@@ -361,7 +391,8 @@ let private captureState () : StatusBarState =
       SessionWords  = sessionWords
       IsSSH         = isSSH
       Width         = Console.WindowWidth
-      Height        = Console.WindowHeight }
+      Height        = Console.WindowHeight
+      ApprovalMode  = approvalMode }
 
 /// Walk a DrawOp list and emit ANSI escapes directly to Console.Out.
 /// Synchronous, no MailboxProcessor — PR B bridge.  PR C replaces this

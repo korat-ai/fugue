@@ -58,11 +58,15 @@ let private pushBounded (stack: ResizeArray<_>) item =
     if stack.Count > 100 then stack.RemoveAt 0
 
 type ReadLineCallbacks =
-    { OnClearScreen:  unit -> unit
-      OnAnnotateUp:   unit -> unit
-      OnAnnotateDown: unit -> unit }
+    { OnClearScreen:        unit -> unit
+      OnAnnotateUp:         unit -> unit
+      OnAnnotateDown:       unit -> unit
+      OnCycleApprovalMode:  unit -> unit }
 let defaultCallbacks : ReadLineCallbacks =
-    { OnClearScreen = ignore; OnAnnotateUp = ignore; OnAnnotateDown = ignore }
+    { OnClearScreen        = ignore
+      OnAnnotateUp         = ignore
+      OnAnnotateDown       = ignore
+      OnCycleApprovalMode  = ignore }
 
 /// Internal mutable line state. Public only because tests construct it directly.
 type S = {
@@ -92,6 +96,7 @@ type Action =
     | ClearScreen
     | AnnotateUp
     | AnnotateDown
+    | CycleApprovalMode
 
 let private isCtrl (k: ConsoleKeyInfo) (key: ConsoleKey) : bool =
     k.Modifiers.HasFlag ConsoleModifiers.Control && k.Key = key
@@ -144,6 +149,14 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
         s.Buffer.Insert(s.Cursor, '\n')
         s.Cursor <- s.Cursor + 1
         Continue
+    elif isShift k ConsoleKey.Tab then
+        // Cycle approval mode: Plan → Default → AutoEdit → YOLO → Plan.
+        // Buffer / cursor unaffected — this is a session-level UX action.
+        // Caller's loop dispatches via OnCycleApprovalMode callback, which
+        // mutates StatusBar.approvalMode and triggers a refresh.
+        exitHistoryMode ()
+        s.ExitArmed <- false
+        CycleApprovalMode
     elif k.Key = ConsoleKey.Enter then
         exitHistoryMode ()
         s.ExitArmed <- false
@@ -475,7 +488,7 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
             for ch in escapeBuf do
                 let ki = ConsoleKeyInfo(ch, ConsoleKey.A, false, false, false)
                 match applyKey ki st with
-                | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown -> ()
+                | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown | CycleApprovalMode -> ()
                 | Submit _ | Quit -> ()   // rare; ignore — these chars won't normally Submit/Quit
             escapeBuf.Clear()
             pasteState <- Normal
@@ -484,7 +497,17 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
             // Console.ReadKey is blocking; we accept that — cancellation in this
             // path is not expected in normal flow (Ctrl+C while reading is a wipe).
             let k = Console.ReadKey(intercept = true)
-            if k.Key = ConsoleKey.Tab then
+            // Shift+Tab is a SEPARATE intent (cycle approval mode) — handle it
+            // through applyKey before the plain-Tab completion branch grabs it.
+            if k.Key = ConsoleKey.Tab && k.Modifiers.HasFlag ConsoleModifiers.Shift then
+                tabMatches <- [||]
+                tabIndex   <- -1
+                match applyKey k st with
+                | CycleApprovalMode ->
+                    callbacks.OnCycleApprovalMode ()
+                    redraw st
+                | _ -> ()  // applyKey produced something else — shouldn't happen for Shift+Tab
+            elif k.Key = ConsoleKey.Tab then
                 let currentInput = String(st.Buffer.ToArray())
                 let modelSetPrefix = "/model set "
                 if currentInput.StartsWith modelSetPrefix then
@@ -551,6 +574,9 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
                         | AnnotateDown ->
                             callbacks.OnAnnotateDown ()
                             redraw st
+                        | CycleApprovalMode ->
+                            callbacks.OnCycleApprovalMode ()
+                            redraw st
                         | Submit s ->
                             eraseRendered ()
                             let normalized = InputSanitize.normalize s
@@ -573,7 +599,7 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
                         flushEscape ()
                         let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
                         match applyKey ki2 st with
-                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown -> redraw st
+                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown | CycleApprovalMode -> redraw st
                         | Submit _ | Quit -> ()
 
                 | BracketSeen ->
@@ -584,7 +610,7 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
                         flushEscape ()
                         let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
                         match applyKey ki2 st with
-                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown -> redraw st
+                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown | CycleApprovalMode -> redraw st
                         | Submit _ | Quit -> ()
 
                 | Digit2 ->
@@ -595,7 +621,7 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
                         flushEscape ()
                         let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
                         match applyKey ki2 st with
-                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown -> redraw st
+                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown | CycleApprovalMode -> redraw st
                         | Submit _ | Quit -> ()
 
                 | Digit0 ->
@@ -606,7 +632,7 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
                         flushEscape ()
                         let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
                         match applyKey ki2 st with
-                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown -> redraw st
+                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown | CycleApprovalMode -> redraw st
                         | Submit _ | Quit -> ()
 
                 | Digit0v2 ->
@@ -619,7 +645,7 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
                         flushEscape ()
                         let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
                         match applyKey ki2 st with
-                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown -> redraw st
+                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown | CycleApprovalMode -> redraw st
                         | Submit _ | Quit -> ()
 
                 | PasteActive ->
