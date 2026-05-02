@@ -11,10 +11,14 @@ Built on F# + Microsoft Agent Framework + Spectre.Console.
 
 Fugue ships as **two distributions** with deliberately different tradeoffs:
 
-| Binary             | Runtime           | Cold start | Use case                              |
-|--------------------|-------------------|-----------:|---------------------------------------|
-| `fugue-aot`   | **Native AOT**    | 10–50 ms   | CI / scripting / pipes / `--print`    |
-| `fugue`            | **JIT + ReadyToRun** | ~150 ms    | Interactive REPL / TUI                |
+| Binary       | Runtime              | Size  | Cold start | Use case                              |
+|--------------|----------------------|------:|-----------:|---------------------------------------|
+| `fugue-aot`  | **Native AOT**       | 13 MB | ~10–25 ms  | CI / scripting / pipes / `--print`    |
+| `fugue`      | **JIT + ReadyToRun** | 48 MB | ~150 ms    | Interactive REPL / TUI                |
+
+> Measurements: osx-arm64, Phase 3.1. `fugue-aot` is currently a stub
+> (`--version`, `--help`, `version` subcommand only) — Phase 3.2 will add
+> the `--print` headless agent driver and stdin pipe consumption.
 
 **Why split:**
 

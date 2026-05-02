@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Fugue.Cli.Aot</RootNamespace>
+    <AssemblyName>fugue-aot</AssemblyName>
+    <!-- Headless AOT distribution. See README "Two binaries, two runtimes".
+         Excludes Fugue.Surface and Fugue.Cli (REPL/Spectre/Markdig) so the
+         trimmer has no entry into TUI code paths.  Cold start: 10–50 ms,
+         binary target: ≤40 MB osx-arm64. -->
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <StripSymbols>true</StripSymbols>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <IlcGenerateStackTraceData>true</IlcGenerateStackTraceData>
+    <!-- Same NoWarn rationale as Fugue.Cli.fsproj — third-party trim/AOT
+         aggregates from FSharp.Core / Anthropic / OllamaSharp; F# closure
+         attribute-propagation limitations on RUC/RDC. -->
+    <NoWarn>$(NoWarn);FS3511;IL2104;IL3053;IL2026;IL3050</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- TrimmerRoots: same as Fugue.Cli — preserve STJ reflection paths
+         for AppConfigDto / UiConfigDto CLIMutable record ctors. -->
+    <TrimmerRootDescriptor Include="..\Fugue.Cli\TrimmerRoots.xml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <TrimmerRootAssembly Include="FSharp.Core" />
+    <TrimmerRootAssembly Include="System.Text.Json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Fugue.Core\Fugue.Core.fsproj" />
+    <ProjectReference Include="..\Fugue.Agent\Fugue.Agent.fsproj" />
+    <ProjectReference Include="..\Fugue.Tools\Fugue.Tools.fsproj" />
+    <!-- Deliberately NOT referenced:
+         - Fugue.Surface  (actor + DrawOps; REPL-only)
+         - Fugue.Cli      (REPL, ReadLine, MarkdownRender, Doctor, etc.) -->
+  </ItemGroup>
+</Project>
