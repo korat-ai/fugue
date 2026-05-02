@@ -212,8 +212,6 @@ let mutable private scheduleActive = false
 let mutable private spinnerTimer  : System.Threading.Timer option = None
 let mutable private onTick        : (unit -> unit) = fun () -> ()
 
-let private musicalFrames = [| "♩"; "♪"; "♫"; "♬"; "♭"; "♮"; "♯" |]
-
 // Cadence — rolling window of token arrival timestamps for tok/s display.
 let private tokenQueue = System.Collections.Generic.Queue<int64>()
 let private tokenWindowSize = 12
@@ -254,16 +252,6 @@ let private homeRel (path: string) : string =
     if home <> "" && path.StartsWith home then "~" + path.Substring(home.Length)
     else path
 
-let private providerLabel (cfg: AppConfig) : string =
-    let friendlyModel (m: string) =
-        let i = m.LastIndexOf '/'
-        let id = if i >= 0 && i + 1 < m.Length then m.Substring(i + 1) else m
-        modelDisplayName id
-    match cfg.Provider with
-    | Anthropic(_, m) -> "anthropic:" + friendlyModel m
-    | OpenAI(_, m)    -> "openai:" + friendlyModel m
-    | Ollama(_, m)    -> "ollama:" + friendlyModel m
-
 let internal formatElapsed (t: TimeSpan) : string =
     if t.TotalSeconds < 60.0 then $"{t.TotalSeconds:F1}s"
     else $"{int t.TotalMinutes}m {t.Seconds}s"
@@ -297,14 +285,6 @@ let recordToken () =
     tokenQueue.Enqueue now
     if tokenQueue.Count > tokenWindowSize then tokenQueue.Dequeue() |> ignore
 
-let private cadenceTokPerSec () : int =
-    if tokenQueue.Count < 2 then 0
-    else
-        let arr = tokenQueue.ToArray()
-        let spanSec = float (arr.[arr.Length - 1] - arr.[0]) / float Stopwatch.Frequency
-        if spanSec <= 0.0 then 0
-        else int (float (arr.Length - 1) / spanSec)
-
 let startStreaming () =
     streamingSince <- Some DateTime.UtcNow
     tokenQueue.Clear()
@@ -321,69 +301,87 @@ let stopStreaming () =
     | Some t -> t.Dispose(); spinnerTimer <- None
     | None   -> ()
 
-let refresh () =
-    if not active || compactMode || not (Render.isColorEnabled ()) then () else
-    let height = Console.WindowHeight
+/// Read the 15 module-level mutables and build an immutable StatusBarState snapshot.
+/// Advances spinnerFrame as a side effect when streaming (mirrors old refresh behaviour).
+let private captureState () : StatusBarState =
     let strings =
         match cfg with
         | Some c -> Fugue.Core.Localization.pick c.Ui.Locale
         | None   -> Fugue.Core.Localization.en
-    let dimEsc = if activeTheme = "nocturne" then "\x1b[38;5;24m" else "\x1b[90m"
-    let line1 =
-        dimEsc + (homeRel cwd) + " " + strings.StatusBarOn + " \x1b[1m" + (branchOf cwd) + "\x1b[0m"
-    let elapsedSuffix, thinkingLine, cadenceSuffix =
+    let snap =
         match streamingSince with
+        | None -> None
         | Some since ->
-            let elapsed = DateTime.UtcNow - since
-            let frame = musicalFrames.[spinnerFrame % musicalFrames.Length]
-            spinnerFrame <- spinnerFrame + 1
-            let dots = [| "·"; "··"; "···" |].[(spinnerFrame / 2) % 3]
-            let bpm = cadenceTokPerSec ()
-            let cad = if bpm > 0 then $" · ♩={bpm}" else ""
-            " · " + formatElapsed elapsed,
-            dimEsc + frame + " " + strings.Thinking + dots + " · " + formatElapsed elapsed + cad + "\x1b[0m",
-            cad
-        | None -> "", "", ""
-    let sshBadge = if isSSH then " · SSH" else ""
-    let dimEsc2 = if activeTheme = "nocturne" then "\x1b[38;5;67m" else "\x1b[90m"
-    let ctxBadge =
-        match cfg with
-        | Some c ->
-            let model = match c.Provider with Anthropic(_, m) | OpenAI(_, m) | Ollama(_, m) -> m
-            let window = contextWindowFor model
-            let estTokens = int (float sessionWords / 0.75)
-            let pct = int (float estTokens / float window * 100.0)
-            if pct <= 0 then ""
-            else
-                let color =
-                    if pct >= 80 then "\x1b[31m"      // red
-                    elif pct >= 50 then "\x1b[33m"    // yellow
-                    else "\x1b[32m"                   // green
-                $" · {color}ctx {pct}%%\x1b[0m{dimEsc2}"
-        | None -> ""
-    let annotBadge =
-        if annotUpCount = 0 && annotDownCount = 0 then ""
-        else $" · \x1b[32m↑{annotUpCount}\x1b[0m{dimEsc2} \x1b[31m↓{annotDownCount}\x1b[0m{dimEsc2}"
-    let lowBwBadge = if lowBandwidthMode then " · \x1b[33mlow-bw\x1b[0m" + dimEsc2 else ""
-    let tmplBadge = templateName |> Option.map (fun n -> $" · \x1b[36mtmpl:{n}\x1b[0m{dimEsc2}") |> Option.defaultValue ""
-    let line2 =
-        match cfg with
-        | Some c ->
-            let sched = if scheduleActive then " ⏱" else ""
-            dimEsc2 + strings.StatusBarApp + " · " + (providerLabel c) + sched + cadenceSuffix + elapsedSuffix + ctxBadge + annotBadge + tmplBadge + lowBwBadge + sshBadge + "\x1b[0m"
-        | None   -> dimEsc2 + strings.StatusBarApp + cadenceSuffix + elapsedSuffix + annotBadge + tmplBadge + lowBwBadge + sshBadge + "\x1b[0m"
-    // save cursor, paint 3 reserved bottom lines: thinking@h-2, status1@h-1, status2@h
+            let frame = spinnerFrame
+            spinnerFrame <- spinnerFrame + 1   // advance spinner — same as old refresh
+            Some {
+                Since          = DateTimeOffset(since.ToUniversalTime(), TimeSpan.Zero)
+                SpinnerFrame   = frame
+                TokensInWindow = tokenQueue.ToArray()
+            }
+    { Cwd           = homeRel cwd
+      Branch        = branchOf cwd
+      Cfg           = cfg
+      Strings       = strings
+      ActiveTheme   = activeTheme
+      Streaming     = snap
+      LowBandwidth  = lowBandwidthMode
+      TemplateName  = templateName
+      ScheduleActive = scheduleActive
+      Annotations   = { Up = annotUpCount; Down = annotDownCount }
+      SessionWords  = sessionWords
+      IsSSH         = isSSH
+      Width         = Console.WindowWidth
+      Height        = Console.WindowHeight }
+
+/// Walk a DrawOp list and emit ANSI escapes directly to Console.Out.
+/// Synchronous, no MailboxProcessor — PR B bridge.  PR C replaces this
+/// with agent.Post(SurfaceMessage.Execute ops).
+let private applyOpsDirectly (ops: DrawOp list) : unit =
+    let h = Console.WindowHeight
+    // Translate Region to 1-based ANSI row (same mapping as RealExecutor.ansiRow).
+    let ansiRow (region: Region) : int option =
+        match region with
+        | Region.ThinkingLine   -> Some (h - 2)
+        | Region.StatusBarLine1 -> Some (h - 1)
+        | Region.StatusBarLine2 -> Some h
+        | Region.InputArea r    -> Some (max 1 (h - 3 - r))
+        | Region.ScrollContent  -> None
+        | Region.Modal          -> Some 1
+    let rec applyOne (op: DrawOp) =
+        match op with
+        | DrawOp.Paint(region, text, _style) ->
+            match ansiRow region with
+            | Some row -> writeRaw $"\x1b[{row};1H\x1b[2K{text}"
+            | None     -> writeRaw text
+        | DrawOp.EraseLine region ->
+            match ansiRow region with
+            | Some row -> writeRaw $"\x1b[{row};1H\x1b[2K"
+            | None     -> writeRaw "\x1b[2K"
+        | DrawOp.MoveTo(region, col) ->
+            let col1 = col + 1
+            match ansiRow region with
+            | Some row -> writeRaw $"\x1b[{row};{col1}H"
+            | None     -> writeRaw $"\x1b[{col1}G"
+        | DrawOp.SaveAndRestore inner ->
+            writeRaw "\x1b[s"
+            for innerOp in inner do applyOne innerOp
+            writeRaw "\x1b[u"
+        | DrawOp.Append text ->
+            writeRaw text
+            writeRaw "\r\n"
+        | DrawOp.ResetScrollRegion ->
+            let w = Console.WindowWidth
+            writeRaw $"\x1b[1;{h}r\x1b[{h};{w}H"
     writeRaw "\x1b[s"
-    writeRaw ("\x1b[" + string (height - 2) + ";1H")
-    writeRaw "\x1b[2K"
-    writeRaw thinkingLine
-    writeRaw ("\x1b[" + string (height - 1) + ";1H")
-    writeRaw "\x1b[2K"
-    writeRaw line1
-    writeRaw ("\x1b[" + string height + ";1H")
-    writeRaw "\x1b[2K"
-    writeRaw line2
+    for op in ops do applyOne op
     writeRaw "\x1b[u"
+
+let refresh () =
+    if not active || compactMode || not (Render.isColorEnabled ()) then () else
+    let state = captureState ()
+    let ops   = renderStatusBar state
+    applyOpsDirectly ops
 
 /// Update the config the status bar reads from. Use after `/model set` and
 /// other config-mutating commands. `start` early-returns once the bar is
