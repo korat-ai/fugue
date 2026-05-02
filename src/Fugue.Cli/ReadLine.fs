@@ -7,18 +7,12 @@ open System.Threading.Tasks
 open Fugue.Core.Localization
 open Fugue.Surface
 
-/// Optional Surface MailboxProcessor — when set, every ReadLine write is posted
-/// through it instead of going straight to Console.Out. Serialises ReadLine
-/// against StatusBar / Picker / heartbeat paints, eliminating cursor races
-/// (closes #913 and the timing half of #910).
-///
-/// Set once by Program.fs, before the first call to `read`. Headless / tests
-/// keep the direct-write fallback (None).
-let mutable private surfaceAgent : MailboxProcessor<SurfaceMessage> option = None
-
-/// Wire the Surface actor for ReadLine. Idempotent.
+/// Wire the Surface actor for ReadLine. Phase 1.3c v2: now a thin wrapper
+/// over Surface.setAgent — ReadLine no longer holds its own actor ref.
+/// Kept as a public API for tests that exercise ReadLine routing in
+/// isolation (ReadLineActorRoutingTests).
 let setAgent (agent: MailboxProcessor<SurfaceMessage>) : unit =
-    surfaceAgent <- Some agent
+    Surface.setAgent agent
 
 // Bracketed paste mode escape sequences.
 let private pasteBeginSeq = "\x1b[200~"
@@ -340,32 +334,11 @@ let applyPastedText (text: string) (s: S) : unit =
     s.Buffer.AddRange(normalized.ToCharArray())
     s.Cursor <- s.Buffer.Count
 
-/// Write a raw ANSI-bearing string. When the Surface actor is wired,
-/// the write is queued as a `RawAnsi` DrawOp so it's serialised against
-/// concurrent paints from StatusBar / heartbeat / Picker. Otherwise we fall
-/// back to direct Console.Out (headless / tests).
-///
-/// Note: even with the actor, we keep `Console.Out.Flush()` on the fallback
-/// path because some terminals buffer until newline; the actor's executor
-/// already flushes after each batch.
-let private writeRaw (s: string) =
-    match surfaceAgent with
-    | Some agent ->
-        agent.Post(SurfaceMessage.Execute [ DrawOp.RawAnsi s ])
-    | None ->
-        Console.Out.Write s
-        Console.Out.Flush()
-
-/// Synchronous flush barrier — ensures any pending ReadLine writes have been
-/// applied before the caller proceeds. Used at points where we need to read
-/// the real cursor position or hand off to another renderer (e.g. before
-/// asking the user for approval). Becomes a no-op when no actor is wired.
-let private flushBarrier () : unit =
-    match surfaceAgent with
-    | Some agent ->
-        agent.PostAndAsyncReply(fun ch -> SurfaceMessage.ExecuteAndAck([], ch))
-        |> Async.RunSynchronously
-    | None -> ()
+/// Thin aliases for Surface.write / Surface.flush so existing call-sites
+/// in this module read naturally. Keeps the change-set small while
+/// removing ReadLine's own actor ref.
+let inline private writeRaw (s: string) = Surface.write s
+let inline private flushBarrier () = Surface.flush ()
 
 /// Clear `count` rows starting at the cursor's current row and moving downward.
 /// Cursor is left at column 0 of the top row of the cleared area.

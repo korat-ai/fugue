@@ -41,6 +41,19 @@ publish target="osx-arm64":
 run *args:
     dotnet run --project src/Fugue.Cli -c Release -- {{args}}
 
+# Run with FUGUE_DEBUG=1 — captures structured trace events to ~/.fugue/debug.log
+# while the session runs. On exit, prints the last 200 lines so the user can
+# attach them to a bug report immediately. Ideal for diagnosing rendering /
+# streaming / model-switch issues that don't reproduce in tests.
+debug *args:
+    @rm -f ~/.fugue/debug.log
+    @echo "→ debug log: ~/.fugue/debug.log (cleared)"
+    @echo "→ launching fugue with FUGUE_DEBUG=1 …"
+    -FUGUE_DEBUG=1 dotnet run --project src/Fugue.Cli -c Release -- {{args}}
+    @echo ""
+    @echo "── debug.log (tail) ─────────────────────────────────"
+    @tail -200 ~/.fugue/debug.log 2>/dev/null || echo "(no debug.log was written)"
+
 # Same as `run` but explicit name for the AOT path. ~60-90s (full publish)
 # but ~40ms cold-start and 47MB single-file binary. Use for cold-start /
 # RSS / binary-size measurement and AOT-specific regression checks.

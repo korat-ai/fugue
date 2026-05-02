@@ -115,6 +115,30 @@ module MockExecutor =
             // No-op for mock — no real scroll region to reset.
             ()
 
+        | DrawOp.LineBreak ->
+            // Cursor moves to col 0 of next row. Clamp to terminal height.
+            term.CursorRow <- min (term.Height - 1) (term.CursorRow + 1)
+            term.CursorCol <- 0
+
+        | DrawOp.MoveCursorUp rows ->
+            if rows > 0 then
+                term.CursorRow <- max 0 (term.CursorRow - rows)
+
+        | DrawOp.MoveCursorUpToCol0 rows ->
+            if rows > 0 then
+                term.CursorRow <- max 0 (term.CursorRow - rows)
+            term.CursorCol <- 0
+
+        | DrawOp.ClearToEndOfScreen ->
+            // Clear current line from cursor onward, then all lines below.
+            if term.CursorRow >= 0 && term.CursorRow < term.Height then
+                let line = term.Lines.[term.CursorRow]
+                let padded = if line.Length < term.Width then line.PadRight term.Width else line
+                let kept = padded.Substring(0, min term.CursorCol term.Width)
+                term.Lines.[term.CursorRow] <- kept + spaces (term.Width - kept.Length)
+                for r in (term.CursorRow + 1) .. (term.Height - 1) do
+                    term.Lines.[r] <- spaces term.Width
+
         | DrawOp.RawAnsi _ ->
             // Mock cannot interpret arbitrary ANSI; recording in WriteLog (above)
             // is enough for tests that only assert "the actor processed it".

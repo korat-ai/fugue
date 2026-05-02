@@ -93,12 +93,12 @@ let pick (title: string) (items: (string * string) list) (initialIdx: int) : int
               ScrollTop   = scrollTop
               VisibleRows = visibleRows }
 
-        // Apply DrawOp list to Console via direct ANSI (Phase 1 — MailboxProcessor wiring in Phase 2).
+        // Apply DrawOp list through the Surface actor (Phase 1.3c v2).
         let applyOps (ops: DrawOp list) =
             for op in ops do
                 match op with
                 | DrawOp.Append text ->
-                    AnsiConsole.MarkupLine text
+                    Surface.markupLine text
                 | _ -> ()
 
         let totalLines = 1 + 1 + visibleRows + 1 + 1
@@ -107,21 +107,21 @@ let pick (title: string) (items: (string * string) list) (initialIdx: int) : int
             applyOps (renderState (mkState ()))
 
         let redraw () =
-            Console.Out.Write($"\x1b[{totalLines}F")
+            Surface.write($"\x1b[{totalLines}F")
             for _ in 1 .. totalLines do
-                Console.Out.Write "\x1b[K"
-                Console.Out.Write "\x1b[1B"
-            Console.Out.Write($"\x1b[{totalLines}F")
+                Surface.write "\x1b[K"
+                Surface.write "\x1b[1B"
+            Surface.write($"\x1b[{totalLines}F")
             renderAll ()
 
         let clearMenu () =
-            Console.Out.Write($"\x1b[{totalLines}F")
+            Surface.write($"\x1b[{totalLines}F")
             for _ in 1 .. totalLines do
-                Console.Out.Write "\x1b[K"
-                Console.Out.Write "\x1b[1B"
-            Console.Out.Write($"\x1b[{totalLines}F")
+                Surface.write "\x1b[K"
+                Surface.write "\x1b[1B"
+            Surface.write($"\x1b[{totalLines}F")
 
-        AnsiConsole.WriteLine()
+        Surface.lineBreak ()
         renderAll ()
 
         let mutable picked: int option = None

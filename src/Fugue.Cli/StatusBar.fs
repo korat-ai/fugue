@@ -203,9 +203,12 @@ let renderStatusBar (state: StatusBarState) : DrawOp list =
         paintRaw Region.StatusBarLine2 line2Text
     ]
 
-let private writeRaw (s: string) =
-    Console.Out.Write s
-    Console.Out.Flush()
+/// Direct-write fallback for the `applyOpsDirectly` headless / test path.
+/// When the actor is wired, refresh () posts ops via `agent.Post` and never
+/// touches this. Phase 1.3c v2: also delegate to Surface so the very rare
+/// path where applyOpsDirectly is hit but the actor IS wired (shouldn't
+/// happen) goes through the same mailbox.
+let private writeRaw (s: string) = Surface.write s
 
 let mutable private cwd: string = "."
 let mutable private cfg: AppConfig option = None
@@ -433,6 +436,15 @@ let private applyOpsDirectly (ops: DrawOp list) : unit =
         | DrawOp.ResetScrollRegion ->
             let w = Console.WindowWidth
             writeRaw $"\x1b[1;{h}r\x1b[{h};{w}H"
+        | DrawOp.LineBreak ->
+            writeRaw "\r\n"
+        | DrawOp.MoveCursorUp rows ->
+            if rows > 0 then writeRaw $"\x1b[{rows}A"
+        | DrawOp.MoveCursorUpToCol0 rows ->
+            if rows > 0 then writeRaw $"\r\x1b[{rows}A"
+            else writeRaw "\r"
+        | DrawOp.ClearToEndOfScreen ->
+            writeRaw "\x1b[J"
         | DrawOp.RawAnsi text ->
             // Fallback path mirrors the actor: write verbatim.
             writeRaw text
@@ -445,8 +457,15 @@ let refresh () =
     let state = captureState ()
     let ops   = renderStatusBar state
     match surfaceAgent with
-    | Some agent -> agent.Post(SurfaceMessage.Execute ops)   // serialised — no race
-    | None       -> applyOpsDirectly ops                     // fallback (headless / tests)
+    | Some agent ->
+        // Phase 1.3c v2: wrap paint ops in SaveAndRestore so the cursor
+        // returns to wherever streaming / ReadLine left it. With all
+        // writers funnelled through this same actor (Surface.fs), there
+        // is no parallel writer that can interject between save and
+        // restore — the wrap is therefore atomic.
+        agent.Post(SurfaceMessage.Execute [ DrawOp.SaveAndRestore ops ])
+    | None ->
+        applyOpsDirectly ops                                 // fallback (headless / tests)
 
 /// Update the config the status bar reads from. Use after `/model set` and
 /// other config-mutating commands. `start` early-returns once the bar is
@@ -468,16 +487,15 @@ let start (initialCwd: string) (initialCfg: AppConfig) : unit =
     if not compactMode then
         // reserve three bottom lines: thinking indicator + 2 status lines.
         // Scroll region becomes 1..(h-3); cursor parks at the last scrollable line.
-        Console.WriteLine()
-        Console.WriteLine()
-        Console.WriteLine()
+        Surface.write "\n\n\n"
         writeRaw ("\x1b[1;" + string (height - 3) + "r")
         writeRaw ("\x1b[" + string (height - 3) + ";1H")
         refresh ()
-        // Idle heartbeat — keep timer / branch / cwd / ctx% indicators fresh
-        // when the user is just thinking. Coexists with the streaming spinner
-        // timer; coalesce in the actor dedups overlapping paints.
-        startHeartbeat refresh
+        // No idle heartbeat: each event-driven refresh (post-stream, post-tool,
+        // /model set, etc.) is enough. Periodic ticks added cursor save/restore
+        // noise without buying us live data — branch/cwd/ctx% don't change
+        // mid-thought, and elapsed time is only meaningful during streaming
+        // (where spinnerTimer drives the 300ms tick).
 
 let stop () : unit =
     if not active || not (Render.isColorEnabled ()) then () else

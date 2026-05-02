@@ -79,20 +79,16 @@ let private runWithCfg (cfg: AppConfig) : int =
         Console.Error.WriteLine("--offline requires a local provider (Ollama). Set FUGUE_PROVIDER=ollama or update ~/.fugue/config.json.")
         1
     else
-    // Surface actor: serialises StatusBar / Picker / ReadLine writes through
-    // a MailboxProcessor. Each subsystem explicitly posts its DrawOps via
-    // setAgent — no global Console.SetOut redirect (that approach was tried
-    // in Phase 1.3c and reverted: it produced a blank screen under
-    // `dotnet run` for reasons we couldn't pin down quickly).
-    //
-    // Streaming tokens / Markdown / slash commands / approval prompt still
-    // write directly to Console.Out. Race window is narrow because heartbeat
-    // re-renders only every 2s and uses absolute cursor moves; ReadLine
-    // re-anchors on every keystroke.
+    // Phase 1.3c v2: every writer in Fugue.Cli posts through this actor via
+    // the Surface module. No global Console.SetOut — each call-site is
+    // explicit (see Surface.fs). The actor is the single serialised writer
+    // to the real terminal; heartbeat / streaming / slash commands /
+    // ReadLine / Picker / banners — all funnel through one mailbox queue.
     let surfaceActor =
         if Console.IsInputRedirected then None
         else
             let actor = RealExecutor.start ()
+            Surface.setAgent actor
             StatusBar.setAgent actor
             ReadLine.setAgent actor
             Some actor

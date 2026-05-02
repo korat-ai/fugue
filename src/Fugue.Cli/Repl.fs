@@ -189,7 +189,7 @@ let expandAtFiles (cwd: string) (strings: Fugue.Core.Localization.Strings) (inpu
             if not (Fugue.Tools.PathSafety.isUnder cwd fullPath) then
                 ()  // silently skip paths outside cwd
             elif not (System.IO.File.Exists fullPath) then
-                AnsiConsole.MarkupLine($"[dim]{Markup.Escape (System.String.Format(strings.AtFileNotFound, pathPart))}[/]")
+                Surface.markupLine($"[dim]{Markup.Escape (System.String.Format(strings.AtFileNotFound, pathPart))}[/]")
             else
                 try
                     let content = System.IO.File.ReadAllText fullPath
@@ -205,7 +205,7 @@ let expandAtFiles (cwd: string) (strings: Fugue.Core.Localization.Strings) (inpu
                         | None -> ""
                     result <- result.[0 .. start - 1] + header + body + hint + result.[start + length ..]
                 with _ ->
-                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape (System.String.Format(strings.AtFileNotFound, pathPart))}[/]")
+                    Surface.markupLine($"[dim]{Markup.Escape (System.String.Format(strings.AtFileNotFound, pathPart))}[/]")
         result
 
 let private providerInfo (p: ProviderConfig) : string * string =
@@ -395,8 +395,7 @@ let private streamAndRender
                 if step then
                     match enumerator.Current with
                     | Conversation.TextChunk t ->
-                        Console.Out.Write t
-                        Console.Out.Flush()
+                        Surface.write t
                         responseText.Append t |> ignore
                         StatusBar.recordToken ()
                         assistantStreaming <- true
@@ -405,7 +404,7 @@ let private streamAndRender
                         toolCallsThisTurn <- toolCallsThisTurn + 1
                         recordFn (Fugue.Core.SessionRecord.ToolCall(DateTimeOffset.UtcNow, name, args, id))
                         if assistantStreaming then
-                            Console.Out.WriteLine ()
+                            Surface.lineBreak ()
                             assistantStreaming <- false
                         // Show a retry diff when the same tool previously failed with different args.
                         match failedArgs.TryGetValue name with
@@ -414,12 +413,12 @@ let private streamAndRender
                             if not diff.IsEmpty && not zen then
                                 let formatted = ToolRetryDiff.formatDiff diff
                                 if Render.isColorEnabled () then
-                                    AnsiConsole.MarkupLine("[dim]↻ retry diff:[/]")
+                                    Surface.markupLine("[dim]↻ retry diff:[/]")
                                     for line in formatted.Split('\n') do
                                         let color = if line.StartsWith "+" then "green" elif line.StartsWith "-" then "red" else "yellow"
-                                        AnsiConsole.MarkupLine($"  [{color}]{Markup.Escape line}[/]")
+                                        Surface.markupLine($"  [{color}]{Markup.Escape line}[/]")
                                 else
-                                    Console.Out.WriteLine($"↻ retry diff:\n{formatted}")
+                                    Surface.writeLine($"↻ retry diff:\n{formatted}")
                         | _ -> ()
                         // Track last accessed file for @last expansion
                         if name = "Read" || name = "Write" || name = "Edit" then
@@ -468,41 +467,21 @@ let private streamAndRender
                             if isErr then Render.Failed(name, args, output, elapsed)
                             else Render.Completed(name, args, output, elapsed)
                         if not zen then
-                            AnsiConsole.Write(Render.toolBullet strings state)
-                            AnsiConsole.WriteLine ()
+                            Surface.writeRenderable(Render.toolBullet strings state)
+                            Surface.lineBreak ()
                         StatusBar.refresh()
                     | Conversation.Finished -> ()
                     | Conversation.Failed ex -> raise ex
                 else hasNext <- false
             if assistantStreaming then
-                Console.Out.WriteLine ()
                 let text = responseText.ToString()
                 // Emit AssistantTurn with full content (Phase 3: FTS5 indexer capture).
                 if text.Length > 0 then
                     recordFn (Fugue.Core.SessionRecord.AssistantTurn(DateTimeOffset.UtcNow, text))
-                if Render.isColorEnabled () then
-                    // Replace raw streamed text with formatted markdown.
-                    // Count how many terminal rows the raw output occupied, move cursor
-                    // back to the start of the response, clear to end, then re-render.
-                    let termW = max 20 Console.WindowWidth
-                    let rawLines =
-                        text.TrimEnd([|'\n'; '\r'|]).Split('\n')
-                        |> Array.sumBy (fun line ->
-                            let l = line.Length
-                            if l = 0 then 1 else (l + termW - 1) / termW)
-                    if rawLines > 0 then
-                        Console.Out.Write($"\x1b[{rawLines}A\x1b[J")
-                        Console.Out.Flush()
-                    if Render.isTypewriterMode () then
-                        // Render to ANSI string, then write line-by-line with async delay.
-                        let lines = Render.captureLines (Render.assistantFinal text)
-                        for line in lines do
-                            Console.Out.WriteLine line
-                            Console.Out.Flush()
-                            do! Task.Delay 12
-                    else
-                        AnsiConsole.Write(Render.assistantFinal text)
-                        AnsiConsole.WriteLine()
+                let final =
+                    if Render.isColorEnabled () then Some (Render.assistantFinal text)
+                    else None
+                do! StreamRender.finalizeTurn text final (Render.isTypewriterMode ())
                 let wordCount = text.Split([|' '; '\n'; '\r'; '\t'|], StringSplitOptions.RemoveEmptyEntries).Length
                 StatusBar.recordWords wordCount
                 if wordCount >= 20 then
@@ -510,34 +489,34 @@ let private streamAndRender
                     let timeStr = if mins = 1 then "~1 min read" else $"~{mins} min read"
                     let footer = $"[~{wordCount} words · {timeStr}]"
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape footer}[/]")
+                        Surface.markupLine($"[dim]{Markup.Escape footer}[/]")
                     else
-                        Console.Out.WriteLine footer
+                        Surface.writeLine footer
                 if toolCallsThisTurn >= 10 then
                     let msg = strings.ToolCallsWarning.Replace("{0}", string toolCallsThisTurn)
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine($"[dim yellow]⚠️ {Markup.Escape msg}[/]")
+                        Surface.markupLine($"[dim yellow]⚠️ {Markup.Escape msg}[/]")
                     else
-                        Console.Out.WriteLine($"⚠️ {msg}")
+                        Surface.writeLine($"⚠️ {msg}")
                 if errorToolCalls.Count > 0 then
                     lastFailedTurn <- Some { BugReport.UserPrompt = input; BugReport.ToolCalls = errorToolCalls |> Seq.toList; BugReport.AiResponse = responseText.ToString(); BugReport.ErrorText = None }
                 lastResponseWasPlan <- Fugue.Core.ConversationIntent.looksLikePlan (responseText.ToString())
         with
         | :? OperationCanceledException ->
-            if assistantStreaming then Console.Out.WriteLine ()
-            AnsiConsole.Write(Render.cancelled strings)
-            AnsiConsole.WriteLine()
+            if assistantStreaming then Surface.lineBreak ()
+            Surface.writeRenderable(Render.cancelled strings)
+            Surface.lineBreak ()
         | ex ->
-            if assistantStreaming then Console.Out.WriteLine ()
-            AnsiConsole.Write(Render.errorLine strings ex.Message)
-            AnsiConsole.WriteLine()
+            if assistantStreaming then Surface.lineBreak ()
+            Surface.writeRenderable(Render.errorLine strings ex.Message)
+            Surface.lineBreak ()
             lastFailedTurn <- Some { BugReport.UserPrompt = input; BugReport.ToolCalls = errorToolCalls |> Seq.toList; BugReport.AiResponse = responseText.ToString(); BugReport.ErrorText = Some ex.Message }
     finally
         StatusBar.stopStreaming()
         StatusBar.refresh()
 }
 
-let private bellChar () = Console.Out.Write '\a'
+let private bellChar () = Surface.write "\a"
 
 let private prelude (cfg: AppConfig) =
     if cfg.Ui.Bell then
@@ -602,30 +581,29 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
     Render.showBanner ()
     if cfg.DryRun then
         if Render.isColorEnabled () then
-            AnsiConsole.MarkupLine "[yellow bold]⚑ dry-run[/] [dim]— tools will log calls without executing[/]"
+            Surface.markupLine "[yellow bold]⚑ dry-run[/] [dim]— tools will log calls without executing[/]"
         else
-            Console.Out.WriteLine "⚑ dry-run — tools will log calls without executing"
-        AnsiConsole.WriteLine()
+            Surface.writeLine "⚑ dry-run — tools will log calls without executing"
+        Surface.lineBreak ()
     // Show last-session resuming hint if available
     let strings0 = pick cfg.Ui.Locale
     lastSummary |> Option.iter (fun s ->
         let first = let i = s.IndexOf('.') in if i > 0 && i < 120 then s.[..i - 1] else s.[..min 119 (s.Length - 1)]
         let msg = strings0.SessionResuming.Replace("{0}", first)
         if Render.isColorEnabled () then
-            AnsiConsole.MarkupLine($"[dim]{Markup.Escape msg}[/]")
+            Surface.markupLine($"[dim]{Markup.Escape msg}[/]")
         else
-            Console.Out.WriteLine msg
-        AnsiConsole.WriteLine())
+            Surface.writeLine msg
+        Surface.lineBreak ())
     // Show template badge on startup
     cfg.TemplateName |> Option.iter (fun name ->
         if Render.isColorEnabled () then
-            AnsiConsole.MarkupLine($"[dim cyan]▸ template: {Markup.Escape name}[/]")
+            Surface.markupLine($"[dim cyan]▸ template: {Markup.Escape name}[/]")
         else
-            Console.Out.WriteLine($"template: {name}")
-        AnsiConsole.WriteLine())
+            Surface.writeLine($"template: {name}")
+        Surface.lineBreak ())
     prelude cfg
-    Console.Out.Write "\x1b[?2004h"   // enable bracketed paste
-    Console.Out.Flush()
+    Surface.write "\x1b[?2004h"   // enable bracketed paste
 
     // .env file awareness: detect .env in cwd and offer to load into session env.
     let dotEnvPath = System.IO.Path.Combine(cwd, ".env")
@@ -640,10 +618,10 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 suspiciousPrefixes |> Array.exists (fun p -> v.StartsWith p))
         let badge = if hasSecrets then " [yellow]⚠ contains secrets[/]" else ""
         if Render.isColorEnabled () then
-            AnsiConsole.MarkupLine($"[dim]▸ .env detected ({lines.Length} vars){badge} — /env load to import[/]")
+            Surface.markupLine($"[dim]▸ .env detected ({lines.Length} vars){badge} — /env load to import[/]")
         else
-            Console.Out.WriteLine($".env detected ({lines.Length} vars) — /env load to import")
-        AnsiConsole.WriteLine()
+            Surface.writeLine($".env detected ({lines.Length} vars) — /env load to import")
+        Surface.lineBreak ()
 
     // Load .fugue/ignore patterns (lines starting with # are comments)
     let ignorePatterns =
@@ -707,7 +685,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         // Propagate the full new config so the status bar re-renders with
                         // the updated locale, model, and provider label immediately.
                         StatusBar.setCfg newCfg
-                        AnsiConsole.MarkupLine "[dim]Config reloaded.[/]"
+                        Surface.markupLine "[dim]Config reloaded.[/]"
                         StatusBar.refresh ()
                     | Error _ -> ()   // ignore malformed config
             let doAnnotate (rating: Fugue.Core.Annotation.Rating) =
@@ -721,7 +699,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 StatusBar.recordAnnotation rating
                 StatusBar.refresh ()
                 let sym = match rating with Fugue.Core.Annotation.Up -> "↑" | Fugue.Core.Annotation.Down -> "↓"
-                AnsiConsole.MarkupLine($"[dim]{sym} turn {idx}[/]")
+                Surface.markupLine($"[dim]{sym} turn {idx}[/]")
             let callbacks : ReadLine.ReadLineCallbacks =
                 { OnClearScreen       = StatusBar.refresh
                   OnAnnotateUp        = fun () -> doAnnotate Fugue.Core.Annotation.Up
@@ -730,15 +708,15 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                     fun () ->
                         let m = StatusBar.cycleApprovalMode ()
                         StatusBar.refresh ()
-                        AnsiConsole.MarkupLine($"[dim]→ approval mode: {Fugue.Core.ApprovalMode.label m}[/]") }
+                        Surface.markupLine($"[dim]→ approval mode: {Fugue.Core.ApprovalMode.label m}[/]") }
             // Drain file-watch triggers from background FileSystemWatcher
             let watchTriggers = FileWatcher.drain ()
             for wcmd in watchTriggers do
-                AnsiConsole.Write(Markup($"[dim]⟳ watch → {Markup.Escape wcmd}[/]"))
-                AnsiConsole.WriteLine()
+                Surface.writeRenderable(Markup($"[dim]⟳ watch → {Markup.Escape wcmd}[/]"))
+                Surface.lineBreak ()
                 turnNumber <- turnNumber + 1
-                AnsiConsole.Write(Render.userMessage cfg.Ui $"[watch] {wcmd}" turnNumber)
-                AnsiConsole.WriteLine()
+                Surface.writeRenderable(Render.userMessage cfg.Ui $"[watch] {wcmd}" turnNumber)
+                Surface.lineBreak ()
                 prelude cfg
                 do! streamAndRender agent session wcmd cfg cancelSrc zenMode ignore
                 coda cfg
@@ -751,8 +729,8 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
             let! lineOpt =
                 match Macros.dequeueStep() with
                 | Some step ->
-                    AnsiConsole.Write(Markup($"[dim]▶ {Markup.Escape step}[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup($"[dim]▶ {Markup.Escape step}[/]"))
+                    Surface.lineBreak ()
                     System.Threading.Tasks.Task.FromResult(Some step)
                 | None ->
                     let initial = nextInputPrefill
@@ -794,28 +772,28 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 // Show "exiting…" so the brief shutdown blocking on actor flush
                 // doesn't look like a hang. Goes straight to Console.Out — actor
                 // is about to be drained and shut down anyway.
-                AnsiConsole.MarkupLine($"[dim italic]{Markup.Escape liveStrings.ExitingMessage}[/]")
+                Surface.markupLine($"[dim italic]{Markup.Escape liveStrings.ExitingMessage}[/]")
                 cancelSrc.RequestQuit()
             | Some s when System.String.IsNullOrWhiteSpace s -> ()
             | Some s when s = "/exit" || s = "/quit" ->
-                AnsiConsole.MarkupLine($"[dim italic]{Markup.Escape liveStrings.ExitingMessage}[/]")
+                Surface.markupLine($"[dim italic]{Markup.Escape liveStrings.ExitingMessage}[/]")
                 cancelSrc.RequestQuit()
             | Some s when s = "/help" ->
-                AnsiConsole.Write(Markup("[bold]" + Markup.Escape liveStrings.HelpHeader + "[/]"))
-                AnsiConsole.WriteLine()
+                Surface.writeRenderable(Markup("[bold]" + Markup.Escape liveStrings.HelpHeader + "[/]"))
+                Surface.lineBreak ()
                 let helpItems = SlashCommands.getAll liveStrings
                 for (name, desc) in helpItems do
-                    AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
-                    AnsiConsole.WriteLine()
-                AnsiConsole.WriteLine()
-                AnsiConsole.MarkupLine "[dim]Tip: turn numbers [[N]] are searchable — use your terminal's [bold]Cmd+F[/] / [bold]Ctrl+Shift+F[/] to jump back to any past message.[/]"
-                AnsiConsole.MarkupLine "[dim]Tip: try [bold]/menu[/] for a scrollable arrow-key picker.[/]"
+                    Surface.writeRenderable(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
+                    Surface.lineBreak ()
+                Surface.lineBreak ()
+                Surface.markupLine "[dim]Tip: turn numbers [[N]] are searchable — use your terminal's [bold]Cmd+F[/] / [bold]Ctrl+Shift+F[/] to jump back to any past message.[/]"
+                Surface.markupLine "[dim]Tip: try [bold]/menu[/] for a scrollable arrow-key picker.[/]"
                 StatusBar.refresh ()
             | Some s when s = "/menu" || s = "/commands" ->
                 let allCmds = SlashCommands.getAll liveStrings
                 match Picker.pick "Slash commands" allCmds 0 with
                 | None ->
-                    AnsiConsole.MarkupLine "[dim]Cancelled[/]"
+                    Surface.markupLine "[dim]Cancelled[/]"
                 | Some i ->
                     let (name, _) = allCmds.[i]
                     nextInputPrefill <- Picker.templateOf name
@@ -835,30 +813,30 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                     proc.StartInfo <- psi
                     match proc.Start() with
                     | false ->
-                        AnsiConsole.Write(Render.errorLine liveStrings liveStrings.GitLogNoRepo)
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Render.errorLine liveStrings liveStrings.GitLogNoRepo)
+                        Surface.lineBreak ()
                     | true ->
                         let out = proc.StandardOutput.ReadToEnd()
                         proc.WaitForExit()
                         if proc.ExitCode <> 0 || String.IsNullOrWhiteSpace out then
-                            AnsiConsole.Write(Render.errorLine liveStrings liveStrings.GitLogNoRepo)
-                            AnsiConsole.WriteLine()
+                            Surface.writeRenderable(Render.errorLine liveStrings liveStrings.GitLogNoRepo)
+                            Surface.lineBreak ()
                         else
                             let prompt = liveStrings.GitLogPrompt.Replace("%s", out)
                             do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 with ex ->
-                    AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
-                AnsiConsole.Clear()
+                Surface.write "\x1b[2J\x1b[H"
                 StatusBar.refresh ()
             | Some s when s = "/squash" || s.StartsWith "/squash " ->
                 let rawArg = if s = "/squash" then "" else s.Substring(8).TrimStart()
                 let n = if String.IsNullOrWhiteSpace rawArg then 0 else (try int rawArg with _ -> 0)
                 if n <= 0 then
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.SquashUsage + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.SquashUsage + "[/]"))
+                    Surface.lineBreak ()
                 else
                     let psi = System.Diagnostics.ProcessStartInfo()
                     psi.FileName <- "git"
@@ -873,40 +851,40 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         proc.StartInfo <- psi
                         match proc.Start() with
                         | false ->
-                            AnsiConsole.Write(Render.errorLine liveStrings liveStrings.SquashNoRepo)
-                            AnsiConsole.WriteLine()
+                            Surface.writeRenderable(Render.errorLine liveStrings liveStrings.SquashNoRepo)
+                            Surface.lineBreak ()
                         | true ->
                             let out = proc.StandardOutput.ReadToEnd()
                             proc.WaitForExit()
                             if proc.ExitCode <> 0 || String.IsNullOrWhiteSpace out then
-                                AnsiConsole.Write(Render.errorLine liveStrings liveStrings.SquashNoRepo)
-                                AnsiConsole.WriteLine()
+                                Surface.writeRenderable(Render.errorLine liveStrings liveStrings.SquashNoRepo)
+                                Surface.lineBreak ()
                             else
                                 let prompt = $"""Here are the last {n} commits to be squashed:\n\n{out}\n\nPlease generate a single conventional commit message that summarizes all these changes.\nFollow the format: type(scope): description\n\nAlso show the git command to execute the squash:\n  git reset --soft HEAD~{n} && git commit -m "<your message>"\n\nDo NOT run the command — just show it for the user to review and run manually."""
                                 do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                     with ex ->
-                        AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                        Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/short" ->
                 verbosityPrefix <- Some "[VERBOSITY: respond briefly, 1-2 sentences per point, no elaboration unless asked]\n\n"
-                AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.VerbosityShortSet + "[/]"))
-                AnsiConsole.WriteLine()
+                Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.VerbosityShortSet + "[/]"))
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/long" ->
                 verbosityPrefix <- Some "[VERBOSITY: respond in detail, include explanations, examples, and context]\n\n"
-                AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.VerbosityLongSet + "[/]"))
-                AnsiConsole.WriteLine()
+                Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.VerbosityLongSet + "[/]"))
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/zen" ->
                 zenMode <- not zenMode
                 if zenMode then
                     StatusBar.stop ()
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ZenOn + "[/]"))
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ZenOn + "[/]"))
                 else
                     StatusBar.start cwd cfg
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ZenOff + "[/]"))
-                AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ZenOff + "[/]"))
+                Surface.lineBreak ()
                 if not zenMode then StatusBar.refresh ()
             | Some s when s.StartsWith "/snippet" ->
                 let parts = s.Split(' ', StringSplitOptions.RemoveEmptyEntries)
@@ -914,13 +892,13 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 match sub with
                 | "list" ->
                     if snippetStore.IsEmpty then
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.SnippetNone + "[/]"))
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.SnippetNone + "[/]"))
                     else
                         for KeyValue(name, (lang, code, src)) in snippetStore do
                             let preview = code.Split('\n').[0].[..60].Trim()
-                            AnsiConsole.Write(Markup($"  [cyan]{Markup.Escape name}[/] [dim]({Markup.Escape lang} · {Markup.Escape src})[/]  {Markup.Escape preview}"))
-                            AnsiConsole.WriteLine()
-                    AnsiConsole.WriteLine()
+                            Surface.writeRenderable(Markup($"  [cyan]{Markup.Escape name}[/] [dim]({Markup.Escape lang} · {Markup.Escape src})[/]  {Markup.Escape preview}"))
+                            Surface.lineBreak ()
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
                 | "save" when parts.Length >= 4 ->
                     let name = parts.[2]
@@ -928,8 +906,8 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                     // parse file:start-end
                     let colonIdx = fileRef.LastIndexOf ':'
                     if colonIdx < 1 then
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.SnippetUsage + "[/]"))
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.SnippetUsage + "[/]"))
+                        Surface.lineBreak ()
                     else
                         let filePart = fileRef.[..colonIdx-1]
                         let rangePart = fileRef.[colonIdx+1..]
@@ -938,7 +916,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         | (true, startL), (true, endL) ->
                             let fullPath = Fugue.Tools.PathSafety.resolve cwd filePart
                             if not (System.IO.File.Exists fullPath) then
-                                AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.AtFileNotFound, filePart)) + "[/]"))
+                                Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.AtFileNotFound, filePart)) + "[/]"))
                             else
                                 let lines = System.IO.File.ReadAllLines fullPath
                                 let s1 = max 1 startL
@@ -947,11 +925,11 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                                 let ext = (System.IO.Path.GetExtension filePart |> Option.ofObj |> Option.defaultValue "").TrimStart('.')
                                 let lang = if ext = "" then "text" else ext
                                 snippetStore <- snippetStore |> Map.add name (lang, code, fileRef)
-                                AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetSaved, name)) + "[/]"))
-                            AnsiConsole.WriteLine()
+                                Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetSaved, name)) + "[/]"))
+                            Surface.lineBreak ()
                         | _ ->
-                            AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.SnippetUsage + "[/]"))
-                            AnsiConsole.WriteLine()
+                            Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.SnippetUsage + "[/]"))
+                            Surface.lineBreak ()
                     StatusBar.refresh ()
                 | "inject" when parts.Length >= 3 ->
                     let query = parts.[2..] |> String.concat " "
@@ -962,11 +940,11 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                             |> Option.map (fun k -> snippetStore.[k]))
                     match found with
                     | None ->
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetNotFound, query)) + "[/]"))
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetNotFound, query)) + "[/]"))
+                        Surface.lineBreak ()
                     | Some(lang, code, _) ->
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetInjected, query)) + "[/]"))
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetInjected, query)) + "[/]"))
+                        Surface.lineBreak ()
                         let block = $"```{lang}\n{code}\n```"
                         do! streamAndRender agent session block cfg cancelSrc zenMode ignore
                     StatusBar.refresh ()
@@ -974,14 +952,14 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                     let name = parts.[2..] |> String.concat " "
                     if snippetStore.ContainsKey name then
                         snippetStore <- snippetStore |> Map.remove name
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetRemoved, name)) + "[/]"))
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetRemoved, name)) + "[/]"))
                     else
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetNotFound, name)) + "[/]"))
-                    AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.SnippetNotFound, name)) + "[/]"))
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
                 | _ ->
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.SnippetUsage + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.SnippetUsage + "[/]"))
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
             | Some s when s = "/bookmarks" || (s.StartsWith "/bookmark " && s.Contains " remove ") || s.StartsWith "/bookmark" ->
                 let parts = s.Split(' ', StringSplitOptions.RemoveEmptyEntries)
@@ -989,22 +967,22 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 let isRemove = parts.Length >= 3 && parts.[1] = "remove"
                 if isBookmarks then
                     if bookmarks.IsEmpty then
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.BookmarkNone + "[/]"))
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.BookmarkNone + "[/]"))
+                        Surface.lineBreak ()
                     else
                         for (i, (name, file, s1, e1)) in bookmarks |> List.indexed do
-                            AnsiConsole.Write(Markup($"  [cyan]{i+1}.[/] [bold]{Markup.Escape name}[/] [dim]{Markup.Escape file}:{s1}-{e1}[/]"))
-                            AnsiConsole.WriteLine()
+                            Surface.writeRenderable(Markup($"  [cyan]{i+1}.[/] [bold]{Markup.Escape name}[/] [dim]{Markup.Escape file}:{s1}-{e1}[/]"))
+                            Surface.lineBreak ()
                     StatusBar.refresh ()
                 elif isRemove then
                     let name = parts.[2..] |> String.concat " "
                     let before = bookmarks.Length
                     bookmarks <- bookmarks |> List.filter (fun (n, _, _, _) -> n <> name)
                     if bookmarks.Length < before then
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.BookmarkRemoved, name)) + "[/]"))
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.BookmarkRemoved, name)) + "[/]"))
                     else
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.BookmarkNotFound, name)) + "[/]"))
-                    AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.BookmarkNotFound, name)) + "[/]"))
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
                 elif parts.Length >= 2 then
                     let name = parts.[1]
@@ -1043,15 +1021,15 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                             | None -> None
                     match resolved with
                     | None ->
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.BookmarkUsage + "[/]"))
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.BookmarkUsage + "[/]"))
                     | Some(fullPath, s1, e1) ->
                         bookmarks <- bookmarks @ [(name, fullPath, s1, e1)]
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.BookmarkSaved, name)) + "[/]"))
-                    AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.BookmarkSaved, name)) + "[/]"))
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
                 else
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.BookmarkUsage + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.BookmarkUsage + "[/]"))
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
             | Some s when s = "/clear-history" ->
                 match box session with
@@ -1062,19 +1040,19 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                     let! newSession = agent.CreateSessionAsync(CancellationToken.None)
                     session <- newSession
                     sessionRef.Value <- session
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ClearHistoryDone + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ClearHistoryDone + "[/]"))
+                    Surface.lineBreak ()
                 with ex ->
                     session <- null
                     sessionRef.Value <- session
-                    AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/http " || s = "/http" ->
                 let raw = if s = "/http" then "" else s.Substring("/http ".Length)
                 if raw.Trim() = "" then
-                    AnsiConsole.Write(Markup("[dim]Usage: /http METHOD URL [-H \"K: V\"] [-d BODY] [--timeout N] [--inject][/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]Usage: /http METHOD URL [-H \"K: V\"] [-d BODY] [--timeout N] [--inject][/]"))
+                    Surface.lineBreak ()
                 else
                     // Parse: METHOD URL [-H "K: V"]... [-d BODY] [--timeout N] [--inject]
                     let argv = raw.Trim().Split(' ', System.StringSplitOptions.RemoveEmptyEntries) |> Array.toList
@@ -1110,8 +1088,8 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         | "--inject" -> inject <- true; i <- i + 1
                         | _ -> i <- i + 1
                     if url = "" then
-                        AnsiConsole.Write(Markup("[red]Missing URL[/]"))
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Markup("[red]Missing URL[/]"))
+                        Surface.lineBreak ()
                     else
                         use client = new System.Net.Http.HttpClient()
                         client.Timeout <- System.TimeSpan.FromSeconds(float timeoutSec)
@@ -1129,28 +1107,28 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                             let status = int resp.StatusCode
                             let statusColor = if status >= 500 then "red" elif status >= 400 then "yellow" elif status >= 200 then "green" else "dim"
                             if Render.isColorEnabled () then
-                                AnsiConsole.MarkupLine($"[bold][{statusColor}]HTTP {status} {resp.StatusCode}[/][/]")
+                                Surface.markupLine($"[bold][{statusColor}]HTTP {status} {resp.StatusCode}[/][/]")
                             else
-                                Console.Out.WriteLine($"HTTP {status} {resp.StatusCode}")
+                                Surface.writeLine($"HTTP {status} {resp.StatusCode}")
                             let preview = if respBody.Length > 4096 then respBody.[..4095] + $"\n… [{respBody.Length} chars total]" else respBody
-                            AnsiConsole.Write(Render.assistantFinal preview)
-                            AnsiConsole.WriteLine()
+                            Surface.writeRenderable(Render.assistantFinal preview)
+                            Surface.lineBreak ()
                             if inject then
                                 let ctx = $"[HTTP response from {method'} {url} — status {status}]\n{respBody}"
                                 turnNumber <- turnNumber + 1
-                                AnsiConsole.Write(Render.userMessage cfg.Ui $"[injected HTTP response from {method'} {url}]" turnNumber)
-                                AnsiConsole.WriteLine()
+                                Surface.writeRenderable(Render.userMessage cfg.Ui $"[injected HTTP response from {method'} {url}]" turnNumber)
+                                Surface.lineBreak ()
                                 do! streamAndRender agent session ctx cfg cancelSrc zenMode ignore
                         with ex ->
-                            AnsiConsole.Write(Render.errorLine liveStrings $"HTTP error: {ex.Message}")
-                            AnsiConsole.WriteLine()
+                            Surface.writeRenderable(Render.errorLine liveStrings $"HTTP error: {ex.Message}")
+                            Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/tools" ->
-                AnsiConsole.Write(Markup("[bold]" + Markup.Escape liveStrings.ToolsHeader + "[/]"))
-                AnsiConsole.WriteLine()
+                Surface.writeRenderable(Markup("[bold]" + Markup.Escape liveStrings.ToolsHeader + "[/]"))
+                Surface.lineBreak ()
                 for (name, desc) in Fugue.Tools.ToolRegistry.descriptions do
-                    AnsiConsole.Write(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("  [cyan]" + Markup.Escape name + "[/]  [dim]" + Markup.Escape desc + "[/]"))
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/compat" ->
                 let env (k: string) = System.Environment.GetEnvironmentVariable k |> Option.ofObj |> Option.defaultValue ""
@@ -1194,18 +1172,18 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                     row "OSC 8 hyperlinks" osc8       (if kitty then "kitty" elif iterm2 then "iTerm2" elif wezterm then "WezTerm" else "—")
                     row $"Terminal width = {termW}" true "Console.WindowWidth"
                     row "Docker / container" inDocker   (if inDocker then "/.dockerenv or cgroup" else "not detected")
-                    AnsiConsole.Write tbl
+                    Surface.writeRenderable tbl
                 else
                     let yn ok = if ok then "yes" else "no"
-                    Console.Out.WriteLine($"ANSI color:      {yn ansiColor}")
-                    Console.Out.WriteLine($"True color:      {yn trueColor}  COLORTERM={colorTerm}")
-                    Console.Out.WriteLine($"256 colors:      {yn colors256}  TERM={term}")
-                    Console.Out.WriteLine($"UTF-8:           {yn utf8}  LANG={lang}")
-                    Console.Out.WriteLine($"Emoji:           {yn emoji}")
-                    Console.Out.WriteLine($"Kitty protocol:  {yn kitty}")
-                    Console.Out.WriteLine($"OSC 8:           {yn osc8}")
-                    Console.Out.WriteLine($"Terminal width:  {termW}")
-                    Console.Out.WriteLine($"Docker:          {yn inDocker}")
+                    Surface.writeLine($"ANSI color:      {yn ansiColor}")
+                    Surface.writeLine($"True color:      {yn trueColor}  COLORTERM={colorTerm}")
+                    Surface.writeLine($"256 colors:      {yn colors256}  TERM={term}")
+                    Surface.writeLine($"UTF-8:           {yn utf8}  LANG={lang}")
+                    Surface.writeLine($"Emoji:           {yn emoji}")
+                    Surface.writeLine($"Kitty protocol:  {yn kitty}")
+                    Surface.writeLine($"OSC 8:           {yn osc8}")
+                    Surface.writeLine($"Terminal width:  {termW}")
+                    Surface.writeLine($"Docker:          {yn inDocker}")
                 StatusBar.refresh ()
             | Some s when s = "/bench" || s.StartsWith "/bench " ->
                 let nArg = if s = "/bench" then 3 else
@@ -1220,9 +1198,9 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 for attempt in 1..nArg do
                     if not benchAborted then
                         if Render.isColorEnabled () then
-                            AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.BenchRunning, string attempt, string nArg))}[/]")
+                            Surface.markupLine($"[dim]{Markup.Escape (String.Format(liveStrings.BenchRunning, string attempt, string nArg))}[/]")
                         else
-                            Console.Out.WriteLine(String.Format(liveStrings.BenchRunning, string attempt, string nArg))
+                            Surface.writeLine(String.Format(liveStrings.BenchRunning, string attempt, string nArg))
                         try
                             use benchCts = new System.Threading.CancellationTokenSource(System.TimeSpan.FromSeconds 30.0)
                             let! probeSession = agent.CreateSessionAsync(benchCts.Token)
@@ -1248,8 +1226,8 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         with _ ->
                             benchAborted <- true
                 if benchAborted then
-                    AnsiConsole.Write(Render.errorLine liveStrings liveStrings.BenchAborted)
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Render.errorLine liveStrings liveStrings.BenchAborted)
+                    Surface.lineBreak ()
                 elif ttfts.Count > 0 then
                     let pct (data: System.Collections.Generic.List<int64>) (p: int) =
                         let sorted = data |> Seq.sort |> Seq.toArray
@@ -1267,10 +1245,10 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         addRow "p90"  (pct ttfts 90)  (pct totals 90)
                         addRow "p99"  (pct ttfts 99)  (pct totals 99)
                         addRow "max"  (pct ttfts 100) (pct totals 100)
-                        AnsiConsole.Write tbl
+                        Surface.writeRenderable tbl
                     else
-                        Console.Out.WriteLine(String.Format("{0,-6}  {1,-8}  {2,-8}", "metric", "TTFT", "Total"))
-                        let pr label p = Console.Out.WriteLine($"{label,-6}  {pct ttfts p,-6}ms  {pct totals p,-6}ms")
+                        Surface.writeLine(String.Format("{0,-6}  {1,-8}  {2,-8}", "metric", "TTFT", "Total"))
+                        let pr label p = Surface.writeLine($"{label,-6}  {pct ttfts p,-6}ms  {pct totals p,-6}ms")
                         pr "min" 0; pr "p50" 50; pr "p90" 90; pr "p99" 99; pr "max" 100
                 StatusBar.refresh ()
             | Some s when s = "/history" || s.StartsWith "/history " ->
@@ -1281,8 +1259,8 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                                | _ -> 5
                 let records = Fugue.Core.SessionSummary.loadHistory cwd nArg
                 if records.IsEmpty then
-                    AnsiConsole.Write(Markup("[dim]no session history yet[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]no session history yet[/]"))
+                    Surface.lineBreak ()
                 else
                     for (idx, (ts, summary)) in records |> List.mapi (fun i r -> i, r) do
                         let ago =
@@ -1291,13 +1269,13 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                             elif diff.TotalHours >= 1.0 then $"{int diff.TotalHours}h ago"
                             else $"{max 1 (int diff.TotalMinutes)}m ago"
                         if Render.isColorEnabled () then
-                            AnsiConsole.MarkupLine($"[dim]#{idx + 1} ({ago})[/]")
-                            AnsiConsole.Write(MarkdownRender.toRenderable summary)
-                            AnsiConsole.WriteLine()
+                            Surface.markupLine($"[dim]#{idx + 1} ({ago})[/]")
+                            Surface.writeRenderable(MarkdownRender.toRenderable summary)
+                            Surface.lineBreak ()
                         else
-                            Console.Out.WriteLine($"#{idx + 1} ({ago})")
-                            Console.Out.WriteLine summary
-                            Console.Out.WriteLine()
+                            Surface.writeLine($"#{idx + 1} ({ago})")
+                            Surface.writeLine summary
+                            Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some "/turns" ->
                 let records = Fugue.Core.SessionPersistence.readRecords sessionFilePath
@@ -1310,10 +1288,10 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                     |> List.mapi (fun i (role, c) ->
                         ($"[{i + 1}] {role}", previewTurnContent c))
                 if turnItems.IsEmpty then
-                    AnsiConsole.MarkupLine "[dim]No turns yet in this session.[/]"
+                    Surface.markupLine "[dim]No turns yet in this session.[/]"
                 else
                     match Picker.pick "Turns — current session" turnItems (turnItems.Length - 1) with
-                    | None -> AnsiConsole.MarkupLine "[dim]Cancelled[/]"
+                    | None -> Surface.markupLine "[dim]Cancelled[/]"
                     | Some i ->
                         let (label, _) = turnItems.[i]
                         let closeIdx = label.IndexOf ']'
@@ -1325,35 +1303,35 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
                 let dir = System.IO.Path.Combine(home, ".fugue", "templates")
                 if not (System.IO.Directory.Exists dir) then
-                    AnsiConsole.MarkupLine("[dim]No templates found. Create ~/.fugue/templates/<name>.md to add one.[/]")
+                    Surface.markupLine("[dim]No templates found. Create ~/.fugue/templates/<name>.md to add one.[/]")
                 else
                     let files = System.IO.Directory.GetFiles(dir, "*.md")
                     if files.Length = 0 then
-                        AnsiConsole.MarkupLine("[dim]No templates found. Create ~/.fugue/templates/<name>.md to add one.[/]")
+                        Surface.markupLine("[dim]No templates found. Create ~/.fugue/templates/<name>.md to add one.[/]")
                     else
-                        AnsiConsole.MarkupLine("[dim]Available templates (use fugue --template <name>):[/]")
+                        Surface.markupLine("[dim]Available templates (use fugue --template <name>):[/]")
                         for f in files |> Array.sort do
                             let name = System.IO.Path.GetFileNameWithoutExtension f |> Option.ofObj |> Option.defaultValue ""
                             if name <> "" then
-                                AnsiConsole.MarkupLine($"  [cyan]{Markup.Escape name}[/]")
+                                Surface.markupLine($"  [cyan]{Markup.Escape name}[/]")
                 StatusBar.refresh ()
             | Some s when s = "/gen" || s.StartsWith "/gen " ->
                 let kind = (if s = "/gen" then "" else s.Substring(4)).Trim().ToLowerInvariant()
                 match kind with
                 | "uuid" | "" ->
                     let v = System.Guid.NewGuid().ToString()
-                    AnsiConsole.MarkupLine($"[green]{v}[/]")
+                    Surface.markupLine($"[green]{v}[/]")
                     ClipRing.push v
                 | "ulid" ->
                     let v = generateUlid ()
-                    AnsiConsole.MarkupLine($"[green]{v}[/]")
+                    Surface.markupLine($"[green]{v}[/]")
                     ClipRing.push v
                 | "nanoid" ->
                     let v = generateNanoid ()
-                    AnsiConsole.MarkupLine($"[green]{v}[/]")
+                    Surface.markupLine($"[green]{v}[/]")
                     ClipRing.push v
                 | other ->
-                    AnsiConsole.MarkupLine($"[red]Unknown generator '[/][bold red]{Markup.Escape other}[/][red]'. Use: /gen uuid|ulid|nanoid[/]")
+                    Surface.markupLine($"[red]Unknown generator '[/][bold red]{Markup.Escape other}[/][red]'. Use: /gen uuid|ulid|nanoid[/]")
                 StatusBar.refresh ()
             | Some s when s = "/rate" || s.StartsWith "/rate " ->
                 let parts = (if s = "/rate" then "" else s.Substring(6)).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)
@@ -1376,12 +1354,12 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                     let msg = String.Format(liveStrings.RateSaved, string targetTurn, ratingArg)
                     if Render.isColorEnabled () then
                         let color = if ratingArg = "up" then "green" else "red"
-                        AnsiConsole.MarkupLine($"[{color}]{Markup.Escape msg}[/]")
-                    else Console.Out.WriteLine msg
+                        Surface.markupLine($"[{color}]{Markup.Escape msg}[/]")
+                    else Surface.writeLine msg
                 | _ ->
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.RateUsage}[/]")
-                    else Console.Out.WriteLine liveStrings.RateUsage
+                        Surface.markupLine($"[dim]{Markup.Escape liveStrings.RateUsage}[/]")
+                    else Surface.writeLine liveStrings.RateUsage
                 StatusBar.refresh ()
             | Some s when s = "/annotate" || s.StartsWith "/annotate " ->
                 // /annotate [N] [up|down] <note text>
@@ -1406,7 +1384,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                     if idx < tokens.Length then Some (String.concat " " tokens.[idx..])
                     else None
                 if rating = None && note = None then
-                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.AnnotateUsage}[/]")
+                    Surface.markupLine($"[dim]{Markup.Escape liveStrings.AnnotateUsage}[/]")
                 else
                     let ann : Fugue.Core.Annotation.TurnAnnotation =
                         { TurnIndex   = targetTurn
@@ -1420,13 +1398,13 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                     let ratingStr = rating |> Option.map (fun r -> match r with Fugue.Core.Annotation.Up -> " ↑" | Fugue.Core.Annotation.Down -> " ↓") |> Option.defaultValue ""
                     let noteStr   = note |> Option.map (fun n -> $" \"{n}\"") |> Option.defaultValue ""
                     let msg = $"turn {targetTurn}{ratingStr}{noteStr}"
-                    AnsiConsole.MarkupLine($"[dim]annotated: {Markup.Escape msg}[/]")
+                    Surface.markupLine($"[dim]annotated: {Markup.Escape msg}[/]")
                 StatusBar.refresh ()
             | Some s when s = "/issue" || s.StartsWith "/issue " ->
                 let rawArg = if s = "/issue" then "" else s.Substring(7).TrimStart()
                 if String.IsNullOrWhiteSpace rawArg then
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.IssueUsage + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.IssueUsage + "[/]"))
+                    Surface.lineBreak ()
                 else
                     let psi = System.Diagnostics.ProcessStartInfo()
                     psi.FileName <- "gh"
@@ -1444,15 +1422,15 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         proc.StartInfo <- psi
                         match proc.Start() with
                         | false ->
-                            AnsiConsole.Write(Render.errorLine liveStrings (String.Format(liveStrings.IssueNotFound, rawArg)))
-                            AnsiConsole.WriteLine()
+                            Surface.writeRenderable(Render.errorLine liveStrings (String.Format(liveStrings.IssueNotFound, rawArg)))
+                            Surface.lineBreak ()
                         | true ->
                             let output = proc.StandardOutput.ReadToEnd()
                             proc.WaitForExit()
                             if proc.ExitCode <> 0 then
                                 let err = proc.StandardError.ReadToEnd().Trim()
-                                AnsiConsole.Write(Render.errorLine liveStrings (String.Format(liveStrings.IssueNotFound, err)))
-                                AnsiConsole.WriteLine()
+                                Surface.writeRenderable(Render.errorLine liveStrings (String.Format(liveStrings.IssueNotFound, err)))
+                                Surface.lineBreak ()
                             else
                                 // Extract a string field from compact gh JSON output (AOT-safe, no JsonSerializer)
                                 let extractField (field: string) (json: string) =
@@ -1481,8 +1459,8 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                                 let title = extractField "title" output
                                 let body  = extractField "body"  output
                                 let issueContext = $"Issue #{rawArg}: {title}\n\n{body}"
-                                AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.IssueFetched, rawArg, title))}[/]")
-                                AnsiConsole.WriteLine()
+                                Surface.markupLine($"[dim]{Markup.Escape (String.Format(liveStrings.IssueFetched, rawArg, title))}[/]")
+                                Surface.lineBreak ()
                                 // Best-effort branch creation
                                 let slugify (src: string) =
                                     src.ToLowerInvariant()
@@ -1508,27 +1486,27 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                                     if gitProc.Start() then
                                         gitProc.WaitForExit()
                                         if gitProc.ExitCode = 0 then
-                                            AnsiConsole.MarkupLine($"[dim]created branch {Markup.Escape branchName}[/]")
-                                            AnsiConsole.WriteLine()
+                                            Surface.markupLine($"[dim]created branch {Markup.Escape branchName}[/]")
+                                            Surface.lineBreak ()
                                 with _ -> ()   // git unavailable or not a repo — silent
                                 // Inject issue context into conversation
                                 do! streamAndRender agent session issueContext cfg cancelSrc zenMode ignore
                     with ex ->
-                        AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                        Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/model suggest" ->
-                AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AskingModelRecommendation + "[/]"))
-                AnsiConsole.WriteLine()
+                Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.AskingModelRecommendation + "[/]"))
+                Surface.lineBreak ()
                 do! streamAndRender agent session liveStrings.ModelSuggestPrompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s = "/model" || s = "/model list" ->
                 let prov, currentModel = providerInfo cfg.Provider
-                AnsiConsole.MarkupLine($"[bold]Current:[/] [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape currentModel}[/]")
-                AnsiConsole.MarkupLine($"[dim]Fetching models from {Markup.Escape prov}…[/]")
+                Surface.markupLine($"[bold]Current:[/] [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape currentModel}[/]")
+                Surface.markupLine($"[dim]Fetching models from {Markup.Escape prov}…[/]")
                 let! models = ModelDiscovery.getModels cfg.Provider cfg.BaseUrl
                 if List.isEmpty models then
-                    AnsiConsole.MarkupLine "[yellow]No models discovered. Use /model set <name> to switch manually.[/]"
+                    Surface.markupLine "[yellow]No models discovered. Use /model set <name> to switch manually.[/]"
                     StatusBar.refresh ()
                 else
                     let pickModel (newModel: string) =
@@ -1547,10 +1525,10 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                                 session <- freshSession
                                 sessionRef.Value <- session
                                 let provName, _ = providerInfo cfg.Provider
-                                AnsiConsole.MarkupLine($"[green]✓[/] model → [cyan]{Markup.Escape provName}[/] / [green]{Markup.Escape newModel}[/] [dim](history reset)[/]")
+                                Surface.markupLine($"[green]✓[/] model → [cyan]{Markup.Escape provName}[/] / [green]{Markup.Escape newModel}[/] [dim](history reset)[/]")
                                 StatusBar.setCfg cfg
                             with ex ->
-                                AnsiConsole.MarkupLine($"[red]✗ failed to switch model: {Markup.Escape ex.Message}[/]")
+                                Surface.markupLine($"[red]✗ failed to switch model: {Markup.Escape ex.Message}[/]")
                         }
                     // Interactive arrow-key picker.
                     // Indices: 0..models.Length-1 = models; models.Length = [s] suggest; models.Length+1 = [q] cancel.
@@ -1593,37 +1571,37 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         if colour then "[dim]↑/↓ navigate · Enter select · Esc cancel[/]"
                         else "↑/↓ navigate · Enter select · Esc cancel"
 
-                    AnsiConsole.WriteLine()
+                    Surface.lineBreak ()
                     // Initial render. Each row + blank line + footer.
                     for i in 0 .. totalRows - 1 do
-                        if colour then AnsiConsole.MarkupLine(renderRow i (i = 0))
-                        else Console.Out.WriteLine(renderRow i (i = 0))
-                    AnsiConsole.WriteLine()
-                    if colour then AnsiConsole.MarkupLine footer
-                    else Console.Out.WriteLine footer
+                        if colour then Surface.markupLine(renderRow i (i = 0))
+                        else Surface.writeLine(renderRow i (i = 0))
+                    Surface.lineBreak ()
+                    if colour then Surface.markupLine footer
+                    else Surface.writeLine footer
 
                     let renderedLines = totalRows + 2  // rows + blank + footer
 
                     let redraw (idx: int) =
                         // Move cursor up to start of menu, clear each line, redraw.
-                        Console.Out.Write($"\x1b[{renderedLines}F")
+                        Surface.write($"\x1b[{renderedLines}F")
                         for i in 0 .. totalRows - 1 do
-                            Console.Out.Write "\x1b[K"
-                            if colour then AnsiConsole.MarkupLine(renderRow i (i = idx))
-                            else Console.Out.WriteLine(renderRow i (i = idx))
-                        Console.Out.Write "\x1b[K"
-                        Console.Out.WriteLine()
-                        Console.Out.Write "\x1b[K"
-                        if colour then AnsiConsole.MarkupLine footer
-                        else Console.Out.WriteLine footer
+                            Surface.write "\x1b[K"
+                            if colour then Surface.markupLine(renderRow i (i = idx))
+                            else Surface.writeLine(renderRow i (i = idx))
+                        Surface.write "\x1b[K"
+                        Surface.lineBreak ()
+                        Surface.write "\x1b[K"
+                        if colour then Surface.markupLine footer
+                        else Surface.writeLine footer
 
                     let clearMenu () =
                         // Wipe the menu before printing the result.
-                        Console.Out.Write($"\x1b[{renderedLines}F")
+                        Surface.write($"\x1b[{renderedLines}F")
                         for _ in 1 .. renderedLines do
-                            Console.Out.Write "\x1b[K"
-                            Console.Out.Write "\x1b[1B"
-                        Console.Out.Write($"\x1b[{renderedLines}F")
+                            Surface.write "\x1b[K"
+                            Surface.write "\x1b[1B"
+                        Surface.write($"\x1b[{renderedLines}F")
 
                     let mutable currentIndex = 0
                     let mutable picked       : int option = None
@@ -1659,12 +1637,12 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
 
                     match picked with
                     | None ->
-                        AnsiConsole.MarkupLine "[dim]Cancelled[/]"
+                        Surface.markupLine "[dim]Cancelled[/]"
                     | Some i when i = cancelIdx ->
-                        AnsiConsole.MarkupLine "[dim]Cancelled[/]"
+                        Surface.markupLine "[dim]Cancelled[/]"
                     | Some i when i = suggestIdx ->
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AskingModelRecommendation + "[/]"))
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.AskingModelRecommendation + "[/]"))
+                        Surface.lineBreak ()
                         do! streamAndRender agent session liveStrings.ModelSuggestPrompt cfg cancelSrc zenMode ignore
                     | Some i ->
                         do! pickModel modelsArr.[i]
@@ -1672,7 +1650,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
             | Some s when s.StartsWith "/model set " ->
                 let newModel = s.Substring("/model set ".Length).Trim()
                 if newModel = "" then
-                    AnsiConsole.MarkupLine "[red]/model set requires a model name[/]"
+                    Surface.markupLine "[red]/model set requires a model name[/]"
                 else
                     let newProvider =
                         match cfg.Provider with
@@ -1688,7 +1666,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         session <- freshSession
                         sessionRef.Value <- session
                         let prov, _ = providerInfo cfg.Provider
-                        AnsiConsole.MarkupLine($"[green]✓[/] model → [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape newModel}[/] [dim](history reset)[/]")
+                        Surface.markupLine($"[green]✓[/] model → [cyan]{Markup.Escape prov}[/] / [green]{Markup.Escape newModel}[/] [dim](history reset)[/]")
                         StatusBar.setCfg cfg
                         // Re-fetch model list for the (potentially) new provider in background.
                         // On empty result (HTTP failure proxy), keep the previous list and
@@ -1703,7 +1681,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                                 cachedModelsStale.Value <- false
                         })
                     with ex ->
-                        AnsiConsole.MarkupLine($"[red]✗ failed to switch model: {Markup.Escape ex.Message}[/]")
+                        Surface.markupLine($"[red]✗ failed to switch model: {Markup.Escape ex.Message}[/]")
             | Some s when s = "/onboard" ->
                 let tryRead (p: string) =
                     if System.IO.File.Exists p then
@@ -1747,25 +1725,25 @@ Include: setup steps, key files to read, how to build/test, coding conventions, 
 Please generate a clear, actionable onboarding checklist."""
                 do! streamAndRender agent session onboardPrompt cfg cancelSrc zenMode ignore
             | Some s when s = "/review pr" || s = "/review pr " ->
-                AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrUsage + "[/]"))
-                AnsiConsole.WriteLine()
+                Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrUsage + "[/]"))
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/review pr " ->
                 let arg = s.Substring(11).Trim()
                 match System.Int32.TryParse arg with
                 | false, _ ->
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrUsage + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrUsage + "[/]"))
+                    Surface.lineBreak ()
                 | true, prNum when prNum < 1 ->
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrUsage + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrUsage + "[/]"))
+                    Surface.lineBreak ()
                 | true, prNum ->
                     let meta = runCmd "gh" [| "pr"; "view"; string prNum; "--json"; "title,body" |] cwd
                     let diff = runCmd "gh" [| "pr"; "diff"; string prNum |] cwd
                     match diff with
                     | None ->
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrNotFound + "[/]"))
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ReviewPrNotFound + "[/]"))
+                        Surface.lineBreak ()
                     | Some diffText ->
                         let truncatedDiff =
                             if diffText.Length > 8000 then diffText.[..7999] + "\n[diff truncated]"
@@ -1776,24 +1754,24 @@ Please generate a clear, actionable onboarding checklist."""
                                 .Replace("{0}", string prNum)
                                 .Replace("{1}", titleBody)
                                 .Replace("{2}", truncatedDiff)
-                        AnsiConsole.Write(Render.userMessage cfg.Ui $"Reviewing PR #{prNum}…" 0)
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Render.userMessage cfg.Ui $"Reviewing PR #{prNum}…" 0)
+                        Surface.lineBreak ()
                         do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/ask " ->
                 let question = s.Substring(5).Trim()
                 if String.IsNullOrWhiteSpace question then
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AskUsage + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.AskUsage + "[/]"))
+                    Surface.lineBreak ()
                 else
                     let augmented = $"[System: answer from your training knowledge only — do not invoke any tools, do not read files, do not run commands]\n\nUser: {question}"
-                    AnsiConsole.Write(Render.userMessage cfg.Ui question 0)
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Render.userMessage cfg.Ui question 0)
+                    Surface.lineBreak ()
                     do! streamAndRender agent session augmented cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s = "/ask" ->
-                AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AskUsage + "[/]"))
-                AnsiConsole.WriteLine()
+                Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.AskUsage + "[/]"))
+                Surface.lineBreak ()
             | Some s when s = "/diff" || s = "/diff --staged" ||
                           (s.StartsWith("/diff ") && s <> "/diff --staged") ->
                 let rest = if s.Length > 6 then s.Substring(6).Trim() else ""
@@ -1827,23 +1805,23 @@ Please generate a clear, actionable onboarding checklist."""
                     let isTwoFile = match parts with [| _; _ |] -> true | _ -> false
                     if proc.ExitCode <> 0 && not (isTwoFile && proc.ExitCode = 1) then
                         let msg = if errOut <> "" then errOut else $"git diff exited {proc.ExitCode}"
-                        AnsiConsole.Write(Render.errorLine liveStrings msg)
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Render.errorLine liveStrings msg)
+                        Surface.lineBreak ()
                     elif System.String.IsNullOrWhiteSpace output then
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.NoDiff + "[/]"))
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.NoDiff + "[/]"))
+                        Surface.lineBreak ()
                     else
-                        AnsiConsole.Write(DiffRender.toRenderable output)
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(DiffRender.toRenderable output)
+                        Surface.lineBreak ()
                 with ex ->
-                    AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/init" ->
                 let fugueMdPath = System.IO.Path.Combine(cwd, "FUGUE.md")
                 if System.IO.File.Exists fugueMdPath then
-                    AnsiConsole.Write(Markup("[yellow]" + Markup.Escape liveStrings.InitExists + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[yellow]" + Markup.Escape liveStrings.InitExists + "[/]"))
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
                 else
                     let initPrompt =
@@ -1857,12 +1835,12 @@ Please generate a clear, actionable onboarding checklist."""
                         "- Any gotchas or non-obvious constraints\n\n" +
                         "Keep it concise — aim for 50-150 lines. Use Markdown headers.\n" +
                         "Write the file to ./FUGUE.md using the Write tool."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui "/init" 0)
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Render.userMessage cfg.Ui "/init" 0)
+                    Surface.lineBreak ()
                     do! streamAndRender agent session initPrompt cfg cancelSrc zenMode ignore
                     StatusBar.refresh ()
             | Some s when s = "/new" ->
-                AnsiConsole.Clear()
+                Surface.write "\x1b[2J\x1b[H"
                 match box session with
                 | :? IAsyncDisposable as d ->
                     try do! d.DisposeAsync().AsTask() with _ -> ()
@@ -1874,8 +1852,8 @@ Please generate a clear, actionable onboarding checklist."""
                 with ex ->
                     session <- null
                     sessionRef.Value <- session
-                    AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                    Surface.lineBreak ()
                 turnNumber <- 0
                 sessionNotes <- []
                 lastFile <- None
@@ -1923,16 +1901,16 @@ Please generate a clear, actionable onboarding checklist."""
                             proc.Start() |> ignore
                             proc.WaitForExit()
                         with ex ->
-                            AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
-                            AnsiConsole.WriteLine()
+                            Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                            Surface.lineBreak ()
                     finally
                         cancelSrc.ExitChild ()
                         StatusBar.start cwd cfg
             | Some s when s = "/report-bug" ->
                 match lastFailedTurn with
                 | None ->
-                    if Render.isColorEnabled () then AnsiConsole.MarkupLine "[dim]No failed turn to report yet.[/]"
-                    else Console.Out.WriteLine "No failed turn to report yet."
+                    if Render.isColorEnabled () then Surface.markupLine "[dim]No failed turn to report yet.[/]"
+                    else Surface.writeLine "No failed turn to report yet."
                 | Some turn ->
                     let asm     = System.Reflection.Assembly.GetExecutingAssembly()
                     let ver     = asm.GetName().Version |> Option.ofObj |> Option.map (fun v -> v.ToString()) |> Option.defaultValue "unknown"
@@ -1943,12 +1921,12 @@ Please generate a clear, actionable onboarding checklist."""
                     let tmpPath = IO.Path.GetTempFileName() + ".md"
                     IO.File.WriteAllText(tmpPath, body)
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine($"[dim]Bug report saved to {tmpPath}[/]")
-                        AnsiConsole.MarkupLine($"[dim]To file: gh issue create -R korat-ai/fugue --title '...' --body-file {tmpPath}[/]")
+                        Surface.markupLine($"[dim]Bug report saved to {tmpPath}[/]")
+                        Surface.markupLine($"[dim]To file: gh issue create -R korat-ai/fugue --title '...' --body-file {tmpPath}[/]")
                     else
-                        Console.Out.WriteLine($"Bug report saved to {tmpPath}")
-                        Console.Out.WriteLine($"To file: gh issue create -R korat-ai/fugue --title '...' --body-file {tmpPath}")
-                AnsiConsole.WriteLine()
+                        Surface.writeLine($"Bug report saved to {tmpPath}")
+                        Surface.writeLine($"To file: gh issue create -R korat-ai/fugue --title '...' --body-file {tmpPath}")
+                Surface.lineBreak ()
             | Some s when s = "/summary" ->
                 let summaryPrompt =
                     "Please generate a structured summary of our session so far.\n\n" +
@@ -1957,8 +1935,8 @@ Please generate a clear, actionable onboarding checklist."""
                     "- Key decisions made\n" +
                     "- Any open questions or next steps\n\n" +
                     "Be concise but complete."
-                AnsiConsole.Write(Render.userMessage cfg.Ui "/summary" 0)
-                AnsiConsole.WriteLine()
+                Surface.writeRenderable(Render.userMessage cfg.Ui "/summary" 0)
+                Surface.lineBreak ()
                 do! streamAndRender agent session summaryPrompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/document" ->
@@ -1969,14 +1947,14 @@ Please generate a clear, actionable onboarding checklist."""
                         let clean = arg.TrimStart('/')
                         if clean.StartsWith "docs/" then clean else "docs/" + clean
                 let docPrompt = System.String.Format(liveStrings.DocumentPrompt, docPath)
-                AnsiConsole.Write(Render.userMessage cfg.Ui $"/document {docPath}" 0)
-                AnsiConsole.WriteLine()
+                Surface.writeRenderable(Render.userMessage cfg.Ui $"/document {docPath}" 0)
+                Surface.lineBreak ()
                 do! streamAndRender agent session docPrompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s = "/activity" ->
                 if activityStore.IsEmpty then
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ActivityNone + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ActivityNone + "[/]"))
+                    Surface.lineBreak ()
                 else
                     let maxCount = activityStore |> Map.toSeq |> Seq.map snd |> Seq.max
                     let sorted = activityStore |> Map.toSeq |> Seq.sortByDescending snd |> Seq.truncate 20
@@ -1990,10 +1968,10 @@ Please generate a clear, actionable onboarding checklist."""
                         let bar = String.replicate barLen "█"
                         let label = System.IO.Path.GetFileName(path) |> Option.ofObj |> Option.defaultValue path
                         if Render.isColorEnabled () then
-                            AnsiConsole.MarkupLine($"  [cyan]{heat}[/] [dim]{Markup.Escape label}[/] [grey]{count}x[/]")
+                            Surface.markupLine($"  [cyan]{heat}[/] [dim]{Markup.Escape label}[/] [grey]{count}x[/]")
                         else
                             printfn "  %s %s %dx" bar label count
-                    AnsiConsole.WriteLine()
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/macro" ->
                 let rest = s.Substring("/macro".Length).Trim()
@@ -2003,38 +1981,38 @@ Please generate a clear, actionable onboarding checklist."""
                 | "record" when not (String.IsNullOrWhiteSpace arg) ->
                     if Macros.isRecording() then Macros.stopRecording() |> ignore
                     Macros.startRecording arg
-                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroRecording, arg))}[/]")
+                    Surface.markupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroRecording, arg))}[/]")
                 | "stop" ->
                     match Macros.stopRecording() with
                     | Some name ->
                         let cnt = Macros.list() |> List.tryFind (fun (n, _) -> n = name) |> Option.map snd |> Option.defaultValue 0
-                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroSaved, name, cnt))}[/]")
+                        Surface.markupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroSaved, name, cnt))}[/]")
                     | None ->
-                        AnsiConsole.MarkupLine("[dim]no recording in progress[/]")
+                        Surface.markupLine("[dim]no recording in progress[/]")
                 | "play" when not (String.IsNullOrWhiteSpace arg) ->
                     match Macros.list() |> List.tryFind (fun (n, _) -> n = arg) with
                     | Some (_, cnt) ->
                         if Macros.enqueuePlay arg then
-                            AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroPlaying, arg, cnt))}[/]")
+                            Surface.markupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroPlaying, arg, cnt))}[/]")
                         else
-                            AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroNotFound, arg))}[/]")
+                            Surface.markupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroNotFound, arg))}[/]")
                     | None ->
-                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroNotFound, arg))}[/]")
+                        Surface.markupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroNotFound, arg))}[/]")
                 | "list" | "" ->
                     let macros = Macros.list()
                     if macros.IsEmpty then
-                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.MacroNone}[/]")
+                        Surface.markupLine($"[dim]{Markup.Escape liveStrings.MacroNone}[/]")
                     else
                         for (name, cnt) in macros do
-                            AnsiConsole.MarkupLine($"  [cyan]{Markup.Escape name}[/] [dim]({cnt} steps)[/]")
+                            Surface.markupLine($"  [cyan]{Markup.Escape name}[/] [dim]({cnt} steps)[/]")
                 | "remove" when not (String.IsNullOrWhiteSpace arg) ->
                     if Macros.remove arg then
-                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroRemoved, arg))}[/]")
+                        Surface.markupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroRemoved, arg))}[/]")
                     else
-                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroNotFound, arg))}[/]")
+                        Surface.markupLine($"[dim]{Markup.Escape (String.Format(liveStrings.MacroNotFound, arg))}[/]")
                 | _ ->
-                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.MacroUsage}[/]")
-                AnsiConsole.WriteLine()
+                    Surface.markupLine($"[dim]{Markup.Escape liveStrings.MacroUsage}[/]")
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/theme" ->
                 let sub = s.Substring("/theme".Length).Trim()
@@ -2043,23 +2021,23 @@ Please generate a clear, actionable onboarding checklist."""
                     Render.toggleBubbles ()
                     let on = Render.isBubblesMode ()
                     if on then
-                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.ThemeBubblesOn}[/]")
+                        Surface.markupLine($"[dim]{Markup.Escape liveStrings.ThemeBubblesOn}[/]")
                     else
-                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.ThemeBubblesOff}[/]")
+                        Surface.markupLine($"[dim]{Markup.Escape liveStrings.ThemeBubblesOff}[/]")
                     savedUi <- { savedUi with BubblesMode = on }
                     try Config.saveToFile { cfg with Ui = savedUi } with _ -> ()
                 | "typewriter" ->
                     Render.toggleTypewriter ()
                     let on = Render.isTypewriterMode ()
                     if on then
-                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.ThemeTypewriterOn}[/]")
+                        Surface.markupLine($"[dim]{Markup.Escape liveStrings.ThemeTypewriterOn}[/]")
                     else
-                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.ThemeTypewriterOff}[/]")
+                        Surface.markupLine($"[dim]{Markup.Escape liveStrings.ThemeTypewriterOff}[/]")
                     savedUi <- { savedUi with TypewriterMode = on }
                     try Config.saveToFile { cfg with Ui = savedUi } with _ -> ()
                 | _ ->
-                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.ThemeUsage}[/]")
-                AnsiConsole.WriteLine()
+                    Surface.markupLine($"[dim]{Markup.Escape liveStrings.ThemeUsage}[/]")
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/alias" ->
                 let parts = s.Split(' ', StringSplitOptions.RemoveEmptyEntries)
@@ -2067,37 +2045,37 @@ Please generate a clear, actionable onboarding checklist."""
                 match sub with
                 | "list" | "" when s = "/alias" || s = "/alias list" ->
                     if aliasStore.IsEmpty then
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AliasNone + "[/]"))
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.AliasNone + "[/]"))
                     else
                         for KeyValue(name, expansion) in aliasStore do
-                            AnsiConsole.Write(Markup($"  [cyan]/{Markup.Escape name}[/] [dim]→ {Markup.Escape expansion}[/]"))
-                            AnsiConsole.WriteLine()
-                    AnsiConsole.WriteLine()
+                            Surface.writeRenderable(Markup($"  [cyan]/{Markup.Escape name}[/] [dim]→ {Markup.Escape expansion}[/]"))
+                            Surface.lineBreak ()
+                    Surface.lineBreak ()
                 | "remove" when parts.Length >= 3 ->
                     let name = parts.[2]
                     aliasStore <- aliasStore |> Map.remove name
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.AliasRemoved, name)) + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.AliasRemoved, name)) + "[/]"))
+                    Surface.lineBreak ()
                 | _ ->
                     // Parse: /alias <name> = <expansion>
                     let rest = s.Substring("/alias ".Length)
                     let eqIdx = rest.IndexOf '='
                     if eqIdx < 1 then
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AliasUsage + "[/]"))
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.AliasUsage + "[/]"))
                     else
                         let name = rest.[..eqIdx-1].Trim().TrimStart('/')
                         let expansion = rest.[eqIdx+1..].Trim()
                         if not (String.IsNullOrWhiteSpace name) && not (String.IsNullOrWhiteSpace expansion) then
                             aliasStore <- aliasStore |> Map.add name expansion
-                            AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.AliasSet, name, expansion)) + "[/]"))
+                            Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.AliasSet, name, expansion)) + "[/]"))
                         else
-                            AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.AliasUsage + "[/]"))
-                    AnsiConsole.WriteLine()
+                            Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.AliasUsage + "[/]"))
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/cron" || s.StartsWith "/cron " ->
                 let desc = (if s = "/cron" then "" else s.Substring(5)).Trim().ToLowerInvariant()
                 if String.IsNullOrWhiteSpace desc then
-                    AnsiConsole.MarkupLine "[dim]Usage: /cron \"every weekday at 9am UTC\"[/]"
+                    Surface.markupLine "[dim]Usage: /cron \"every weekday at 9am UTC\"[/]"
                 else
                     // Simple NLP parser for common patterns
                     let dayNames = [| "sun"; "mon"; "tue"; "wed"; "thu"; "fri"; "sat" |]
@@ -2151,9 +2129,9 @@ Please generate a clear, actionable onboarding checklist."""
                                 | Some n -> Some $"0 */{n} * * *"
                                 | None -> None
                     match cronExpr with
-                    | None -> AnsiConsole.MarkupLine "[red]Could not parse cron expression. Try: \"every day at 9am\", \"every 5 minutes\", \"every weekday at 17:00\"[/]"
+                    | None -> Surface.markupLine "[red]Could not parse cron expression. Try: \"every day at 9am\", \"every 5 minutes\", \"every weekday at 17:00\"[/]"
                     | Some expr ->
-                        AnsiConsole.MarkupLine($"[bold cyan]{Markup.Escape expr}[/]")
+                        Surface.markupLine($"[bold cyan]{Markup.Escape expr}[/]")
                         // Compute next 5 fire times
                         let mutable t = DateTimeOffset.UtcNow.AddMinutes 1.0
                         let mutable count = 0
@@ -2178,11 +2156,11 @@ Please generate a clear, actionable onboarding checklist."""
                                 match System.Int32.TryParse field with
                                 | true, n -> n = v
                                 | _ -> true
-                        AnsiConsole.MarkupLine "[dim]Next 5 fire times (UTC):[/]"
+                        Surface.markupLine "[dim]Next 5 fire times (UTC):[/]"
                         while count < 5 do
                             if matchField t.Minute minPart && matchField t.Hour hourPart && matchField (int t.DayOfWeek) dowPart then
                                 let tStr = t.ToString("yyyy-MM-dd HH:mm")
-                                AnsiConsole.MarkupLine($"  [dim]{tStr}[/]")
+                                Surface.markupLine($"  [dim]{tStr}[/]")
                                 count <- count + 1
                             t <- t.AddMinutes 1.0
                 StatusBar.refresh ()
@@ -2203,35 +2181,35 @@ Please generate a clear, actionable onboarding checklist."""
                 let pattern, rest = parseQuotedOrWord raw
                 let input, _     = parseQuotedOrWord rest
                 if String.IsNullOrWhiteSpace pattern then
-                    AnsiConsole.MarkupLine "[dim]Usage: /regex \"pattern\" \"input\"[/]"
+                    Surface.markupLine "[dim]Usage: /regex \"pattern\" \"input\"[/]"
                 else
                     try
                         let rx = System.Text.RegularExpressions.Regex(pattern)
                         let matches = rx.Matches(input)
                         if matches.Count = 0 then
-                            AnsiConsole.MarkupLine "[dim]No matches[/]"
+                            Surface.markupLine "[dim]No matches[/]"
                         else
-                            AnsiConsole.MarkupLine($"[dim]{matches.Count} match(es) for [/][cyan]{Markup.Escape pattern}[/]")
+                            Surface.markupLine($"[dim]{matches.Count} match(es) for [/][cyan]{Markup.Escape pattern}[/]")
                             for m in matches do
-                                AnsiConsole.MarkupLine($"  index=[bold]{m.Index}[/] length=[bold]{m.Length}[/] value=[green]{Markup.Escape m.Value}[/]")
+                                Surface.markupLine($"  index=[bold]{m.Index}[/] length=[bold]{m.Length}[/] value=[green]{Markup.Escape m.Value}[/]")
                                 for g in rx.GetGroupNames() do
                                     if g <> "0" then
                                         let grp = m.Groups.[g]
                                         if grp.Success then
-                                            AnsiConsole.MarkupLine($"    [cyan]{Markup.Escape g}[/]=[green]{Markup.Escape grp.Value}[/]")
+                                            Surface.markupLine($"    [cyan]{Markup.Escape g}[/]=[green]{Markup.Escape grp.Value}[/]")
                     with ex ->
-                        AnsiConsole.MarkupLine($"[red]Regex error: {Markup.Escape ex.Message}[/]")
+                        Surface.markupLine($"[red]Regex error: {Markup.Escape ex.Message}[/]")
                 StatusBar.refresh ()
 
             | Some s when s = "/rename" || s.StartsWith "/rename " ->
                 let title = (if s = "/rename" then "" else s.Substring(7)).Trim().Trim('"').Trim('\'')
                 if String.IsNullOrWhiteSpace title then
                     match sessionTitle with
-                    | Some t -> AnsiConsole.MarkupLine($"[dim]Session title: [/][bold]{Markup.Escape t}[/]")
-                    | None   -> AnsiConsole.MarkupLine "[dim]No session title set. Usage: /rename <title>[/]"
+                    | Some t -> Surface.markupLine($"[dim]Session title: [/][bold]{Markup.Escape t}[/]")
+                    | None   -> Surface.markupLine "[dim]No session title set. Usage: /rename <title>[/]"
                 else
                     sessionTitle <- Some title
-                    AnsiConsole.MarkupLine($"[dim]Session renamed to: [/][bold cyan]{Markup.Escape title}[/]")
+                    Surface.markupLine($"[dim]Session renamed to: [/][bold cyan]{Markup.Escape title}[/]")
                 StatusBar.refresh ()
 
             | Some s when s = "/env" || s.StartsWith "/env " ->
@@ -2239,32 +2217,32 @@ Please generate a clear, actionable onboarding checklist."""
                 match sub with
                 | "list" | "" ->
                     if sessionEnvVars.IsEmpty then
-                        AnsiConsole.MarkupLine "[dim]No session env vars set.[/]"
+                        Surface.markupLine "[dim]No session env vars set.[/]"
                     else
-                        AnsiConsole.MarkupLine "[dim]Session env vars:[/]"
+                        Surface.markupLine "[dim]Session env vars:[/]"
                         for name in sessionEnvVars do
                             let v = Environment.GetEnvironmentVariable name |> Option.ofObj |> Option.defaultValue ""
-                            AnsiConsole.MarkupLine($"  [cyan]{Markup.Escape name}[/]=[green]{Markup.Escape v}[/]")
+                            Surface.markupLine($"  [cyan]{Markup.Escape name}[/]=[green]{Markup.Escape v}[/]")
                 | cmd when cmd.StartsWith "set " ->
                     let pair = cmd.Substring(4).Trim()
                     let eqIdx = pair.IndexOf '='
                     if eqIdx <= 0 then
-                        AnsiConsole.MarkupLine "[red]Usage: /env set NAME=value[/]"
+                        Surface.markupLine "[red]Usage: /env set NAME=value[/]"
                     else
                         let name  = pair.[..eqIdx - 1].Trim()
                         let value = pair.[eqIdx + 1..]
                         Environment.SetEnvironmentVariable(name, value)
                         sessionEnvVars <- sessionEnvVars |> Set.add name
-                        AnsiConsole.MarkupLine($"[dim]Set [cyan]{Markup.Escape name}[/]=[green]{Markup.Escape value}[/][/]")
+                        Surface.markupLine($"[dim]Set [cyan]{Markup.Escape name}[/]=[green]{Markup.Escape value}[/][/]")
                 | cmd when cmd.StartsWith "unset " ->
                     let name = cmd.Substring(6).Trim()
                     Environment.SetEnvironmentVariable(name, null)
                     sessionEnvVars <- sessionEnvVars |> Set.remove name
-                    AnsiConsole.MarkupLine($"[dim]Unset [cyan]{Markup.Escape name}[/][/]")
+                    Surface.markupLine($"[dim]Unset [cyan]{Markup.Escape name}[/][/]")
                 | "load" ->
                     let dotEnvPath = System.IO.Path.Combine(cwd, ".env")
                     if not (System.IO.File.Exists dotEnvPath) then
-                        AnsiConsole.MarkupLine "[dim yellow].env not found in current directory.[/]"
+                        Surface.markupLine "[dim yellow].env not found in current directory.[/]"
                     else
                         let mutable loaded = 0
                         for line in System.IO.File.ReadAllLines dotEnvPath do
@@ -2277,9 +2255,9 @@ Please generate a clear, actionable onboarding checklist."""
                                     Environment.SetEnvironmentVariable(name, value)
                                     sessionEnvVars <- sessionEnvVars |> Set.add name
                                     loaded <- loaded + 1
-                        AnsiConsole.MarkupLine($"[dim]Loaded {loaded} vars from .env[/]")
+                        Surface.markupLine($"[dim]Loaded {loaded} vars from .env[/]")
                 | other ->
-                    AnsiConsole.MarkupLine($"[red]Unknown /env subcommand: {Markup.Escape other}. Use: /env list | /env load | /env set NAME=value | /env unset NAME[/]")
+                    Surface.markupLine($"[red]Unknown /env subcommand: {Markup.Escape other}. Use: /env list | /env load | /env set NAME=value | /env unset NAME[/]")
                 StatusBar.refresh ()
 
             | Some s when s.StartsWith "/scratch" ->
@@ -2288,97 +2266,97 @@ Please generate a clear, actionable onboarding checklist."""
                 | "send" when not scratchLines.IsEmpty ->
                     let text = scratchLines |> String.concat "\n"
                     scratchLines <- []
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ScratchSent + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ScratchSent + "[/]"))
+                    Surface.lineBreak ()
                     do! streamAndRender agent session text cfg cancelSrc zenMode ignore
                 | "send" ->
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ScratchEmpty + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ScratchEmpty + "[/]"))
+                    Surface.lineBreak ()
                 | "clear" ->
                     scratchLines <- []
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ScratchCleared + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ScratchCleared + "[/]"))
+                    Surface.lineBreak ()
                 | "show" ->
                     if scratchLines.IsEmpty then
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.ScratchEmpty + "[/]"))
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.ScratchEmpty + "[/]"))
                     else
-                        AnsiConsole.Write(Markup("[bold]" + Markup.Escape liveStrings.ScratchShowHeader + "[/]"))
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Markup("[bold]" + Markup.Escape liveStrings.ScratchShowHeader + "[/]"))
+                        Surface.lineBreak ()
                         for line in scratchLines do
-                            AnsiConsole.Write(Markup("[dim]  " + Markup.Escape line + "[/]"))
-                            AnsiConsole.WriteLine()
-                    AnsiConsole.WriteLine()
+                            Surface.writeRenderable(Markup("[dim]  " + Markup.Escape line + "[/]"))
+                            Surface.lineBreak ()
+                    Surface.lineBreak ()
                 | text when not (String.IsNullOrWhiteSpace text) ->
                     scratchLines <- scratchLines @ [text]
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.ScratchAppended, scratchLines.Length)) + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.ScratchAppended, scratchLines.Length)) + "[/]"))
+                    Surface.lineBreak ()
                 | _ ->
                     // /scratch alone with no subcommand: show usage
-                    AnsiConsole.Write(Markup("[dim]usage: /scratch <text> | /scratch send | /scratch show | /scratch clear[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]usage: /scratch <text> | /scratch send | /scratch show | /scratch clear[/]"))
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/watches" ->
                 let ws = FileWatcher.list ()
                 if ws.IsEmpty then
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.WatchNone + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.WatchNone + "[/]"))
+                    Surface.lineBreak ()
                 else
                     for (path, cmd) in ws do
-                        AnsiConsole.Write(Markup($"  [cyan]{Markup.Escape path}[/] → [dim]{Markup.Escape cmd}[/]"))
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Markup($"  [cyan]{Markup.Escape path}[/] → [dim]{Markup.Escape cmd}[/]"))
+                        Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/unwatch " ->
                 let path = s.Substring("/unwatch ".Length).Trim()
                 let absPath = System.IO.Path.GetFullPath(path)
                 FileWatcher.remove absPath
-                AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.WatchRemoved, path)) + "[/]"))
-                AnsiConsole.WriteLine()
+                Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.WatchRemoved, path)) + "[/]"))
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/watch " ->
                 let rest = s.Substring("/watch ".Length).Trim()
                 let spaceIdx = rest.IndexOf ' '
                 if spaceIdx <= 0 then
-                    AnsiConsole.Write(Markup("[dim]" + Markup.Escape liveStrings.WatchUsage + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]" + Markup.Escape liveStrings.WatchUsage + "[/]"))
+                    Surface.lineBreak ()
                 else
                     let path = rest.Substring(0, spaceIdx).Trim()
                     let cmd  = rest.Substring(spaceIdx + 1).Trim()
                     let absPath = System.IO.Path.GetFullPath(path)
                     if not (System.IO.File.Exists absPath) then
-                        AnsiConsole.Write(Markup($"[dim]{Markup.Escape (System.String.Format(liveStrings.AtFileNotFound, path))}[/]"))
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Markup($"[dim]{Markup.Escape (System.String.Format(liveStrings.AtFileNotFound, path))}[/]"))
+                        Surface.lineBreak ()
                     else
                         FileWatcher.add absPath cmd
-                        AnsiConsole.Write(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.WatchAdded, path, cmd)) + "[/]"))
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Markup("[dim]" + Markup.Escape (System.String.Format(liveStrings.WatchAdded, path, cmd)) + "[/]"))
+                        Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/note " ->
                 let text = s.Substring("/note ".Length).Trim()
                 if not (String.IsNullOrWhiteSpace text) then
                     sessionNotes <- sessionNotes @ [(turnNumber, text)]
-                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.NoteAdded}[/]")
-                    AnsiConsole.WriteLine()
+                    Surface.markupLine($"[dim]{Markup.Escape liveStrings.NoteAdded}[/]")
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/notes" ->
                 if sessionNotes.IsEmpty then
-                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.NoteNone}[/]")
+                    Surface.markupLine($"[dim]{Markup.Escape liveStrings.NoteNone}[/]")
                 else
                     for (turn, text) in sessionNotes do
                         if Render.isColorEnabled () then
-                            AnsiConsole.MarkupLine($"[dim][[turn {turn}]][/] {Markup.Escape text}")
+                            Surface.markupLine($"[dim][[turn {turn}]][/] {Markup.Escape text}")
                         else
-                            Console.Out.WriteLine($"[turn {turn}] {text}")
-                AnsiConsole.WriteLine()
+                            Surface.writeLine($"[turn {turn}] {text}")
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/undo" ->
                 match Fugue.Core.Checkpoint.undo () with
                 | Fugue.Core.Checkpoint.NothingToUndo ->
-                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.UndoNothingToUndo}[/]")
+                    Surface.markupLine($"[dim]{Markup.Escape liveStrings.UndoNothingToUndo}[/]")
                 | Fugue.Core.Checkpoint.Restored path ->
-                    AnsiConsole.MarkupLine($"[green]✓[/] {Markup.Escape liveStrings.UndoRestored}: [dim]{Markup.Escape path}[/]")
+                    Surface.markupLine($"[green]✓[/] {Markup.Escape liveStrings.UndoRestored}: [dim]{Markup.Escape path}[/]")
                 | Fugue.Core.Checkpoint.Deleted path ->
-                    AnsiConsole.MarkupLine($"[yellow]✓[/] {Markup.Escape liveStrings.UndoDeleted}: [dim]{Markup.Escape path}[/]")
-                AnsiConsole.WriteLine()
+                    Surface.markupLine($"[yellow]✓[/] {Markup.Escape liveStrings.UndoDeleted}: [dim]{Markup.Escape path}[/]")
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/todo" ->
                 let tryRun (exe: string) (args: string[]) =
@@ -2409,11 +2387,11 @@ Please generate a clear, actionable onboarding checklist."""
                         tryRun "grep" [| "-rn"; "-E"; "TODO|FIXME|HACK"; "." |]
                 match results with
                 | None ->
-                    AnsiConsole.Write(Render.errorLine liveStrings "rg and grep unavailable")
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Render.errorLine liveStrings "rg and grep unavailable")
+                    Surface.lineBreak ()
                 | Some "" ->
-                    AnsiConsole.MarkupLine("[dim]" + Markup.Escape liveStrings.TodoNone + "[/]")
-                    AnsiConsole.WriteLine()
+                    Surface.markupLine("[dim]" + Markup.Escape liveStrings.TodoNone + "[/]")
+                    Surface.lineBreak ()
                 | Some output ->
                     let lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                     let truncated, note =
@@ -2428,8 +2406,8 @@ Please generate a clear, actionable onboarding checklist."""
             | Some s when s.StartsWith "/find " ->
                 let query = s.Substring("/find ".Length).Trim()
                 if String.IsNullOrWhiteSpace query then
-                    AnsiConsole.Write(Markup("[dim]Usage: /find <query>[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]Usage: /find <query>[/]"))
+                    Surface.lineBreak ()
                 else
                     // Two-pass: filename fuzzy match + content grep for query terms
                     let fuzzyScore (q: string) (candidate: string) =
@@ -2473,7 +2451,7 @@ Please generate a clear, actionable onboarding checklist."""
                         |> List.sortByDescending (fun (score, _, _) -> score)
                         |> List.truncate 10
                     if results.IsEmpty then
-                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.FindNoResults}[/]")
+                        Surface.markupLine($"[dim]{Markup.Escape liveStrings.FindNoResults}[/]")
                     else
                         for (_score, rel, snippet) in results do
                             let snipStr =
@@ -2481,17 +2459,17 @@ Please generate a clear, actionable onboarding checklist."""
                                 | Some s -> $"  → {s.Trim()}"
                                 | None   -> ""
                             if Render.isColorEnabled () then
-                                AnsiConsole.MarkupLine($"[cyan]{Markup.Escape rel}[/]{Markup.Escape snipStr}")
+                                Surface.markupLine($"[cyan]{Markup.Escape rel}[/]{Markup.Escape snipStr}")
                             else
-                                Console.Out.WriteLine($"{rel}{snipStr}")
-                        AnsiConsole.MarkupLine($"[dim]{Markup.Escape liveStrings.FindInjectHint}[/]")
-                    AnsiConsole.WriteLine()
+                                Surface.writeLine($"{rel}{snipStr}")
+                        Surface.markupLine($"[dim]{Markup.Escape liveStrings.FindInjectHint}[/]")
+                    Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/summarize" ->
                 let rawArg = s.Substring("/summarize".Length).Trim()
                 if System.String.IsNullOrWhiteSpace rawArg then
-                    AnsiConsole.Write(Markup("[dim]Usage: /summarize <path>[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim]Usage: /summarize <path>[/]"))
+                    Surface.lineBreak ()
                 else
                     let targetPath =
                         if System.IO.Path.IsPathRooted rawArg then rawArg
@@ -2503,15 +2481,15 @@ Please generate a clear, actionable onboarding checklist."""
                             $"Please summarize the file '{rawArg}'.\n\nProvide a structured summary:\n1. Purpose — what does this file do?\n2. Public API — exported functions or types\n3. Key dependencies — what modules/libraries does it use?\n4. Notable design decisions — any interesting patterns or constraints\n\nBe concise (2–4 sentences per section). Use the Read tool to examine the file."
                         else
                             $"The path '{rawArg}' does not exist. Please let me know."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui ("/summarize " + rawArg) 0)
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Render.userMessage cfg.Ui ("/summarize " + rawArg) 0)
+                    Surface.lineBreak ()
                     do! streamAndRender agent session summarizePrompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s = "/check exhaustive" || s.StartsWith "/check exhaustive " ->
                 // Run dotnet build and feed FS0025 (incomplete pattern match) warnings back
                 let arg = if s = "/check exhaustive" then "." else s.Substring("/check exhaustive ".Length).Trim()
                 let buildDir = if arg = "" || arg = "." then cwd else if IO.Path.IsPathRooted arg then arg else IO.Path.Combine(cwd, arg)
-                AnsiConsole.MarkupLine "[dim]Running dotnet build to check pattern match exhaustiveness…[/]"
+                Surface.markupLine "[dim]Running dotnet build to check pattern match exhaustiveness…[/]"
                 let psi = System.Diagnostics.ProcessStartInfo()
                 psi.FileName  <- "dotnet"
                 psi.Arguments <- "build --no-restore -warnaserror- /p:TreatWarningsAsErrors=false 2>&1"
@@ -2531,14 +2509,14 @@ Please generate a clear, actionable onboarding checklist."""
                     |> Array.filter (fun l -> l.Contains "FS0025" || l.Contains "incomplete pattern")
                     |> Array.toList
                 if fs0025.IsEmpty then
-                    AnsiConsole.MarkupLine "[green]No FS0025 incomplete pattern match warnings found.[/]"
-                    AnsiConsole.WriteLine()
+                    Surface.markupLine "[green]No FS0025 incomplete pattern match warnings found.[/]"
+                    Surface.lineBreak ()
                 else
                     let diagnostics = String.concat "\n" fs0025
                     let prompt =
                         $"The build found incomplete pattern match warnings (FS0025):\n\n```\n{diagnostics}\n```\n\nPlease:\n1. Read each affected file.\n2. Add the missing match cases using `failwith \"TODO: <CaseName>\"` as placeholders.\n3. Apply the fixes using the Edit tool.\n\nFix all warnings before responding."
-                    AnsiConsole.Write(Render.userMessage cfg.Ui "/check exhaustive" 0)
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Render.userMessage cfg.Ui "/check exhaustive" 0)
+                    Surface.lineBreak ()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
             | Some s when s = "/context show" || s.StartsWith "/context show" ->
@@ -2552,14 +2530,14 @@ Please generate a clear, actionable onboarding checklist."""
                 let contextLimit = 200_000
                 let pctUsed = int (float sysTok / float contextLimit * 100.0)
                 if Render.isColorEnabled () then
-                    AnsiConsole.MarkupLine "[bold]Context budget estimate[/] [dim](word-count based, ×1.35)[/]"
-                    AnsiConsole.MarkupLine($"  [dim]system prompt[/]  ~{sysTok} tokens")
-                    AnsiConsole.MarkupLine($"  [dim]context limit[/]   {contextLimit} tokens (provider estimate)")
-                    AnsiConsole.MarkupLine($"  [dim]system usage[/]   {pctUsed}%% of limit")
-                    AnsiConsole.MarkupLine "[dim]  (turn history token count requires provider usage reporting)[/]"
+                    Surface.markupLine "[bold]Context budget estimate[/] [dim](word-count based, ×1.35)[/]"
+                    Surface.markupLine($"  [dim]system prompt[/]  ~{sysTok} tokens")
+                    Surface.markupLine($"  [dim]context limit[/]   {contextLimit} tokens (provider estimate)")
+                    Surface.markupLine($"  [dim]system usage[/]   {pctUsed}%% of limit")
+                    Surface.markupLine "[dim]  (turn history token count requires provider usage reporting)[/]"
                 else
-                    Console.Out.WriteLine($"System prompt: ~{sysTok} tokens / {contextLimit} limit ({pctUsed}%%)")
-                AnsiConsole.WriteLine()
+                    Surface.writeLine($"System prompt: ~{sysTok} tokens / {contextLimit} limit ({pctUsed}%%)")
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/tokens" ->
                 let wordsToTokens (text: string) =
@@ -2576,27 +2554,27 @@ Please generate a clear, actionable onboarding checklist."""
                     | Fugue.Core.Config.Ollama(_, m)    -> "ollama", m
                 let friendly = Fugue.Core.Config.modelDisplayName model
                 if Render.isColorEnabled () then
-                    AnsiConsole.MarkupLine($"[bold]/tokens[/] — provider: [cyan]{prov}[/]  model: [cyan]{friendly}[/]")
-                    AnsiConsole.MarkupLine($"  system prompt:  ~{sysTok} tokens")
-                    AnsiConsole.MarkupLine "[dim]  Exact per-turn counts require the provider to return usage metadata.[/]"
-                    AnsiConsole.MarkupLine "[dim]  Use /context show for a full budget breakdown.[/]"
+                    Surface.markupLine($"[bold]/tokens[/] — provider: [cyan]{prov}[/]  model: [cyan]{friendly}[/]")
+                    Surface.markupLine($"  system prompt:  ~{sysTok} tokens")
+                    Surface.markupLine "[dim]  Exact per-turn counts require the provider to return usage metadata.[/]"
+                    Surface.markupLine "[dim]  Use /context show for a full budget breakdown.[/]"
                 else
-                    Console.Out.WriteLine($"Provider: {prov}  Model: {friendly}  System: ~{sysTok} tokens")
-                AnsiConsole.WriteLine()
+                    Surface.writeLine($"Provider: {prov}  Model: {friendly}  System: ~{sysTok} tokens")
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/locale " || s = "/locale" ->
                 let arg = if s = "/locale" then "" else s.Substring("/locale ".Length).Trim()
                 if arg = "" then
                     let current = savedUi.Locale
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine($"[dim]Current locale: [cyan]{current}[/]  Usage: /locale [en|ru][/]")
+                        Surface.markupLine($"[dim]Current locale: [cyan]{current}[/]  Usage: /locale [en|ru][/]")
                     else
-                        Console.Out.WriteLine($"Current locale: {current}  Usage: /locale [en|ru]")
+                        Surface.writeLine($"Current locale: {current}  Usage: /locale [en|ru]")
                 elif arg <> "en" && arg <> "ru" then
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine "[dim yellow]Supported locales: en, ru[/]"
+                        Surface.markupLine "[dim yellow]Supported locales: en, ru[/]"
                     else
-                        Console.Out.WriteLine "Supported locales: en, ru"
+                        Surface.writeLine "Supported locales: en, ru"
                 else
                     savedUi <- { savedUi with Locale = arg }
                     liveStrings <- Fugue.Core.Localization.pick arg
@@ -2605,47 +2583,47 @@ Please generate a clear, actionable onboarding checklist."""
                     try
                         Config.saveToFile { cfg with Ui = savedUi }
                         if Render.isColorEnabled () then
-                            AnsiConsole.MarkupLine($"[dim green]Locale set to [cyan]{arg}[/] and saved.[/]")
+                            Surface.markupLine($"[dim green]Locale set to [cyan]{arg}[/] and saved.[/]")
                         else
-                            Console.Out.WriteLine($"Locale set to {arg} and saved.")
+                            Surface.writeLine($"Locale set to {arg} and saved.")
                     with ex ->
                         if Render.isColorEnabled () then
-                            AnsiConsole.MarkupLine($"[dim yellow]Could not save config: {Markup.Escape ex.Message}[/]")
+                            Surface.markupLine($"[dim yellow]Could not save config: {Markup.Escape ex.Message}[/]")
                         else
-                            Console.Out.WriteLine($"Could not save config: {ex.Message}")
-                AnsiConsole.WriteLine()
+                            Surface.writeLine($"Could not save config: {ex.Message}")
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/pin " ->
                 let msg = s.Substring("/pin ".Length).Trim()
                 if msg = "" then
                     if pinnedMessages.IsEmpty then
-                        AnsiConsole.MarkupLine "[dim]No pinned messages. Usage: /pin <message>[/]"
+                        Surface.markupLine "[dim]No pinned messages. Usage: /pin <message>[/]"
                     else
-                        AnsiConsole.MarkupLine "[bold]Pinned:[/]"
+                        Surface.markupLine "[bold]Pinned:[/]"
                         pinnedMessages |> List.iteri (fun i m ->
-                            if Render.isColorEnabled () then AnsiConsole.MarkupLine($"  [cyan]{i+1}.[/] {Markup.Escape m}")
-                            else Console.Out.WriteLine($"  {i+1}. {m}"))
+                            if Render.isColorEnabled () then Surface.markupLine($"  [cyan]{i+1}.[/] {Markup.Escape m}")
+                            else Surface.writeLine($"  {i+1}. {m}"))
                 else
                     pinnedMessages <- pinnedMessages @ [msg]
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine($"[dim green]Pinned ({pinnedMessages.Length} total): [/]{Markup.Escape msg}")
+                        Surface.markupLine($"[dim green]Pinned ({pinnedMessages.Length} total): [/]{Markup.Escape msg}")
                     else
-                        Console.Out.WriteLine($"Pinned ({pinnedMessages.Length} total): {msg}")
-                AnsiConsole.WriteLine()
+                        Surface.writeLine($"Pinned ({pinnedMessages.Length} total): {msg}")
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/pin" ->
                 if pinnedMessages.IsEmpty then
-                    AnsiConsole.MarkupLine "[dim]No pinned messages. Usage: /pin <message>[/]"
+                    Surface.markupLine "[dim]No pinned messages. Usage: /pin <message>[/]"
                 else
-                    AnsiConsole.MarkupLine "[bold]Pinned messages:[/]"
+                    Surface.markupLine "[bold]Pinned messages:[/]"
                     pinnedMessages |> List.iteri (fun i m ->
-                        if Render.isColorEnabled () then AnsiConsole.MarkupLine($"  [cyan]{i+1}.[/] {Markup.Escape m}")
-                        else Console.Out.WriteLine($"  {i+1}. {m}"))
-                AnsiConsole.WriteLine()
+                        if Render.isColorEnabled () then Surface.markupLine($"  [cyan]{i+1}.[/] {Markup.Escape m}")
+                        else Surface.writeLine($"  {i+1}. {m}"))
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/compress" ->
                 // Compress context: ask AI to summarise history, then reset session and inject summary.
-                AnsiConsole.MarkupLine "[dim]Compressing context — summarising session history…[/]"
+                Surface.markupLine "[dim]Compressing context — summarising session history…[/]"
                 let compressPrompt =
                     "Summarise the complete conversation so far into a concise context block.\n\n" +
                     "Include:\n" +
@@ -2681,17 +2659,17 @@ Please generate a clear, actionable onboarding checklist."""
                         session <- newSession
                         sessionRef.Value <- session
                     with ex ->
-                        AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                        Surface.lineBreak ()
                     let injection = $"[Compressed session context]\n{summary}"
                     do! streamAndRender agent session injection cfg cancelSrc zenMode ignore
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine "[dim]Context compressed — previous history summarised and reset.[/]"
+                        Surface.markupLine "[dim]Context compressed — previous history summarised and reset.[/]"
                     else
-                        Console.Out.WriteLine "Context compressed — previous history summarised and reset."
+                        Surface.writeLine "Context compressed — previous history summarised and reset."
                 else
-                    AnsiConsole.MarkupLine "[dim yellow]Could not generate summary — context unchanged.[/]"
-                AnsiConsole.WriteLine()
+                    Surface.markupLine "[dim yellow]Could not generate summary — context unchanged.[/]"
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/session offload" ->
                 // 1. Flush SessionEnd to JSONL
@@ -2700,10 +2678,10 @@ Please generate a clear, actionable onboarding checklist."""
                 // 2. Print session id to user
                 let offloadMsg = $"Session saved: {currentSessionId}\nFile: {sessionFilePath}"
                 if Render.isColorEnabled () then
-                    AnsiConsole.MarkupLine($"[dim]{Markup.Escape offloadMsg}[/]")
+                    Surface.markupLine($"[dim]{Markup.Escape offloadMsg}[/]")
                 else
-                    Console.Out.WriteLine offloadMsg
-                AnsiConsole.WriteLine()
+                    Surface.writeLine offloadMsg
+                Surface.lineBreak ()
                 // 3. Reset in-memory history (same pattern as /clear-history)
                 match box session with
                 | :? IAsyncDisposable as d -> try do! d.DisposeAsync().AsTask() with _ -> ()
@@ -2716,8 +2694,8 @@ Please generate a clear, actionable onboarding checklist."""
                     let offloadNote = $"Previous context offloaded to session {currentSessionId}. Use GetConversation to inspect history if needed."
                     do! streamAndRender agent session offloadNote cfg cancelSrc zenMode ignore
                 with ex ->
-                    AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                    Surface.lineBreak ()
                 // 5. Reset per-turn counters (keep currentSessionId so offload note references it)
                 turnNumber <- 0
                 sessionNotes <- []
@@ -2728,10 +2706,10 @@ Please generate a clear, actionable onboarding checklist."""
                 match Fugue.Core.SessionPersistence.findByIdInCwd cwd resumeId with
                 | None ->
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine($"[red]Session not found: {Markup.Escape resumeId}[/]")
+                        Surface.markupLine($"[red]Session not found: {Markup.Escape resumeId}[/]")
                     else
-                        Console.Out.WriteLine($"Session not found: {resumeId}")
-                    AnsiConsole.WriteLine()
+                        Surface.writeLine($"Session not found: {resumeId}")
+                    Surface.lineBreak ()
                 | Some path ->
                     let records = Fugue.Core.SessionPersistence.readRecords path
                     let messages = System.Collections.Generic.List<Microsoft.Extensions.AI.ChatMessage>()
@@ -2764,64 +2742,64 @@ Please generate a clear, actionable onboarding checklist."""
                             let jsonOpts : System.Text.Json.JsonSerializerOptions | null = null
                             AgentSessionExtensions.SetInMemoryChatHistory(sess, messages, stateKey, jsonOpts)
                         if Render.isColorEnabled () then
-                            AnsiConsole.MarkupLine($"[dim]Resumed session {Markup.Escape resumeId} — {messages.Count} messages loaded.[/]")
+                            Surface.markupLine($"[dim]Resumed session {Markup.Escape resumeId} — {messages.Count} messages loaded.[/]")
                         else
-                            Console.Out.WriteLine($"Resumed session {resumeId} — {messages.Count} messages loaded.")
+                            Surface.writeLine($"Resumed session {resumeId} — {messages.Count} messages loaded.")
                     with ex ->
-                        AnsiConsole.Write(Render.errorLine liveStrings ex.Message)
-                    AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
             | Some s when s = "/sessions all" ->
                 let rows = Fugue.Core.SearchIndex.listAll 50
                 if rows.IsEmpty then
-                    if Render.isColorEnabled () then AnsiConsole.MarkupLine "[dim]No sessions found.[/]"
-                    else Console.Out.WriteLine "No sessions found."
+                    if Render.isColorEnabled () then Surface.markupLine "[dim]No sessions found.[/]"
+                    else Surface.writeLine "No sessions found."
                 else
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine $"[bold]All sessions ({rows.Length})[/]"
-                        AnsiConsole.MarkupLine "[dim]ID                         Started                   Turns  Project[/]"
+                        Surface.markupLine $"[bold]All sessions ({rows.Length})[/]"
+                        Surface.markupLine "[dim]ID                         Started                   Turns  Project[/]"
                         for r in rows do
                             let sid = if r.Id.Length > 26 then r.Id.[..25] else r.Id.PadRight 26
                             let ts  = r.StartedAt.[..18].PadRight 25
                             let tc  = string r.TurnCount |> fun s -> s.PadLeft 5
                             let cwd = if r.Cwd.Length > 40 then "…" + r.Cwd.[r.Cwd.Length-39..] else r.Cwd
-                            AnsiConsole.MarkupLine $"[dim]{Markup.Escape sid}[/]  [cyan]{Markup.Escape ts}[/]  {tc}  [dim]{Markup.Escape cwd}[/]"
+                            Surface.markupLine $"[dim]{Markup.Escape sid}[/]  [cyan]{Markup.Escape ts}[/]  {tc}  [dim]{Markup.Escape cwd}[/]"
                     else
-                        Console.Out.WriteLine $"All sessions ({rows.Length})"
-                        Console.Out.WriteLine "ID                         Started                   Turns  Project"
+                        Surface.writeLine $"All sessions ({rows.Length})"
+                        Surface.writeLine "ID                         Started                   Turns  Project"
                         for r in rows do
                             let sid = if r.Id.Length > 26 then r.Id.[..25] else r.Id.PadRight 26
                             let ts  = r.StartedAt.[..18].PadRight 25
                             let tc  = string r.TurnCount |> fun s -> s.PadLeft 5
                             let cwd = if r.Cwd.Length > 40 then "…" + r.Cwd.[r.Cwd.Length-39..] else r.Cwd
-                            Console.Out.WriteLine $"{sid}  {ts}  {tc}  {cwd}"
-                AnsiConsole.WriteLine()
+                            Surface.writeLine $"{sid}  {ts}  {tc}  {cwd}"
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/sessions" ->
                 let rows = Fugue.Core.SearchIndex.listForCwd cwd 20
                 if rows.IsEmpty then
-                    if Render.isColorEnabled () then AnsiConsole.MarkupLine "[dim]No sessions for this project.[/]"
-                    else Console.Out.WriteLine "No sessions for this project."
+                    if Render.isColorEnabled () then Surface.markupLine "[dim]No sessions for this project.[/]"
+                    else Surface.writeLine "No sessions for this project."
                 else
                     if Render.isColorEnabled () then
-                        AnsiConsole.MarkupLine $"[bold]Sessions for {Markup.Escape cwd} ({rows.Length})[/]"
-                        AnsiConsole.MarkupLine "[dim]ID                         Started                   Turns  Summary[/]"
+                        Surface.markupLine $"[bold]Sessions for {Markup.Escape cwd} ({rows.Length})[/]"
+                        Surface.markupLine "[dim]ID                         Started                   Turns  Summary[/]"
                         for r in rows do
                             let sid = if r.Id.Length > 26 then r.Id.[..25] else r.Id.PadRight 26
                             let ts  = r.StartedAt.[..18].PadRight 25
                             let tc  = string r.TurnCount |> fun s -> s.PadLeft 5
                             let sum = r.Summary |> Option.map (fun s -> if s.Length > 50 then s.[..49] + "…" else s) |> Option.defaultValue ""
-                            AnsiConsole.MarkupLine $"[dim]{Markup.Escape sid}[/]  [cyan]{Markup.Escape ts}[/]  {tc}  [dim]{Markup.Escape sum}[/]"
+                            Surface.markupLine $"[dim]{Markup.Escape sid}[/]  [cyan]{Markup.Escape ts}[/]  {tc}  [dim]{Markup.Escape sum}[/]"
                     else
-                        Console.Out.WriteLine $"Sessions for {cwd} ({rows.Length})"
-                        Console.Out.WriteLine "ID                         Started                   Turns  Summary"
+                        Surface.writeLine $"Sessions for {cwd} ({rows.Length})"
+                        Surface.writeLine "ID                         Started                   Turns  Summary"
                         for r in rows do
                             let sid = if r.Id.Length > 26 then r.Id.[..25] else r.Id.PadRight 26
                             let ts  = r.StartedAt.[..18].PadRight 25
                             let tc  = string r.TurnCount |> fun s -> s.PadLeft 5
                             let sum = r.Summary |> Option.map (fun s -> if s.Length > 50 then s.[..49] + "…" else s) |> Option.defaultValue ""
-                            Console.Out.WriteLine $"{sid}  {ts}  {tc}  {sum}"
-                AnsiConsole.WriteLine()
+                            Surface.writeLine $"{sid}  {ts}  {tc}  {sum}"
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/index" || s = "/index --update" ->
                 let cfg  = Fugue.Core.Index.defaultIndexConfig
@@ -2832,25 +2810,24 @@ Please generate a clear, actionable onboarding checklist."""
                     | _ ->
                         Fugue.Agent.Indexer.Ollama cfg.OllamaBaseUrl
                 let runFn = if s = "/index --update" then Fugue.Agent.Indexer.runIncrementalScan else Fugue.Agent.Indexer.runFullScan
-                AnsiConsole.Status().Start("Indexing workspace…", fun _ctx ->
-                    let (n, fails) = Async.RunSynchronously (runFn cfg prov cwd)
-                    if fails > 0 then
-                        AnsiConsole.MarkupLine $"[yellow]✓[/] {n} files indexed, {fails} embedding failures (check provider URL)"
-                    else
-                        AnsiConsole.MarkupLine $"[green]✓[/] {n} files indexed"
-                )
+                Surface.markupLine "[dim]▸ Indexing workspace…[/]"
+                let (n, fails) = Async.RunSynchronously (runFn cfg prov cwd)
+                if fails > 0 then
+                    Surface.markupLine $"[yellow]✓[/] {n} files indexed, {fails} embedding failures (check provider URL)"
+                else
+                    Surface.markupLine $"[green]✓[/] {n} files indexed"
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/sem " ->
                 let q = s.Substring("/sem ".Length).Trim()
                 if q = "" then
-                    if Render.isColorEnabled () then AnsiConsole.MarkupLine "[yellow]Usage: /sem <query>[/]"
-                    else Console.Out.WriteLine "Usage: /sem <query>"
+                    if Render.isColorEnabled () then Surface.markupLine "[yellow]Usage: /sem <query>[/]"
+                    else Surface.writeLine "Usage: /sem <query>"
                 else
                     let chunksFile = Fugue.Core.Index.chunksPath cwd
                     let chunks = Fugue.Core.Index.loadChunks chunksFile
                     if chunks.IsEmpty then
-                        if Render.isColorEnabled () then AnsiConsole.MarkupLine "[dim]No workspace index. Run /index to build one.[/]"
-                        else Console.Out.WriteLine "No workspace index. Run /index to build one."
+                        if Render.isColorEnabled () then Surface.markupLine "[dim]No workspace index. Run /index to build one.[/]"
+                        else Surface.writeLine "No workspace index. Run /index to build one."
                     else
                         // Embed query then rank by cosine similarity
                         let cfg  = Fugue.Core.Index.defaultIndexConfig
@@ -2864,8 +2841,8 @@ Please generate a clear, actionable onboarding checklist."""
                         let vecOpt = Async.RunSynchronously (Fugue.Agent.Indexer.embedAsync prov cfg.EmbeddingModel http q |> Async.AwaitTask)
                         match vecOpt with
                         | None ->
-                            if Render.isColorEnabled () then AnsiConsole.MarkupLine "[red]Embedding failed — check provider URL/model[/]"
-                            else Console.Out.WriteLine "Embedding failed — check provider URL/model"
+                            if Render.isColorEnabled () then Surface.markupLine "[red]Embedding failed — check provider URL/model[/]"
+                            else Surface.writeLine "Embedding failed — check provider URL/model"
                         | Some qVec ->
                             let top5 =
                                 chunks
@@ -2873,45 +2850,45 @@ Please generate a clear, actionable onboarding checklist."""
                                 |> List.sortByDescending snd
                                 |> List.truncate 5
                             if Render.isColorEnabled () then
-                                AnsiConsole.MarkupLine $"[bold]Semantic results for «{Markup.Escape q}» ({top5.Length})[/]"
+                                Surface.markupLine $"[bold]Semantic results for «{Markup.Escape q}» ({top5.Length})[/]"
                                 for (c, score) in top5 do
-                                    AnsiConsole.MarkupLine $"[cyan]{Markup.Escape c.FilePath}[/] L{c.StartLine}-{c.EndLine}  [dim]score={score:F3}[/]"
+                                    Surface.markupLine $"[cyan]{Markup.Escape c.FilePath}[/] L{c.StartLine}-{c.EndLine}  [dim]score={score:F3}[/]"
                                     let preview = if c.Text.Length > 120 then c.Text.[..119] + "…" else c.Text
-                                    AnsiConsole.MarkupLine $"  [dim]{Markup.Escape preview}[/]"
+                                    Surface.markupLine $"  [dim]{Markup.Escape preview}[/]"
                             else
-                                Console.Out.WriteLine $"Semantic results for «{q}» ({top5.Length})"
+                                Surface.writeLine $"Semantic results for «{q}» ({top5.Length})"
                                 for (c, score) in top5 do
-                                    Console.Out.WriteLine $"{c.FilePath} L{c.StartLine}-{c.EndLine}  score={score:F3}"
+                                    Surface.writeLine $"{c.FilePath} L{c.StartLine}-{c.EndLine}  score={score:F3}"
                                     let preview = if c.Text.Length > 120 then c.Text.[..119] + "…" else c.Text
-                                    Console.Out.WriteLine $"  {preview}"
-                AnsiConsole.WriteLine()
+                                    Surface.writeLine $"  {preview}"
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/search " ->
                 let q = s.Substring("/search ".Length).Trim()
                 if q = "" then
-                    if Render.isColorEnabled () then AnsiConsole.MarkupLine "[yellow]Usage: /search <query>[/]"
-                    else Console.Out.WriteLine "Usage: /search <query>"
+                    if Render.isColorEnabled () then Surface.markupLine "[yellow]Usage: /search <query>[/]"
+                    else Surface.writeLine "Usage: /search <query>"
                 else
                     let hits = Fugue.Core.SearchIndex.search q 10
                     if hits.IsEmpty then
-                        if Render.isColorEnabled () then AnsiConsole.MarkupLine $"[dim]No results for: {Markup.Escape q}[/]"
-                        else Console.Out.WriteLine $"No results for: {q}"
+                        if Render.isColorEnabled () then Surface.markupLine $"[dim]No results for: {Markup.Escape q}[/]"
+                        else Surface.writeLine $"No results for: {q}"
                     else
                         if Render.isColorEnabled () then
-                            AnsiConsole.MarkupLine $"[bold]Search results for «{Markup.Escape q}» ({hits.Length})[/]"
+                            Surface.markupLine $"[bold]Search results for «{Markup.Escape q}» ({hits.Length})[/]"
                             for h in hits do
                                 let ts  = h.StartedAt.[..18]
                                 let cw  = if h.Cwd.Length > 35 then "…" + h.Cwd.[h.Cwd.Length-34..] else h.Cwd
-                                AnsiConsole.MarkupLine $"[dim]{Markup.Escape h.SessionId.[..25]}[/]  [cyan]{Markup.Escape ts}[/]  [dim]{Markup.Escape cw}[/]"
-                                AnsiConsole.MarkupLine $"  {Markup.Escape h.Snippet}"
+                                Surface.markupLine $"[dim]{Markup.Escape h.SessionId.[..25]}[/]  [cyan]{Markup.Escape ts}[/]  [dim]{Markup.Escape cw}[/]"
+                                Surface.markupLine $"  {Markup.Escape h.Snippet}"
                         else
-                            Console.Out.WriteLine $"Search results for «{q}» ({hits.Length})"
+                            Surface.writeLine $"Search results for «{q}» ({hits.Length})"
                             for h in hits do
                                 let ts  = h.StartedAt.[..18]
                                 let cw  = if h.Cwd.Length > 35 then "…" + h.Cwd.[h.Cwd.Length-34..] else h.Cwd
-                                Console.Out.WriteLine $"{h.SessionId.[..25]}  {ts}  {cw}"
-                                Console.Out.WriteLine $"  {h.Snippet}"
-                AnsiConsole.WriteLine()
+                                Surface.writeLine $"{h.SessionId.[..25]}  {ts}  {cw}"
+                                Surface.writeLine $"  {h.Snippet}"
+                Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/" ->
                 // Generic prompt-template dispatcher — catches any /command not handled above.
@@ -2938,10 +2915,10 @@ Please generate a clear, actionable onboarding checklist."""
                 | None ->
                     // Unknown slash command — show hint
                     if Render.isColorEnabled () then
-                        AnsiConsole.Write(Markup $"[dim yellow]Unknown command: /{Markup.Escape cmd}. Type /help for a list.[/]")
+                        Surface.writeRenderable(Markup $"[dim yellow]Unknown command: /{Markup.Escape cmd}. Type /help for a list.[/]")
                     else
-                        Console.Out.WriteLine $"Unknown command: /{cmd}. Type /help for a list."
-                    AnsiConsole.WriteLine()
+                        Surface.writeLine $"Unknown command: /{cmd}. Type /help for a list."
+                    Surface.lineBreak ()
                     StatusBar.refresh ()
                 | Some tmpl ->
                     // Build args map.
@@ -3020,32 +2997,32 @@ Please generate a clear, actionable onboarding checklist."""
                         let argList = tmpl.Args |> List.map (fun a -> $"<{a}>") |> String.concat " "
                         let usage = if argList = "" then $"/{cmd}" else $"/{cmd.Replace('-', ' ')} {argList}"
                         if Render.isColorEnabled () then
-                            AnsiConsole.Write(Markup $"[dim]Usage: {Markup.Escape usage}[/]")
+                            Surface.writeRenderable(Markup $"[dim]Usage: {Markup.Escape usage}[/]")
                         else
-                            Console.Out.Write $"Usage: {usage}"
-                        AnsiConsole.WriteLine()
+                            Surface.write $"Usage: {usage}"
+                        Surface.lineBreak ()
                     else
                         let prompt = PromptRegistry.render tmpl argsMap
-                        AnsiConsole.Write(Render.userMessage cfg.Ui s 0)
-                        AnsiConsole.WriteLine()
+                        Surface.writeRenderable(Render.userMessage cfg.Ui s 0)
+                        Surface.lineBreak ()
                         do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                     StatusBar.refresh ()
             | Some userInput ->
                 let userInput = ReadLine.normalizeInput userInput
                 if ReadLine.hasZeroWidth userInput then
-                    AnsiConsole.Write(Markup("[dim yellow]" + Markup.Escape liveStrings.ZeroWidthWarning + "[/]"))
-                    AnsiConsole.WriteLine()
+                    Surface.writeRenderable(Markup("[dim yellow]" + Markup.Escape liveStrings.ZeroWidthWarning + "[/]"))
+                    Surface.lineBreak ()
                 let expandedInput = expandAtFiles cwd liveStrings userInput
                 let expandedInput = expandClipboard expandedInput liveStrings
                 let expandedInput = expandClipRing expandedInput
                 StatusBar.recordWords (expandedInput.Split([|' '; '\n'; '\r'; '\t'|], StringSplitOptions.RemoveEmptyEntries).Length)
-                AnsiConsole.Write(Render.userMessage cfg.Ui userInput (turnNumber + 1))
-                AnsiConsole.WriteLine()
+                Surface.writeRenderable(Render.userMessage cfg.Ui userInput (turnNumber + 1))
+                Surface.lineBreak ()
                 let expandedInput =
                     match Fugue.Core.ConversationIntent.classify lastResponseWasPlan expandedInput with
                     | Fugue.Core.ConversationIntent.Affirmation ->
-                        if Render.isColorEnabled () then AnsiConsole.MarkupLine "[dim]↳ proceeding with plan[/]"
-                        else Console.Out.WriteLine "↳ proceeding with plan"
+                        if Render.isColorEnabled () then Surface.markupLine "[dim]↳ proceeding with plan[/]"
+                        else Surface.writeLine "↳ proceeding with plan"
                         "Yes, please proceed with the plan outlined above."
                     | _ -> expandedInput
                 let effectiveInput =
@@ -3064,10 +3041,10 @@ Please generate a clear, actionable onboarding checklist."""
                     | Fugue.Core.Hooks.BlockPrompt reason ->
                         task {
                             if Render.isColorEnabled () then
-                                AnsiConsole.MarkupLine $"[yellow]⊘ prompt blocked by hook:[/] {Markup.Escape reason}"
+                                Surface.markupLine $"[yellow]⊘ prompt blocked by hook:[/] {Markup.Escape reason}"
                             else
-                                Console.Out.WriteLine $"⊘ prompt blocked by hook: {reason}"
-                            AnsiConsole.WriteLine()
+                                Surface.writeLine $"⊘ prompt blocked by hook: {reason}"
+                            Surface.lineBreak ()
                         }
                     | _ ->
                         let effectiveInput =
@@ -3095,9 +3072,9 @@ Please generate a clear, actionable onboarding checklist."""
                             | (sig', count) :: _ ->
                                 let short = if sig'.Length > 80 then sig'.[..79] + "…" else sig'
                                 if Render.isColorEnabled () then
-                                    AnsiConsole.MarkupLine($"[dim yellow]⚠ recurring error ({count}×): {Markup.Escape short} — type [bold]/report-bug[/] to file a report[/]")
+                                    Surface.markupLine($"[dim yellow]⚠ recurring error ({count}×): {Markup.Escape short} — type [bold]/report-bug[/] to file a report[/]")
                                 else
-                                    Console.Out.WriteLine($"⚠ recurring error ({count}×): {short} — type /report-bug to file a report")
+                                    Surface.writeLine($"⚠ recurring error ({count}×): {short} — type /report-bug to file a report")
                             | [] -> ()
                         }
         // Generate and persist a 3-sentence session summary when the session had at least one turn.
@@ -3127,8 +3104,7 @@ Please generate a clear, actionable onboarding checklist."""
             with _ -> ()
     finally
         Console.CancelKeyPress.RemoveHandler handler
-        Console.Out.Write "\x1b[?2004l"   // disable bracketed paste
-        Console.Out.Flush()
+        Surface.write "\x1b[?2004l"   // disable bracketed paste
         let nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
         let durationMs = nowMs - sessionStartedAt
         // Append SessionEnd record to JSONL file (best-effort).
@@ -3183,8 +3159,7 @@ let runHeadless (agent: AIAgent) (cfg: AppConfig) (_cwd: string) : Task<unit> = 
             if step then
                 match enumerator.Current with
                 | Conversation.TextChunk t ->
-                    Console.Out.Write t
-                    Console.Out.Flush()
+                    Surface.write t
                 | Conversation.ToolStarted(_, name, args) ->
                     Console.Error.WriteLine($"[tool: {name}({args})]")
                 | Conversation.ToolCompleted(id, output, isErr) ->
@@ -3193,7 +3168,7 @@ let runHeadless (agent: AIAgent) (cfg: AppConfig) (_cwd: string) : Task<unit> = 
                 | Conversation.Finished -> ()
                 | Conversation.Failed ex -> raise ex
             else hasNext <- false
-        Console.Out.WriteLine()
+        Surface.lineBreak ()
 }
 
 [<RequiresUnreferencedCode("Calls Conversation.run which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
@@ -3220,8 +3195,7 @@ let runPrint (agent: AIAgent) (prompt: string) : Task<int> = task {
             if step then
                 match enumerator.Current with
                 | Conversation.TextChunk t ->
-                    Console.Out.Write t
-                    Console.Out.Flush()
+                    Surface.write t
                 | Conversation.ToolStarted(_, name, args) ->
                     Console.Error.WriteLine($"[tool: {name}({args})]")
                 | Conversation.ToolCompleted(id, output, isErr) ->
@@ -3232,6 +3206,6 @@ let runPrint (agent: AIAgent) (prompt: string) : Task<int> = task {
                     Console.Error.WriteLine($"error: {ex.Message}")
                     exitCode <- 1
             else hasNext <- false
-        Console.Out.WriteLine()
+        Surface.lineBreak ()
         return exitCode
 }

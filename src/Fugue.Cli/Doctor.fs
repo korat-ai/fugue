@@ -72,8 +72,8 @@ let private checkConfig () =
 [<RequiresUnreferencedCode("Calls Config.load which uses STJ reflection; preserved via TrimmerRootAssembly")>]
 [<RequiresDynamicCode("Calls Config.load which uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 let run (cwd: string) =
-    AnsiConsole.MarkupLine("[bold]fugue doctor[/]")
-    AnsiConsole.WriteLine()
+    Surface.markupLine "[bold]fugue doctor[/]"
+    Surface.lineBreak ()
 
     let checks =
         [ "Config",           checkConfig ()
@@ -86,13 +86,13 @@ let run (cwd: string) =
     for (name, result) in checks do
         match result with
         | Pass msg ->
-            AnsiConsole.MarkupLine(
-                $"[green]✓[/] [bold]{Markup.Escape name}:[/] {Markup.Escape msg}")
+            Surface.markupLine
+                $"[green]✓[/] [bold]{Markup.Escape name}:[/] {Markup.Escape msg}"
         | Info msg ->
-            AnsiConsole.MarkupLine(
-                $"[blue]ℹ[/] [bold]{Markup.Escape name}:[/] {Markup.Escape msg}")
+            Surface.markupLine
+                $"[blue]ℹ[/] [bold]{Markup.Escape name}:[/] {Markup.Escape msg}"
         | Fail msg ->
-            AnsiConsole.MarkupLine(
-                $"[red]✗[/] [bold]{Markup.Escape name}:[/] {Markup.Escape msg}")
+            Surface.markupLine
+                $"[red]✗[/] [bold]{Markup.Escape name}:[/] {Markup.Escape msg}"
             allPass <- false
     allPass

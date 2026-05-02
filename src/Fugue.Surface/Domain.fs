@@ -41,6 +41,23 @@ type DrawOp =
     | Append      of text: string
     /// Reset scroll region to full screen — call on shutdown.
     | ResetScrollRegion
+    /// Canonical line break: emits CR + LF so the cursor lands at col 0
+    /// of the next row regardless of the terminal's `onlcr` mode or
+    /// scroll-region state. Use this instead of writing "\n" via RawAnsi —
+    /// LF alone leaves the cursor at the previous column on terminals
+    /// that don't auto-translate, breaking subsequent cursor-relative
+    /// moves (e.g. the post-stream markdown rewind).
+    | LineBreak
+    /// Move cursor up `rows` rows in the same column (CUU = "\x1b[<n>A").
+    /// Negative or zero is a no-op.
+    | MoveCursorUp of rows: int
+    /// Move cursor up `rows` rows AND to column 0 (CR + CUU). Atomic in
+    /// the sense that the actor emits both halves with no other write
+    /// interleaved.
+    | MoveCursorUpToCol0 of rows: int
+    /// Erase from the cursor to the end of the screen (ED = "\x1b[J").
+    /// Honours the active scroll region — won't clear anything below it.
+    | ClearToEndOfScreen
     /// Verbatim ANSI escape string. Escape hatch for callers (ReadLine,
     /// Picker) that build complex compound sequences with cursor-relative
     /// motion that doesn't fit the structured ops above. The actor writes
