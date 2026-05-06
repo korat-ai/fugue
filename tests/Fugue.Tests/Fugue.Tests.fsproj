@@ -5,6 +5,8 @@
     <PublishAot>false</PublishAot>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="TestCollections.fs" />
+    <Compile Include="CliArgsTests.fs" />
     <Compile Include="ArgsTests.fs" />
     <Compile Include="DelegatedFnTests.fs" />
     <Compile Include="ReadFnTests.fs" />
@@ -15,20 +17,63 @@
     <Compile Include="GrepFnTests.fs" />
     <Compile Include="ToolRegistryTests.fs" />
     <Compile Include="ConfigTests.fs" />
+    <Compile Include="ConfigDisplayNameTests.fs" />
+    <Compile Include="DebugLogTests.fs" />
     <Compile Include="LocalizationTests.fs" />
+    <Compile Include="SystemPromptTests.fs" />
     <Compile Include="ReadLineTests.fs" />
+    <Compile Include="InputSanitizeTests.fs" />
     <Compile Include="MarkdownRenderTests.fs" />
+    <Compile Include="MathRenderTests.fs" />
     <Compile Include="DiffRenderTests.fs" />
     <Compile Include="RenderTests.fs" />
+    <Compile Include="StatusBarTests.fs" />
+    <Compile Include="StatusBarRenderTests.fs" />
+    <Compile Include="StatusBarPropertyTests.fs" />
+    <Compile Include="StatusBarActorTests.fs" />
+    <Compile Include="StatusBarHeartbeatTests.fs" />
+    <Compile Include="ReadLineActorRoutingTests.fs" />
+    <Compile Include="ApprovalModeTests.fs" />
+    <Compile Include="ApprovalPromptTests.fs" />
     <Compile Include="ReadToolTests.fs" />
     <Compile Include="WriteToolTests.fs" />
     <Compile Include="EditToolTests.fs" />
+    <Compile Include="CheckpointTests.fs" />
+    <Compile Include="SessionSummaryTests.fs" />
+    <Compile Include="AnnotationTests.fs" />
+    <Compile Include="ClipRingTests.fs" />
+    <Compile Include="ModelScheduleTests.fs" />
     <Compile Include="BashToolTests.fs" />
     <Compile Include="GlobToolTests.fs" />
     <Compile Include="GrepToolTests.fs" />
+    <Compile Include="TreeToolTests.fs" />
     <Compile Include="DiscoveryTests.fs" />
+    <Compile Include="ModelDiscoveryTests.fs" />
     <Compile Include="ConversationTests.fs" />
+    <Compile Include="SessionAccessTests.fs" />
+    <Compile Include="SessionPersistenceTests.fs" />
+    <Compile Include="SearchIndexTests.fs" />
+    <Compile Include="IndexTests.fs" />
+    <Compile Include="AtFileTests.fs" />
+    <Compile Include="PathSafetyGuardTests.fs" />
+    <Compile Include="InjectionGuardTests.fs" />
+    <Compile Include="DataPreviewTests.fs" />
+    <Compile Include="PathSafetySymlinkTests.fs" />
+    <Compile Include="MacrosTests.fs" />
+    <Compile Include="ReplTests.fs" />
+    <Compile Include="HookRunnerTests.fs" />
+    <Compile Include="ProviderCacheTests.fs" />
+    <Compile Include="PromptRegistryTests.fs" />
+    <Compile Include="SurfaceBuilderTests.fs" />
+    <Compile Include="SurfaceMockExecutorTests.fs" />
+    <Compile Include="PickerRenderTests.fs" />
+    <Compile Include="PickerPropertyTests.fs" />
     <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FSharp.Control.TaskSeq" Version="1.1.1" />
@@ -36,6 +81,7 @@
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
     <PackageReference Include="FsUnit.xUnit" Version="7.1.1" />
+    <PackageReference Include="FsCheck.Xunit" Version="3.*" />
     <PackageReference Include="Spectre.Console.Testing" Version="0.49.*" />
   </ItemGroup>
   <ItemGroup>
@@ -43,5 +89,6 @@
     <ProjectReference Include="..\..\src\Fugue.Tools\Fugue.Tools.fsproj" />
     <ProjectReference Include="..\..\src\Fugue.Agent\Fugue.Agent.fsproj" />
     <ProjectReference Include="..\..\src\Fugue.Cli\Fugue.Cli.fsproj" />
+    <ProjectReference Include="..\..\src\Fugue.Surface\Fugue.Surface.fsproj" />
   </ItemGroup>
 </Project>

@@ -14,30 +14,42 @@ let pipeline : MarkdownPipeline =
         .UseEmphasisExtras()
         .Build()
 
+let mutable private emojiNormalise = false
+
+let initEmoji (enabled: bool) = emojiNormalise <- enabled
+
+let mutable private activeTheme = ""
+
+let initTheme (theme: string) = activeTheme <- theme
+
 let private escape (text: string) : string =
     Markup.Escape text
 
 let rec private renderInline (sb: StringBuilder) (inl: Inline) : unit =
     match inl with
     | :? LiteralInline as lit ->
-        sb.Append(escape (lit.Content.ToString())) |> ignore
+        let raw = lit.Content.ToString()
+        let text = if emojiNormalise then Fugue.Core.EmojiMap.normalise raw else raw
+        sb.Append(escape text) |> ignore
     | :? EmphasisInline as em ->
         let tag =
             match em.DelimiterCount with
             | 1 -> "italic"
             | 2 -> "bold"
             | _ -> "bold italic"
-        sb.Append(sprintf "[%s]" tag) |> ignore
+        sb.Append($"[{tag}]") |> ignore
         for child in (em :> seq<Inline>) do renderInline sb child
         sb.Append "[/]" |> ignore
     | :? CodeInline as ci ->
-        sb.Append(sprintf "[teal]%s[/]" (escape ci.Content)) |> ignore
+        let color = if activeTheme = "nocturne" then "#4a90d9" else "teal"
+        sb.Append($"[{color}]{escape ci.Content}[/]") |> ignore
     | :? LinkInline as li ->
         let label =
             let inner = StringBuilder()
             for child in (li :> seq<Inline>) do renderInline inner child
             inner.ToString()
-        sb.Append(sprintf "[link=%s]%s[/]" (escape (li.Url |> Option.ofObj |> Option.defaultValue "")) label) |> ignore
+        let url = li.Url |> Option.ofObj |> Option.defaultValue ""
+        sb.Append($"[link={escape url}]{label}[/]") |> ignore
     | :? LineBreakInline ->
         sb.Append '\n' |> ignore
     | :? ContainerInline as ci ->
@@ -59,17 +71,25 @@ let rec private renderBlock (block: Block) : IRenderable =
     match block with
     | :? HeadingBlock as h ->
         let style =
-            match h.Level with
-            | 1 -> "bold underline"
-            | 2 -> "bold"
-            | _ -> "bold dim"
+            if activeTheme = "nocturne" then
+                match h.Level with
+                | 1 -> "bold underline #b8a060"
+                | 2 -> "bold #b8a060"
+                | _ -> "bold dim #b8a060"
+            else
+                match h.Level with
+                | 1 -> "bold underline"
+                | 2 -> "bold"
+                | _ -> "bold dim"
         let body = inlineToMarkupOpt h.Inline
-        Markup(sprintf "[%s]%s[/]" style body) :> IRenderable
+        Markup($"[{style}]{body}[/]") :> IRenderable
     | :? ParagraphBlock as p ->
         Markup(inlineToMarkupOpt p.Inline) :> IRenderable
     | :? FencedCodeBlock as f ->
         // Single Markup with \n separators avoids Spectre's per-row width-fill padding.
         // Markdig sometimes returns null Lines.Lines for empty blocks; guard via Count.
+        let lang =
+            f.Info |> Option.ofObj |> Option.defaultValue "" |> (fun s -> s.Trim().ToLowerInvariant())
         let lines =
             if f.Lines.Count = 0 || isNull (box f.Lines.Lines) then [||]
             else
@@ -77,16 +97,21 @@ let rec private renderBlock (block: Block) : IRenderable =
                 |> Seq.truncate f.Lines.Count
                 |> Seq.map (fun l -> l.ToString())
                 |> Seq.toArray
+        let lineStyle = if activeTheme = "nocturne" then "#5a7a99" else "dim"
         let body =
             lines
             |> Array.mapi (fun i ln ->
                 let nr = (string (i + 1)).PadLeft(3)
-                "[dim]" + nr + "  " + escape ln + "[/]")
+                "[" + lineStyle + "]" + nr + "  " + escape ln + "[/]")
             |> String.concat "\n"
-        Padder(Markup(body)).PadLeft(2) :> IRenderable
+        let codeBlock = Padder(Markup(body)).PadLeft(2) :> IRenderable
+        if lang <> "" then
+            let badge = Markup($"[dim]╭─ {escape lang} ─[/]") :> IRenderable
+            Rows([| badge; codeBlock |]) :> IRenderable
+        else codeBlock
     | :? Markdig.Syntax.CodeBlock as c ->
         let txt = c.Lines.ToString()
-        Padder(Markup(sprintf "[dim]%s[/]" (escape txt))).PadLeft(2) :> IRenderable
+        Padder(Markup($"[dim]{escape txt}[/]")).PadLeft(2) :> IRenderable
     | :? Markdig.Syntax.QuoteBlock as q ->
         let inner =
             q
@@ -167,8 +192,9 @@ let rec private renderBlock (block: Block) : IRenderable =
         Markup(escape (block.ToString() |> Option.ofObj |> Option.defaultValue "")) :> IRenderable
 
 /// Convert markdown source text to a single composite Spectre IRenderable.
+/// Math pre-processing runs before Markdig so LaTeX notation renders as Unicode.
 let toRenderable (markdown: string) : IRenderable =
-    let doc = Markdown.Parse(markdown, pipeline)
+    let doc = Markdown.Parse(MathRender.preprocess markdown, pipeline)
     let parts =
         doc
         |> Seq.cast<Block>

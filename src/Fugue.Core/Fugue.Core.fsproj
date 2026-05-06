@@ -4,10 +4,39 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Log.fs" />
+    <Compile Include="SessionRecord.fs" />
+    <Compile Include="SessionPersistence.fs" />
+    <Compile Include="SearchIndex.fs" />
+    <Compile Include="Checkpoint.fs" />
+    <Compile Include="EmojiMap.fs" />
     <Compile Include="Localization.fs" />
     <Compile Include="Domain.fs" />
     <Compile Include="SystemPrompt.fs" />
     <Compile Include="JsonContext.fs" />
+    <Compile Include="Index.fs" />
+    <Compile Include="DebugLog.fs" />
+    <Compile Include="ModelSchedule.fs" />
     <Compile Include="Config.fs" />
+    <Compile Include="SessionSummary.fs" />
+    <Compile Include="Annotation.fs" />
+    <Compile Include="ErrorTrend.fs" />
+    <Compile Include="ConversationIntent.fs" />
+    <Compile Include="Hooks.fs" />
+    <Compile Include="ApprovalMode.fs" />
+    <Compile Include="ProviderCache.fs" />
+    <Compile Include="CliArgs.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.*" />
+    <!-- AOT/trim-friendly arg parser (no reflection-based binding in 2.0+).
+         Wrapped by Fugue.Core.CliArgs as a thin F# DSL — both fugue (JIT)
+         and fugue-aot (AOT) share the same parser. -->
+    <PackageReference Include="System.CommandLine" Version="2.0.*" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Microsoft.Data.Sqlite: P/Invoke interop to native SQLite amalgamation.
+         TrimmerRootAssembly preserves the P/Invoke thunks; without it the linker
+         strips the interop layer and causes NullReferenceException at AOT runtime. -->
+    <TrimmerRootAssembly Include="Microsoft.Data.Sqlite" />
   </ItemGroup>
 </Project>

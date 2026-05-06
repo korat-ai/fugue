@@ -18,7 +18,7 @@ let private jsonStr (s: string) : obj | null =
 
 [<Fact>]
 let ``WriteFn schema requires path and content`` () =
-    let fn = WriteFn.create "/tmp"
+    let fn = WriteFn.create "/tmp" Fugue.Core.Hooks.defaultConfig "test"
     let req =
         fn.JsonSchema.GetProperty("required").EnumerateArray()
         |> Seq.map (fun e -> e.GetString())
@@ -30,7 +30,7 @@ let ``WriteFn schema requires path and content`` () =
 let ``WriteFn writes file content`` () =
     let dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
     Directory.CreateDirectory dir |> ignore
-    let fn = WriteFn.create dir
+    let fn = WriteFn.create dir Fugue.Core.Hooks.defaultConfig "test"
     let args = mkArgs [
         "path", jsonStr "out.txt"
         "content", jsonStr "hello world"

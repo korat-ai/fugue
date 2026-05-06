@@ -14,8 +14,14 @@ type ProviderConfig =
 type UserAlignment = Left | Right
 
 type UiConfig =
-    { UserAlignment: UserAlignment
-      Locale:        string }
+    { UserAlignment  : UserAlignment
+      Locale         : string
+      PromptTemplate : string
+      Bell           : bool
+      Theme          : string
+      EmojiMode      : string
+      BubblesMode    : bool
+      TypewriterMode : bool }
 
 let private defaultLocale () =
     let envLoc =
@@ -31,20 +37,87 @@ let private defaultLocale () =
         | _ -> "en"
 
 let defaultUi () : UiConfig =
-    { UserAlignment = Left
-      Locale = defaultLocale () }
+    { UserAlignment  = Left
+      Locale         = defaultLocale ()
+      PromptTemplate = "♩ "
+      Bell           = false
+      Theme          = ""
+      EmojiMode      = "auto"
+      BubblesMode    = false
+      TypewriterMode = false }
 
 type AppConfig =
     { Provider: ProviderConfig
       SystemPrompt: string option
+      ProfileContent: string option
+      TemplateContent: string option
+      TemplateName: string option
       MaxIterations: int
       MaxTokens: int option
       Ui: UiConfig
-      BaseUrl: string option }
+      BaseUrl: string option
+      LowBandwidth: bool   // --low-bandwidth: skip context injection, cap tool output
+      Offline: bool        // --offline: refuse non-local providers
+      DryRun: bool         // --dry-run: log tool calls without executing
+    }
+
+let loadProfile (name: string) : string option =
+    let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+    let path = Path.Combine(home, ".fugue", "profiles", name + ".md")
+    if File.Exists path then
+        try Some (File.ReadAllText path)
+        with _ -> None
+    else None
+
+let loadTemplate (name: string) : string option =
+    let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+    let path = Path.Combine(home, ".fugue", "templates", name + ".md")
+    if File.Exists path then
+        try Some (File.ReadAllText path)
+        with _ -> None
+    else None
 
 type ConfigError =
     | NoConfigFound of help: string
     | InvalidConfig of reason: string
+
+let private modelDisplayNames : (string * string) list =
+    [ "claude-opus-4-7",        "Claude Opus 4.7"
+      "claude-opus-4-5",        "Claude Opus 4.5"
+      "claude-sonnet-4-6",      "Claude Sonnet 4.6"
+      "claude-haiku-4-5",       "Claude Haiku 4.5"
+      "claude-haiku-4",         "Claude Haiku 4"
+      "claude-3-7-sonnet",      "Claude 3.7 Sonnet"
+      "claude-3-5-sonnet",      "Claude 3.5 Sonnet"
+      "claude-3-opus",          "Claude 3 Opus"
+      "gpt-5",                  "GPT-5"
+      "gpt-4o",                 "GPT-4o"
+      "gpt-4-turbo",            "GPT-4 Turbo"
+      "gpt-4",                  "GPT-4"
+      "gpt-3.5",                "GPT-3.5"
+      "o3",                     "o3"
+      "o1",                     "o1"
+      "llama3.3",               "Llama 3.3"
+      "llama3.2",               "Llama 3.2"
+      "llama3.1",               "Llama 3.1"
+      "qwen2.5-coder",          "Qwen 2.5 Coder"
+      "qwen2.5",                "Qwen 2.5"
+      "deepseek-coder",         "DeepSeek Coder"
+      "deepseek",               "DeepSeek"
+      "mistral",                "Mistral"
+      "mixtral",                "Mixtral"
+      "phi-4",                  "Phi-4"
+      "phi-3",                  "Phi-3"
+      "gemma3",                 "Gemma 3"
+      "gemma2",                 "Gemma 2" ]
+
+/// Map a raw API model ID to a friendly display name.
+/// Matches from the start of the ID; unknown IDs return unchanged.
+let modelDisplayName (modelId: string) : string =
+    modelDisplayNames
+    |> List.tryFind (fun (prefix, _) -> modelId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+    |> Option.map snd
+    |> Option.defaultValue modelId
 
 let private configPath () =
     let home =
@@ -55,6 +128,9 @@ let private configPath () =
             | p -> p
         | p -> p
     Path.Combine(home, ".fugue", "config.json")
+
+/// Public accessor for the config file path (used by hot-reload watcher).
+let configFilePath () = configPath ()
 
 let private readEnv (name: string) =
     match Environment.GetEnvironmentVariable(name) with
@@ -89,6 +165,36 @@ let private fromImplicitEnv () : ProviderConfig option =
     | _, Some k -> Some(OpenAI(k, "gpt-5"))
     | _ -> None
 
+/// Resolve which profile key to activate (FUGUE_PROFILE → ENVIRONMENT → hostname).
+let private resolveProfileKey () : string option =
+    let tryEnv name =
+        match Environment.GetEnvironmentVariable name with
+        | null | "" -> None
+        | v -> Some v
+    match tryEnv "FUGUE_PROFILE" with
+    | Some k -> Some k
+    | None ->
+        match tryEnv "ENVIRONMENT" with
+        | Some k -> Some k
+        | None ->
+            try Some (System.Net.Dns.GetHostName().ToLowerInvariant())
+            with _ -> None
+
+/// Extract a string property from a JsonElement, returning None if absent/null.
+let private jsonStr (el: JsonElement) (prop: string) : string option =
+    match el.TryGetProperty prop with
+    | true, v when v.ValueKind = JsonValueKind.String -> v.GetString() |> Option.ofObj
+    | _ -> None
+
+/// Extract an int property from a JsonElement, returning None if absent/zero.
+let private jsonInt (el: JsonElement) (prop: string) : int option =
+    match el.TryGetProperty prop with
+    | true, v when v.ValueKind = JsonValueKind.Number ->
+        match v.TryGetInt32() with
+        | true, n when n > 0 -> Some n
+        | _ -> None
+    | _ -> None
+
 [<RequiresUnreferencedCode("Uses STJ reflection; AppConfigDto is preserved via TrimmerRootDescriptor")>]
 [<RequiresDynamicCode("Uses STJ reflection; System.Text.Json is TrimmerRootAssembly")>]
 let private fromFile (path: string) : Result<ProviderConfig * int * int option * UiConfig * string option, string> =
@@ -99,15 +205,41 @@ let private fromFile (path: string) : Result<ProviderConfig * int * int option *
         match dtoOrNull |> Option.ofObj with
         | None -> Error "config file is empty or not a JSON object"
         | Some dto ->
+            // Load profile overrides (AOT-safe via JsonDocument).
+            let profileOverride =
+                match resolveProfileKey () with
+                | None -> None
+                | Some key ->
+                    try
+                        use doc = JsonDocument.Parse json
+                        match doc.RootElement.TryGetProperty "profiles" with
+                        | true, profilesEl ->
+                            match profilesEl.TryGetProperty key with
+                            | true, profileEl when profileEl.ValueKind = JsonValueKind.Object ->
+                                Some profileEl
+                            | _ -> None
+                        | _ -> None
+                    with _ -> None
+            // Helper: read string from profile override first, then fall back to base dto field.
+            let strOvr (baseVal: string) (prop: string) : string =
+                profileOverride
+                |> Option.bind (fun el -> jsonStr el prop)
+                |> Option.defaultValue baseVal
+            let intOvr (baseVal: int) (prop: string) : int =
+                profileOverride
+                |> Option.bind (fun el -> jsonInt el prop)
+                |> Option.defaultValue baseVal
             let provider =
-                match dto.provider with
-                | "anthropic" -> Ok(Anthropic(dto.apiKey, dto.model))
-                | "openai" -> Ok(OpenAI(dto.apiKey, dto.model))
+                let prov  = strOvr dto.provider "provider"
+                let mdl   = strOvr dto.model    "model"
+                let key   = strOvr dto.apiKey   "apiKey"
+                let ollEp = strOvr dto.ollamaEndpoint "ollamaEndpoint"
+                match prov with
+                | "anthropic" -> Ok(Anthropic(key, mdl))
+                | "openai" -> Ok(OpenAI(key, mdl))
                 | "ollama" ->
-                    let ep =
-                        if String.IsNullOrEmpty dto.ollamaEndpoint then "http://localhost:11434"
-                        else dto.ollamaEndpoint
-                    Ok(Ollama(Uri ep, dto.model))
+                    let ep = if String.IsNullOrEmpty ollEp then "http://localhost:11434" else ollEp
+                    Ok(Ollama(Uri ep, mdl))
                 | other -> Error $"unknown provider: {other}"
             provider |> Result.map (fun p ->
                 // dto.ui can be null when "ui" block is missing — STJ doesn't init nested CLIMutable records.
@@ -123,10 +255,26 @@ let private fromFile (path: string) : Result<ProviderConfig * int * int option *
                     | Some "ru" -> "ru"
                     | Some "en" -> "en"
                     | _         -> defaultLocale ()
-                let ui = { UserAlignment = alignment; Locale = locale }
+                let promptTemplate =
+                    uiDto
+                    |> Option.bind (fun u -> Option.ofObj u.promptTemplate)
+                    |> Option.filter (fun s -> not (String.IsNullOrWhiteSpace s))
+                    |> Option.defaultValue "♩ "
+                let bell = uiDto |> Option.map (fun u -> u.bell) |> Option.defaultValue false
+                let theme = uiDto |> Option.bind (fun u -> Option.ofObj u.theme) |> Option.defaultValue ""
+                let emojiMode =
+                    uiDto
+                    |> Option.bind (fun u -> Option.ofObj u.emojiMode)
+                    |> Option.map (fun s -> s.ToLowerInvariant())
+                    |> Option.filter (fun s -> s = "always" || s = "never")
+                    |> Option.defaultValue "auto"
+                let bubblesMode    = uiDto |> Option.map (fun u -> u.bubblesMode)    |> Option.defaultValue false
+                let typewriterMode = uiDto |> Option.map (fun u -> u.typewriterMode) |> Option.defaultValue false
+                let ui = { UserAlignment = alignment; Locale = locale; PromptTemplate = promptTemplate; Bell = bell; Theme = theme; EmojiMode = emojiMode; BubblesMode = bubblesMode; TypewriterMode = typewriterMode }
                 let baseUrl = dto.baseUrl |> Option.ofObj |> Option.filter (fun s -> not (String.IsNullOrEmpty s))
+                let maxIterations = intOvr dto.maxIterations "maxIterations"
                 let maxTokens = if dto.maxTokens > 0 then Some dto.maxTokens else None
-                p, dto.maxIterations, maxTokens, ui, baseUrl)
+                p, maxIterations, maxTokens, ui, baseUrl)
     with ex -> Error ex.Message
 
 let private helpText () =
@@ -149,19 +297,19 @@ Set environment variables:
 let load (_argv: string[]) : Result<AppConfig, ConfigError> =
     match fromExplicitEnv () with
     | Some provider ->
-        Ok { Provider = provider; SystemPrompt = None; MaxIterations = 30; MaxTokens = None; Ui = defaultUi (); BaseUrl = None }
+        Ok { Provider = provider; SystemPrompt = None; ProfileContent = None; TemplateContent = None; TemplateName = None; MaxIterations = 30; MaxTokens = None; Ui = defaultUi (); BaseUrl = None; LowBandwidth = false; Offline = false; DryRun = false }
     | None ->
         let path = configPath ()
         if File.Exists path then
             match fromFile path with
             | Ok (p, mi, maxTokens, ui, baseUrl) ->
                 let mi = if mi <= 0 then 30 else mi
-                Ok { Provider = p; SystemPrompt = None; MaxIterations = mi; MaxTokens = maxTokens; Ui = ui; BaseUrl = baseUrl }
+                Ok { Provider = p; SystemPrompt = None; ProfileContent = None; TemplateContent = None; TemplateName = None; MaxIterations = mi; MaxTokens = maxTokens; Ui = ui; BaseUrl = baseUrl; LowBandwidth = false; Offline = false; DryRun = false }
             | Error e -> Error(InvalidConfig e)
         else
             match fromImplicitEnv () with
             | Some provider ->
-                Ok { Provider = provider; SystemPrompt = None; MaxIterations = 30; MaxTokens = None; Ui = defaultUi (); BaseUrl = None }
+                Ok { Provider = provider; SystemPrompt = None; ProfileContent = None; TemplateContent = None; TemplateName = None; MaxIterations = 30; MaxTokens = None; Ui = defaultUi (); BaseUrl = None; LowBandwidth = false; Offline = false; DryRun = false }
             | None ->
                 Error(NoConfigFound (helpText ()))
 
@@ -172,8 +320,14 @@ let saveToFile (cfg: AppConfig) : unit =
     let dir = Path.GetDirectoryName(path) |> Option.ofObj |> Option.defaultValue "."
     Directory.CreateDirectory(dir) |> ignore
     let uiDto =
-        { userAlignment = (match cfg.Ui.UserAlignment with Left -> "left" | Right -> "right")
-          locale        = cfg.Ui.Locale }
+        { userAlignment  = (match cfg.Ui.UserAlignment with Left -> "left" | Right -> "right")
+          locale         = cfg.Ui.Locale
+          promptTemplate = if cfg.Ui.PromptTemplate = "♩ " then null else cfg.Ui.PromptTemplate
+          bell           = cfg.Ui.Bell
+          theme          = if cfg.Ui.Theme = "" then null else cfg.Ui.Theme
+          emojiMode      = if cfg.Ui.EmojiMode = "auto" then null else cfg.Ui.EmojiMode
+          bubblesMode    = cfg.Ui.BubblesMode
+          typewriterMode = cfg.Ui.TypewriterMode }
     let baseUrlVal = cfg.BaseUrl |> Option.toObj
     let maxTokensVal = cfg.MaxTokens |> Option.defaultValue 0
     let dto =
@@ -182,4 +336,71 @@ let saveToFile (cfg: AppConfig) : unit =
         | OpenAI(k, m)    -> { provider = "openai";    model = m; apiKey = k; ollamaEndpoint = ""; baseUrl = baseUrlVal; maxIterations = cfg.MaxIterations; maxTokens = maxTokensVal; ui = uiDto }
         | Ollama(e, m)    -> { provider = "ollama";    model = m; apiKey = ""; ollamaEndpoint = string e; baseUrl = baseUrlVal; maxIterations = cfg.MaxIterations; maxTokens = maxTokensVal; ui = uiDto }
     let json = JsonSerializer.Serialize<AppConfigDto>(dto, appConfigOptions)
-    File.WriteAllText(path, json)
+    // Inject $schema as first key for editor auto-complete (JSON Schema draft-2020-12).
+    let schemaUrl = "https://raw.githubusercontent.com/korat-ai/fugue/main/docs/config.schema.json"
+    let withSchema =
+        if json.StartsWith '{' then
+            $"{{\"$schema\":\"{schemaUrl}\"," + json.[1..]
+        else json
+    File.WriteAllText(path, withSchema)
+
+/// Load model schedule from the "modelSchedule" key in config.json (AOT-safe, JsonDocument).
+let loadModelSchedule () : ModelSchedule.ModelScheduleConfig option =
+    let path = configPath ()
+    if not (File.Exists path) then None
+    else
+        try
+            use doc  = JsonDocument.Parse(File.ReadAllText path)
+            let root = doc.RootElement
+            let mutable ms = Unchecked.defaultof<JsonElement>
+            if not (root.TryGetProperty("modelSchedule", &ms)) then None
+            else
+                let getStr (el: JsonElement) (k: string) def =
+                    let mutable p = Unchecked.defaultof<JsonElement>
+                    if el.TryGetProperty(k, &p) then p.GetString() |> Option.ofObj |> Option.defaultValue def
+                    else def
+                let getInt (el: JsonElement) (k: string) def =
+                    let mutable p = Unchecked.defaultof<JsonElement>
+                    if el.TryGetProperty(k, &p) then
+                        try p.GetInt32() with _ -> def
+                    else def
+                let fallback = getStr ms "fallback" ""
+                let schedule =
+                    let mutable sched = Unchecked.defaultof<JsonElement>
+                    if ms.TryGetProperty("schedule", &sched) && sched.ValueKind = JsonValueKind.Array then
+                        [ for el in sched.EnumerateArray() do
+                            let model    = getStr el "model" ""
+                            let startStr = getStr el "start" "00:00"
+                            let endStr   = getStr el "end"   "23:59"
+                            let tz       = getStr el "timezone" ""
+                            let priority = getInt el "priority" 0
+                            let days =
+                                let mutable dp = Unchecked.defaultof<JsonElement>
+                                if el.TryGetProperty("days", &dp) && dp.ValueKind = JsonValueKind.Array then
+                                    [ for d in dp.EnumerateArray() do
+                                        match d.GetString() |> Option.ofObj with
+                                        | None -> ()
+                                        | Some s ->
+                                            match s.ToLowerInvariant() with
+                                            | "mon" | "monday"    -> yield DayOfWeek.Monday
+                                            | "tue" | "tuesday"   -> yield DayOfWeek.Tuesday
+                                            | "wed" | "wednesday" -> yield DayOfWeek.Wednesday
+                                            | "thu" | "thursday"  -> yield DayOfWeek.Thursday
+                                            | "fri" | "friday"    -> yield DayOfWeek.Friday
+                                            | "sat" | "saturday"  -> yield DayOfWeek.Saturday
+                                            | "sun" | "sunday"    -> yield DayOfWeek.Sunday
+                                            | _ -> () ]
+                                    |> Set.ofList
+                                else Set.empty
+                            if model <> "" then
+                                let tw = { ModelSchedule.Start    = TimeOnly.Parse startStr
+                                           ModelSchedule.End      = TimeOnly.Parse endStr
+                                           ModelSchedule.Days     = days
+                                           ModelSchedule.TimeZone = tz }
+                                yield { ModelSchedule.Window = tw
+                                        ModelSchedule.ModelId = model
+                                        ModelSchedule.Priority = priority } ]
+                    else []
+                if fallback = "" && schedule.IsEmpty then None
+                else Some { ModelSchedule.Schedule = schedule; ModelSchedule.Fallback = fallback }
+        with _ -> None

@@ -12,14 +12,17 @@ let private schema = DelegatedFn.parseSchema """{
   "required":["path","content"]
 }"""
 
-let create (cwd: string) : AIFunction =
+let create (cwd: string) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionId: string) : AIFunction =
     DelegatedFn.DelegatedAIFunction(
         name        = "Write",
         description = "Write text content to a file. Overwrites if exists.",
         schema      = schema,
+        hooksConfig = hooksConfig,
+        sessionId   = sessionId,
         invoke      = fun args ct -> task {
             ct.ThrowIfCancellationRequested()
             let path    = Args.getStr args "path"
             let content = Args.getStr args "content"
-            return Fugue.Tools.WriteTool.write cwd path content
+            return! Fugue.Tools.RetryPolicy.retryAsync ct (fun () ->
+                System.Threading.Tasks.Task.FromResult(Fugue.Tools.WriteTool.write cwd path content))
         }) :> AIFunction

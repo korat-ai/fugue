@@ -20,7 +20,8 @@ let private mkState (text: string) (cursor: int) : S =
       Placeholder     = ""
       ColorEnabled    = false
       Width           = 80
-      SlashHelp       = [] }
+      SlashHelp       = []
+      ModelCompleter  = fun _ -> ([], false) }
 
 let private key (c: char) (mods: ConsoleModifiers) : ConsoleKeyInfo =
     let cKey =
@@ -57,6 +58,16 @@ let ``Shift+Enter inserts newline`` () =
     act |> should equal Continue
     String(s.Buffer.ToArray()) |> should equal "abc\n"
     s.Cursor |> should equal 4
+
+[<Fact>]
+let ``Shift+Tab returns CycleApprovalMode without touching the buffer`` () =
+    let s = mkState "hello" 3
+    let act = applyKey (special ConsoleKey.Tab ConsoleModifiers.Shift) s
+    act |> should equal CycleApprovalMode
+    // Buffer + cursor MUST be unaffected — Shift+Tab is a session UX action,
+    // not text input.
+    String(s.Buffer.ToArray()) |> should equal "hello"
+    s.Cursor |> should equal 3
 
 [<Fact>]
 let ``Ctrl+D on empty buffer returns Quit`` () =
@@ -155,6 +166,13 @@ let ``slash buffer prefix is recognized for hint rendering`` () =
     // No applyKey side effect on the slash-suggestion field — just verify mkState constructs
     s.Buffer.Count |> should equal 1
     s.Buffer.[0] |> should equal '/'
+
+[<Fact>]
+let ``CtrlL_returns_ClearScreen`` () =
+    let s = mkState "hello" 3
+    let act = applyKey (special ConsoleKey.L ConsoleModifiers.Control) s
+    act |> should equal ClearScreen
+    s.ExitArmed |> should equal false
 
 // ── History tests ─────────────────────────────────────────────────────────────
 
@@ -346,3 +364,188 @@ let ``word_CtrlW_atZero_isNoOp`` () =
     act |> should equal Continue
     String(s.Buffer.ToArray()) |> should equal "hello"
     s.Cursor |> should equal 0
+
+// ── Bracketed paste tests ─────────────────────────────────────────────────────
+
+[<Fact>]
+let ``paste_applyPastedText_setsBufferAndCursor`` () =
+    let s = mkState "old" 3
+    applyPastedText "hello world" s
+    String(s.Buffer.ToArray()) |> should equal "hello world"
+    s.Cursor |> should equal 11
+
+[<Fact>]
+let ``paste_applyPastedText_replacesExistingContent`` () =
+    let s = mkState "existing text" 5
+    applyPastedText "new content" s
+    String(s.Buffer.ToArray()) |> should equal "new content"
+    s.Cursor |> should equal 11
+
+[<Fact>]
+let ``paste_applyPastedText_multiLinePreservesNewlines`` () =
+    let s = mkState "" 0
+    applyPastedText "line1\nline2\nline3" s
+    String(s.Buffer.ToArray()) |> should equal "line1\nline2\nline3"
+    s.Cursor |> should equal 17
+
+[<Fact>]
+let ``paste_applyPastedText_trims_trailing_newline`` () =
+    // Pasting a block that ends in \n should strip the trailing newline
+    // so the user can review before submitting.
+    let s = mkState "" 0
+    applyPastedText "hello\n" s
+
+// ── Tab-completion list tests ─────────────────────────────────────────────────
+
+[<Fact>]
+let ``tab_slashCommands_containsExpectedEntries`` () =
+    slashCommands |> should contain "/help"
+    slashCommands |> should contain "/clear"
+    slashCommands |> should contain "/new"
+    slashCommands |> should contain "/exit"
+    slashCommands |> should contain "/quit"
+    slashCommands |> should contain "/diff"
+    slashCommands |> should contain "/diff --staged"
+    slashCommands |> should contain "/init"
+    slashCommands |> should contain "/summarize"
+    slashCommands |> should contain "/tools"
+    slashCommands |> should contain "/clear-history"
+    slashCommands |> should contain "/short"
+    slashCommands |> should contain "/long"
+    slashCommands |> should contain "/summary"
+    slashCommands |> should contain "/doctor"
+
+[<Fact>]
+let ``tab_filterByPrefix_cl_returnsExpectedMatches`` () =
+    let matches = slashCommands |> Array.filter (fun c -> c.StartsWith "/cl")
+    matches |> should contain "/clear"
+    matches |> should contain "/clear-history"
+    matches.Length |> should equal 2
+
+[<Fact>]
+let ``tab_filterByPrefix_h_returnsSingleMatch`` () =
+    let matches = slashCommands |> Array.filter (fun c -> c.StartsWith "/h")
+    matches |> should equal [| "/help" |]
+
+[<Fact>]
+let ``tab_filterByPrefix_noMatch_returnsEmpty`` () =
+    let matches = slashCommands |> Array.filter (fun c -> c.StartsWith "/zzz")
+    matches |> should equal [||]
+
+[<Fact>]
+let ``tab_filterByPrefix_slash_returnsAll`` () =
+    let matches = slashCommands |> Array.filter (fun c -> c.StartsWith "/")
+    matches.Length |> should equal slashCommands.Length
+
+[<Fact>]
+let ``tab_allCommandsStartWithSlash`` () =
+    slashCommands |> Array.forall (fun c -> c.StartsWith "/") |> should equal true
+
+// ── Undo / redo tests ─────────────────────────────────────────────────────────
+
+[<Fact>]
+let ``undo_CtrlZ_onEmptyStack_isNoOp`` () =
+    clearUndoRedo()
+    let s = mkState "hello" 5
+    let act = applyKey (special ConsoleKey.Z ConsoleModifiers.Control) s
+    act |> should equal Continue
+    String(s.Buffer.ToArray()) |> should equal "hello"
+    s.Cursor |> should equal 5
+
+[<Fact>]
+let ``paste_applyPastedText_emptyString_clearsBuffer`` () =
+    let s = mkState "something" 3
+    applyPastedText "" s
+    String(s.Buffer.ToArray()) |> should equal ""
+    s.Cursor |> should equal 0
+
+[<Fact>]
+let ``paste_applyPastedText_cursorAtEnd_afterPaste`` () =
+    let s = mkState "" 0
+    applyPastedText "abc" s
+    s.Cursor |> should equal s.Buffer.Count
+
+let ``undo_typingChar_pushesSnapshotOntoUndoStack`` () =
+    clearUndoRedo()
+    let s = mkState "ab" 2
+    let _ = applyKey (key 'c' ConsoleModifiers.None) s
+    undoStack.Count |> should equal 1
+    redoStack.Count |> should equal 0
+
+[<Fact>]
+let ``undo_CtrlZ_restoresPreviousBufferAndCursor`` () =
+    clearUndoRedo()
+    let s = mkState "ab" 2
+    let _ = applyKey (key 'c' ConsoleModifiers.None) s   // buffer = "abc", cursor = 3; snapshot "ab"/2 on undoStack
+    let act = applyKey (special ConsoleKey.Z ConsoleModifiers.Control) s
+    act |> should equal Continue
+    String(s.Buffer.ToArray()) |> should equal "ab"
+    s.Cursor |> should equal 2
+    undoStack.Count |> should equal 0
+
+[<Fact>]
+let ``undo_CtrlZ_pushesCurrentStateOntoRedoStack`` () =
+    clearUndoRedo()
+    let s = mkState "ab" 2
+    let _ = applyKey (key 'c' ConsoleModifiers.None) s   // "abc", cursor 3
+    let _ = applyKey (special ConsoleKey.Z ConsoleModifiers.Control) s
+    redoStack.Count |> should equal 1
+    let (redoBuf, redoCursor) = redoStack.[0]
+    String(redoBuf.ToArray()) |> should equal "abc"
+    redoCursor |> should equal 3
+
+[<Fact>]
+let ``redo_CtrlY_onEmptyStack_isNoOp`` () =
+    clearUndoRedo()
+    let s = mkState "hello" 5
+    let act = applyKey (special ConsoleKey.Y ConsoleModifiers.Control) s
+    act |> should equal Continue
+    String(s.Buffer.ToArray()) |> should equal "hello"
+    s.Cursor |> should equal 5
+
+[<Fact>]
+let ``redo_CtrlY_restoresRedoneStateAndPushesUndoViaPushBounded`` () =
+    clearUndoRedo()
+    let s = mkState "ab" 2
+    let _ = applyKey (key 'c' ConsoleModifiers.None) s   // "abc"/3 → undoStack: [("ab",2)]
+    let _ = applyKey (special ConsoleKey.Z ConsoleModifiers.Control) s  // back to "ab"/2 → redoStack: [("abc",3)]
+    let act = applyKey (special ConsoleKey.Y ConsoleModifiers.Control) s  // redo
+    act |> should equal Continue
+    String(s.Buffer.ToArray()) |> should equal "abc"
+    s.Cursor |> should equal 3
+    redoStack.Count |> should equal 0
+    undoStack.Count |> should equal 1
+
+[<Fact>]
+let ``redo_typingAfterUndo_clearsRedoStack`` () =
+    clearUndoRedo()
+    let s = mkState "ab" 2
+    let _ = applyKey (key 'c' ConsoleModifiers.None) s   // "abc"/3
+    let _ = applyKey (special ConsoleKey.Z ConsoleModifiers.Control) s  // back to "ab"/2
+    redoStack.Count |> should equal 1
+    let _ = applyKey (key 'x' ConsoleModifiers.None) s   // typing clears redo
+    redoStack.Count |> should equal 0
+
+[<Fact>]
+let ``undo_pushBounded_capsUndoStackAt100`` () =
+    clearUndoRedo()
+    let s = mkState "" 0
+    // Type 110 characters — each keystroke pushes one snapshot
+    for _ in 1 .. 110 do
+        let _ = applyKey (key 'a' ConsoleModifiers.None) s
+        ()
+    undoStack.Count |> should equal 100
+
+[<Fact>]
+let ``redo_pushBounded_capsRedoStackAt100`` () =
+    clearUndoRedo()
+    let s = mkState "" 0
+    // Build up 110 undo entries
+    for _ in 1 .. 110 do
+        let _ = applyKey (key 'a' ConsoleModifiers.None) s
+        ()
+    // Undo all 100 capped entries; each undo pushes onto redo via pushBounded
+    for _ in 1 .. 110 do
+        let _ = applyKey (special ConsoleKey.Z ConsoleModifiers.Control) s
+        ()
+    redoStack.Count |> should equal 100

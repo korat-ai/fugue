@@ -5,15 +5,76 @@ open System.Collections.Generic
 open System.Threading
 open System.Threading.Tasks
 open Fugue.Core.Localization
+open Fugue.Surface
+
+/// Wire the Surface actor for ReadLine. Phase 1.3c v2: now a thin wrapper
+/// over Surface.setAgent — ReadLine no longer holds its own actor ref.
+/// Kept as a public API for tests that exercise ReadLine routing in
+/// isolation (ReadLineActorRoutingTests).
+let setAgent (agent: MailboxProcessor<SurfaceMessage>) : unit =
+    Surface.setAgent agent
+
+// Bracketed paste mode escape sequences.
+let private pasteBeginSeq = "\x1b[200~"
+let private pasteEndSeq   = "\x1b[201~"
+
+module private InputSanitize =
+
+    let private zeroWidthCodePoints =
+        [| 0x200B; 0x200C; 0x200D; 0xFEFF; 0x2060; 0x00AD |]
+
+    /// True if the string contains any zero-width character.
+    let hasZeroWidth (s: string) =
+        zeroWidthCodePoints |> Array.exists (fun cp -> s.IndexOf(char cp) >= 0)
+
+    /// Normalize a pasted/submitted string:
+    /// CRLF → LF, standalone CR → LF, Unicode paragraph/line separators → LF.
+    let normalize (s: string) : string =
+        s.Replace("\r\n", "\n")
+         .Replace("\r", "\n")
+         .Replace(" ", "\n")   // LINE SEPARATOR
+         .Replace(" ", "\n")   // PARAGRAPH SEPARATOR
+
+/// True if the string contains any zero-width character (U+200B/C/D, U+FEFF, U+2060, U+00AD).
+let hasZeroWidth (s: string) = InputSanitize.hasZeroWidth s
+/// Normalize pasted input (CRLF→LF, standalone CR→LF, U+2028/2029→LF). For testing.
+let normalizeInput (s: string) = InputSanitize.normalize s
 
 // Hardcoded — small list, easier than passing through state.
-let slashCommands : string list = [ "/help"; "/clear"; "/exit" ]
+let slashCommands : string[] =
+    [| "/help"; "/clear"; "/summary"; "/short"; "/long"; "/clear-history"; "/tools"; "/new"; "/init"; "/exit"; "/quit"; "/diff"; "/diff --staged"; "/doctor"; "/summarize"; "/todo"; "/rate"; "/annotate"; "/gen uuid"; "/gen ulid"; "/gen nanoid"; "/rename"; "/env list"; "/env set"; "/env unset"; "/cron"; "/regex" |]
 
 /// Session history (REPL is single-threaded). Not private so tests can seed entries directly.
 let historyStore = ResizeArray<string>()
 
 /// For test isolation only.
 let clearHistory () = historyStore.Clear()
+
+/// Undo/redo stacks — module-level, REPL is single-threaded.
+/// Not private so tests can inspect and seed them directly.
+let undoStack = ResizeArray<ResizeArray<char> * int>()
+let redoStack = ResizeArray<ResizeArray<char> * int>()
+
+/// For test isolation only.
+let clearUndoRedo () =
+    undoStack.Clear()
+    redoStack.Clear()
+
+/// Push item onto stack, evicting the oldest entry when the cap is exceeded.
+let private pushBounded (stack: ResizeArray<_>) item =
+    stack.Add item
+    if stack.Count > 100 then stack.RemoveAt 0
+
+type ReadLineCallbacks =
+    { OnClearScreen:        unit -> unit
+      OnAnnotateUp:         unit -> unit
+      OnAnnotateDown:       unit -> unit
+      OnCycleApprovalMode:  unit -> unit }
+let defaultCallbacks : ReadLineCallbacks =
+    { OnClearScreen        = ignore
+      OnAnnotateUp         = ignore
+      OnAnnotateDown       = ignore
+      OnCycleApprovalMode  = ignore }
 
 /// Internal mutable line state. Public only because tests construct it directly.
 type S = {
@@ -31,6 +92,7 @@ type S = {
     ColorEnabled:            bool
     Width:                   int
     SlashHelp:               (string * string) list  // (name, dim description) pairs
+    ModelCompleter:          string -> string list * bool   // prefix → (matching names, isStale)
 }
 
 /// Action returned by the pure key-handler. The caller (read-loop) decides what to do.
@@ -39,6 +101,10 @@ type Action =
     | Submit of string
     | Quit
     | Wipe
+    | ClearScreen
+    | AnnotateUp
+    | AnnotateDown
+    | CycleApprovalMode
 
 let private isCtrl (k: ConsoleKeyInfo) (key: ConsoleKey) : bool =
     k.Modifiers.HasFlag ConsoleModifiers.Control && k.Key = key
@@ -91,6 +157,14 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
         s.Buffer.Insert(s.Cursor, '\n')
         s.Cursor <- s.Cursor + 1
         Continue
+    elif isShift k ConsoleKey.Tab then
+        // Cycle approval mode: Plan → Default → AutoEdit → YOLO → Plan.
+        // Buffer / cursor unaffected — this is a session-level UX action.
+        // Caller's loop dispatches via OnCycleApprovalMode callback, which
+        // mutates StatusBar.approvalMode and triggers a refresh.
+        exitHistoryMode ()
+        s.ExitArmed <- false
+        CycleApprovalMode
     elif k.Key = ConsoleKey.Enter then
         exitHistoryMode ()
         s.ExitArmed <- false
@@ -108,6 +182,12 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
         if s.Cursor < s.Buffer.Count then
             s.Buffer.RemoveAt s.Cursor
         Continue
+    elif isCtrl k ConsoleKey.UpArrow then
+        s.ExitArmed <- false
+        AnnotateUp
+    elif isCtrl k ConsoleKey.DownArrow then
+        s.ExitArmed <- false
+        AnnotateDown
     elif k.Key = ConsoleKey.UpArrow then
         s.ExitArmed <- false
         if historyStore.Count = 0 then
@@ -190,18 +270,75 @@ let applyKey (k: ConsoleKeyInfo) (s: S) : Action =
         while i < s.Buffer.Count && s.Buffer.[i] <> '\n' do i <- i + 1
         s.Cursor <- i
         Continue
+    elif isCtrl k ConsoleKey.L then
+        s.ExitArmed <- false
+        ClearScreen
+    elif isCtrl k ConsoleKey.Z then
+        exitHistoryMode ()
+        s.ExitArmed <- false
+        if undoStack.Count > 0 then
+            let snapshot = ResizeArray<char>(s.Buffer)
+            pushBounded redoStack (snapshot, s.Cursor)
+            let (prevBuf, prevCursor) = undoStack.[undoStack.Count - 1]
+            undoStack.RemoveAt(undoStack.Count - 1)
+            s.Buffer.Clear()
+            s.Buffer.AddRange prevBuf
+            s.Cursor <- prevCursor
+        Continue
+    elif isCtrl k ConsoleKey.Y then
+        exitHistoryMode ()
+        s.ExitArmed <- false
+        if redoStack.Count > 0 then
+            let snapshot = ResizeArray<char>(s.Buffer)
+            pushBounded undoStack (snapshot, s.Cursor)
+            let (nextBuf, nextCursor) = redoStack.[redoStack.Count - 1]
+            redoStack.RemoveAt(redoStack.Count - 1)
+            s.Buffer.Clear()
+            s.Buffer.AddRange nextBuf
+            s.Cursor <- nextCursor
+        Continue
     elif not (Char.IsControl k.KeyChar) then
         exitHistoryMode ()
         s.ExitArmed <- false
+        let snapshot = ResizeArray<char>(s.Buffer)
+        pushBounded undoStack (snapshot, s.Cursor)
+        redoStack.Clear()
         s.Buffer.Insert(s.Cursor, k.KeyChar)
         s.Cursor <- s.Cursor + 1
         Continue
     else
         Continue
 
-let private writeRaw (s: string) =
-    Console.Out.Write s
-    Console.Out.Flush()
+/// Bracketed paste state machine — tracks where we are in the \x1b[200~…\x1b[201~ sequence.
+/// States progress: Normal → EscSeen → BracketSeen → Digit2 → Digit0x → Digit0y → Tilde200
+///                  then PasteActive → EscInPaste → BracketInPaste → Digit2P → Digit0xP → Digit1P → (end)
+/// On any mismatch the accumulated prefix chars are flushed as normal input.
+type PasteState =
+    | Normal
+    | EscSeen           // saw \x1b
+    | BracketSeen       // saw \x1b[
+    | Digit2            // saw \x1b[2
+    | Digit0            // saw \x1b[20
+    | Digit0v2          // saw \x1b[200
+    | PasteActive       // inside paste; collecting content
+    | EscInPaste        // saw \x1b while in PasteActive
+    | BracketInPaste    // saw \x1b[ while in PasteActive
+    | Digit2InPaste     // saw \x1b[2 while in PasteActive
+    | Digit0InPaste     // saw \x1b[20 while in PasteActive
+    | Digit1InPaste     // saw \x1b[201 while in PasteActive
+
+/// Pure helper: set s.Buffer and s.Cursor to the pasted content (trim single trailing \n if any).
+let applyPastedText (text: string) (s: S) : unit =
+    let normalized = if text.EndsWith "\n" then text.[0 .. text.Length - 2] else text
+    s.Buffer.Clear()
+    s.Buffer.AddRange(normalized.ToCharArray())
+    s.Cursor <- s.Buffer.Count
+
+/// Thin aliases for Surface.write / Surface.flush so existing call-sites
+/// in this module read naturally. Keeps the change-set small while
+/// removing ReadLine's own actor ref.
+let inline private writeRaw (s: string) = Surface.write s
+let inline private flushBarrier () = Surface.flush ()
 
 /// Clear `count` rows starting at the cursor's current row and moving downward.
 /// Cursor is left at column 0 of the top row of the cleared area.
@@ -219,7 +356,7 @@ let private eraseLines (count: int) : unit =
         if count > 1 then writeRaw ("\x1b[" + string (count - 1) + "A")
         writeRaw "\r"
 
-let private redraw (st: S) =
+let internal redraw (st: S) =
     // 1. cursor up to start of our previous render, clear per-line (not full screen end)
     // Before erasing, move cursor to the bottom of the previously-rendered area so
     // eraseLines (which walks UP count-1 rows) starts from the correct position.
@@ -227,7 +364,11 @@ let private redraw (st: S) =
         writeRaw ("\x1b[" + string st.RowsBelowCursor + "B")
     eraseLines st.LinesRendered
     // 2. emit prompt + buffer
-    if st.LinesRendered = 0 then writeRaw "\r"
+    // On the very first draw (LinesRendered = 0) the current terminal row may carry
+    // stale content from a previous prompt render (e.g. a long model name typed in
+    // /model set that was longer than the new placeholder).  \x1b[2K erases the
+    // entire line before we write so no leftover characters show through.
+    if st.LinesRendered = 0 then writeRaw "\x1b[2K\r"
     writeRaw st.PromptText
     let bufStr = String(st.Buffer.ToArray())
     writeRaw bufStr
@@ -246,11 +387,41 @@ let private redraw (st: S) =
         writeRaw ("\n\x1b[2m" + st.HintWhenArmed + "\x1b[0m")
         st.LinesRendered <- st.LinesRendered + 1
     elif st.Buffer.Count > 0 && st.Buffer.[0] = '/' then
-        let prefix = String(st.Buffer.ToArray())
-        let matches = st.SlashHelp |> List.filter (fun (name, _) -> name.StartsWith(prefix))
-        for (name, desc) in matches do
-            writeRaw ("\n\x1b[2m  " + name + "  " + desc + "\x1b[0m")
-            st.LinesRendered <- st.LinesRendered + 1
+        let bufStr2 = String(st.Buffer.ToArray())
+        let modelSetPrefix = "/model set "
+        if bufStr2.StartsWith modelSetPrefix then
+            // ModelName context: show matching model names from the completer.
+            let typedPrefix = bufStr2.Substring(modelSetPrefix.Length)
+            let (matches, isStale) = st.ModelCompleter typedPrefix
+            // [stale] hint: surfaces when the cached model list is empty due to
+            // an HTTP failure (vs. healthy refresh). Helps users tell "no matches
+            // for this prefix" apart from "model discovery is broken".
+            if isStale then
+                if matches.IsEmpty then
+                    writeRaw "\n\x1b[2m  [stale] model list unavailable — provider unreachable\x1b[0m"
+                    st.LinesRendered <- st.LinesRendered + 1
+                else
+                    writeRaw "\n\x1b[2m  [stale] showing last-known list — refresh failed\x1b[0m"
+                    st.LinesRendered <- st.LinesRendered + 1
+            let maxSuggestions = 8
+            for name in matches |> List.truncate maxSuggestions do
+                writeRaw ("\n\x1b[2m  " + name + "\x1b[0m")
+                st.LinesRendered <- st.LinesRendered + 1
+            if matches.Length > maxSuggestions then
+                writeRaw $"\n\x1b[2m  … {matches.Length - maxSuggestions} more (keep typing)\x1b[0m"
+                st.LinesRendered <- st.LinesRendered + 1
+        else
+            // Show inline slash command suggestions, capped at maxSuggestions to keep
+            // the rendered area bounded (prevents terminal scroll from corrupting
+            // cursor-tracking in eraseLines on the next redraw).
+            let matches = st.SlashHelp |> List.filter (fun (name, _) -> name.StartsWith(bufStr2))
+            let maxSuggestions = 8
+            for (name, desc) in matches |> List.truncate maxSuggestions do
+                writeRaw ("\n\x1b[2m  " + name + "  " + desc + "\x1b[0m")
+                st.LinesRendered <- st.LinesRendered + 1
+            if matches.Length > maxSuggestions then
+                writeRaw $"\n\x1b[2m  … {matches.Length - maxSuggestions} more (keep typing)\x1b[0m"
+                st.LinesRendered <- st.LinesRendered + 1
     // 4. position cursor at st.Cursor inside buffer.
     //    Compute (row, col) from start of prompt.
     let mutable row = 0
@@ -271,7 +442,7 @@ let private redraw (st: S) =
     else writeRaw "\r"
     st.RowsBelowCursor <- upBy   // save for next redraw's erase pass
 
-let readAsync (prompt: string) (strings: Strings) (colorEnabled: bool) (ct: CancellationToken) : Task<string option> = task {
+let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) list) (modelCompleter: string -> string list * bool) (callbacks: ReadLineCallbacks) (colorEnabled: bool) (initial: string) (ct: CancellationToken) : Task<string option> = task {
     // Strip ANSI escapes for visible-length calc (rough — assumes only \x1b[...m sequences).
     let visLen =
         let mutable n = 0
@@ -284,13 +455,11 @@ let readAsync (prompt: string) (strings: Strings) (colorEnabled: bool) (ct: Canc
                 n <- n + 1
                 i <- i + 1
         n
-    let slashHelp =
-        [ "/help",  strings.CmdHelpDesc
-          "/clear", strings.CmdClearDesc
-          "/exit",  strings.CmdExitDesc ]
+    let initialBuf = ResizeArray<char>()
+    for c in initial do initialBuf.Add c
     let st : S =
-        { Buffer          = ResizeArray<char>()
-          Cursor          = 0
+        { Buffer          = initialBuf
+          Cursor          = initialBuf.Count
           LinesRendered   = 0
           ExitArmed       = false
           RowsBelowCursor = 0
@@ -302,36 +471,255 @@ let readAsync (prompt: string) (strings: Strings) (colorEnabled: bool) (ct: Canc
           Placeholder     = strings.InputPlaceholder
           ColorEnabled    = colorEnabled
           Width           = max 40 Console.WindowWidth
-          SlashHelp       = slashHelp }
+          SlashHelp       = slashHelp
+          ModelCompleter  = modelCompleter }
 
     Console.TreatControlCAsInput <- true
+    // Tab-completion cycle state — resets on any non-Tab keypress.
+    let mutable tabMatches : string[] = [||]
+    let mutable tabIndex   = -1
     try
         redraw st
-        let mutable result : string option voption = ValueNone
+        let mutable result      : string option voption = ValueNone
+        let mutable pasteState  : PasteState             = Normal
+        let mutable pasteBuf    : System.Text.StringBuilder = System.Text.StringBuilder()
+        // Prefix chars accumulated while tentatively matching the begin/end bracket sequence.
+        // On mismatch they are flushed as ordinary input.
+        let mutable escapeBuf   : ResizeArray<char>      = ResizeArray<char>()
+
+        let eraseRendered () =
+            if st.RowsBelowCursor > 0 then
+                writeRaw ("\x1b[" + string st.RowsBelowCursor + "B")
+            eraseLines st.LinesRendered
+            st.RowsBelowCursor <- 0
+
+        // Flush accumulated escape prefix as normal key events (no-op chars go through applyKey).
+        let flushEscape () =
+            for ch in escapeBuf do
+                let ki = ConsoleKeyInfo(ch, ConsoleKey.A, false, false, false)
+                match applyKey ki st with
+                | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown | CycleApprovalMode -> ()
+                | Submit _ | Quit -> ()   // rare; ignore — these chars won't normally Submit/Quit
+            escapeBuf.Clear()
+            pasteState <- Normal
+
         while result.IsNone && not ct.IsCancellationRequested do
             // Console.ReadKey is blocking; we accept that — cancellation in this
             // path is not expected in normal flow (Ctrl+C while reading is a wipe).
             let k = Console.ReadKey(intercept = true)
-            let eraseRendered () =
-                if st.RowsBelowCursor > 0 then
-                    writeRaw ("\x1b[" + string st.RowsBelowCursor + "B")
-                eraseLines st.LinesRendered
-                st.RowsBelowCursor <- 0
-            match applyKey k st with
-            | Continue -> redraw st
-            | Wipe     -> redraw st
-            | Submit s ->
-                eraseRendered ()
-                if not (String.IsNullOrWhiteSpace s) then
-                    if historyStore.Count = 0 || historyStore.[historyStore.Count - 1] <> s then
-                        historyStore.Add s
-                st.HistoryIdx <- -1
-                st.SavedBuffer <- None
-                result <- ValueSome (Some s)
-            | Quit ->
-                eraseRendered ()
-                writeRaw "\n"
-                result <- ValueSome None
+            // Shift+Tab is a SEPARATE intent (cycle approval mode) — handle it
+            // through applyKey before the plain-Tab completion branch grabs it.
+            if k.Key = ConsoleKey.Tab && k.Modifiers.HasFlag ConsoleModifiers.Shift then
+                tabMatches <- [||]
+                tabIndex   <- -1
+                match applyKey k st with
+                | CycleApprovalMode ->
+                    callbacks.OnCycleApprovalMode ()
+                    redraw st
+                | _ -> ()  // applyKey produced something else — shouldn't happen for Shift+Tab
+            elif k.Key = ConsoleKey.Tab then
+                let currentInput = String(st.Buffer.ToArray())
+                let modelSetPrefix = "/model set "
+                if currentInput.StartsWith modelSetPrefix then
+                    // ModelName context: Tab-cycle through matching model names.
+                    let typedPrefix = currentInput.Substring(modelSetPrefix.Length)
+                    let needsReset =
+                        tabMatches.Length = 0 ||
+                        (tabIndex >= 0 && tabIndex < tabMatches.Length &&
+                         currentInput <> modelSetPrefix + tabMatches.[tabIndex])
+                    if needsReset then
+                        let (m, _isStale) = st.ModelCompleter typedPrefix
+                        tabMatches <- m |> List.toArray
+                        tabIndex   <- -1
+                    if tabMatches.Length > 0 then
+                        tabIndex <- (tabIndex + 1) % tabMatches.Length
+                        let completed = modelSetPrefix + tabMatches.[tabIndex]
+                        st.Buffer.Clear()
+                        st.Buffer.AddRange(completed.ToCharArray())
+                        st.Cursor <- st.Buffer.Count
+                        redraw st
+                elif currentInput.StartsWith "/" then
+                    let needsReset =
+                        tabMatches.Length = 0 ||
+                        (tabIndex >= 0 && tabIndex < tabMatches.Length &&
+                         currentInput <> tabMatches.[tabIndex])
+                    if needsReset then
+                        tabMatches <- slashCommands |> Array.filter (fun c -> c.StartsWith currentInput)
+                        tabIndex   <- -1
+                    if tabMatches.Length > 0 then
+                        tabIndex <- (tabIndex + 1) % tabMatches.Length
+                        let completed = tabMatches.[tabIndex]
+                        st.Buffer.Clear()
+                        st.Buffer.AddRange(completed.ToCharArray())
+                        st.Cursor <- st.Buffer.Count
+                        redraw st
+                // Tab on empty / non-slash input: ignore.
+            else
+                // Any non-Tab key resets the completion cycle.
+                tabMatches <- [||]
+                tabIndex   <- -1
+                let c = k.KeyChar
+
+                // ── Paste state machine ───────────────────────────────────────
+                match pasteState with
+                | Normal ->
+                    if c = '\x1b' then
+                        escapeBuf.Clear()
+                        escapeBuf.Add c
+                        pasteState <- EscSeen
+                    else
+                        match applyKey k st with
+                        | Continue -> redraw st
+                        | Wipe     -> redraw st
+                        | ClearScreen ->
+                            eraseRendered ()
+                            writeRaw "\x1b[2J\x1b[H"
+                            st.LinesRendered <- 0
+                            st.RowsBelowCursor <- 0
+                            callbacks.OnClearScreen ()
+                            redraw st
+                        | AnnotateUp ->
+                            callbacks.OnAnnotateUp ()
+                            redraw st
+                        | AnnotateDown ->
+                            callbacks.OnAnnotateDown ()
+                            redraw st
+                        | CycleApprovalMode ->
+                            callbacks.OnCycleApprovalMode ()
+                            redraw st
+                        | Submit s ->
+                            eraseRendered ()
+                            let normalized = InputSanitize.normalize s
+                            if not (String.IsNullOrWhiteSpace normalized) then
+                                if historyStore.Count = 0 || historyStore.[historyStore.Count - 1] <> normalized then
+                                    historyStore.Add normalized
+                            st.HistoryIdx <- -1
+                            st.SavedBuffer <- None
+                            result <- ValueSome (Some normalized)
+                        | Quit ->
+                            eraseRendered ()
+                            writeRaw "\n"
+                            result <- ValueSome None
+
+                | EscSeen ->
+                    if c = '[' then
+                        escapeBuf.Add c
+                        pasteState <- BracketSeen
+                    else
+                        flushEscape ()
+                        let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
+                        match applyKey ki2 st with
+                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown | CycleApprovalMode -> redraw st
+                        | Submit _ | Quit -> ()
+
+                | BracketSeen ->
+                    if c = '2' then
+                        escapeBuf.Add c
+                        pasteState <- Digit2
+                    else
+                        flushEscape ()
+                        let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
+                        match applyKey ki2 st with
+                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown | CycleApprovalMode -> redraw st
+                        | Submit _ | Quit -> ()
+
+                | Digit2 ->
+                    if c = '0' then
+                        escapeBuf.Add c
+                        pasteState <- Digit0
+                    else
+                        flushEscape ()
+                        let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
+                        match applyKey ki2 st with
+                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown | CycleApprovalMode -> redraw st
+                        | Submit _ | Quit -> ()
+
+                | Digit0 ->
+                    if c = '0' then
+                        escapeBuf.Add c
+                        pasteState <- Digit0v2
+                    else
+                        flushEscape ()
+                        let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
+                        match applyKey ki2 st with
+                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown | CycleApprovalMode -> redraw st
+                        | Submit _ | Quit -> ()
+
+                | Digit0v2 ->
+                    if c = '~' then
+                        // Confirmed \x1b[200~ — enter paste collection mode
+                        escapeBuf.Clear()
+                        pasteBuf.Clear() |> ignore
+                        pasteState <- PasteActive
+                    else
+                        flushEscape ()
+                        let ki2 = ConsoleKeyInfo(c, k.Key, false, false, false)
+                        match applyKey ki2 st with
+                        | Continue | Wipe | ClearScreen | AnnotateUp | AnnotateDown | CycleApprovalMode -> redraw st
+                        | Submit _ | Quit -> ()
+
+                | PasteActive ->
+                    if c = '\x1b' then
+                        escapeBuf.Clear()
+                        escapeBuf.Add c
+                        pasteState <- EscInPaste
+                    else
+                        pasteBuf.Append c |> ignore
+
+                | EscInPaste ->
+                    if c = '[' then
+                        escapeBuf.Add c
+                        pasteState <- BracketInPaste
+                    else
+                        // Not an end bracket — flush escape to pasteBuf and continue collecting
+                        for ch in escapeBuf do pasteBuf.Append ch |> ignore
+                        escapeBuf.Clear()
+                        pasteBuf.Append c |> ignore
+                        pasteState <- PasteActive
+
+                | BracketInPaste ->
+                    if c = '2' then
+                        escapeBuf.Add c
+                        pasteState <- Digit2InPaste
+                    else
+                        for ch in escapeBuf do pasteBuf.Append ch |> ignore
+                        escapeBuf.Clear()
+                        pasteBuf.Append c |> ignore
+                        pasteState <- PasteActive
+
+                | Digit2InPaste ->
+                    if c = '0' then
+                        escapeBuf.Add c
+                        pasteState <- Digit0InPaste
+                    else
+                        for ch in escapeBuf do pasteBuf.Append ch |> ignore
+                        escapeBuf.Clear()
+                        pasteBuf.Append c |> ignore
+                        pasteState <- PasteActive
+
+                | Digit0InPaste ->
+                    if c = '1' then
+                        escapeBuf.Add c
+                        pasteState <- Digit1InPaste
+                    else
+                        for ch in escapeBuf do pasteBuf.Append ch |> ignore
+                        escapeBuf.Clear()
+                        pasteBuf.Append c |> ignore
+                        pasteState <- PasteActive
+
+                | Digit1InPaste ->
+                    if c = '~' then
+                        // Confirmed \x1b[201~ — paste complete
+                        escapeBuf.Clear()
+                        applyPastedText (pasteBuf.ToString()) st
+                        pasteState <- Normal
+                        redraw st
+                    else
+                        for ch in escapeBuf do pasteBuf.Append ch |> ignore
+                        escapeBuf.Clear()
+                        pasteBuf.Append c |> ignore
+                        pasteState <- PasteActive
+
         return
             match result with
             | ValueSome v -> v

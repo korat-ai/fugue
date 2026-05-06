@@ -14,7 +14,13 @@ let edit
     ([<Description("If true, replace every occurrence; default false.")>] replaceAll: bool option)
     : string =
     let full = resolve cwd path
+    if not (isUnder cwd full) then
+        raise (UnauthorizedAccessException(sprintf "path outside working directory: %s" path))
     if not (File.Exists full) then raise (FileNotFoundException("file not found", full))
+    let conflictWarning =
+        match ReadTimeRegistry.checkConflict full with
+        | Some msg -> msg + "\n"
+        | None -> ""
     let original = File.ReadAllText full
     let count =
         let mutable c, i = 0, 0
@@ -32,5 +38,6 @@ let edit
             $"old_string occurs {count} times in {full}; pass replace_all=true or pick a unique snippet")
 
     let updated = original.Replace(oldString, newString)
+    Fugue.Core.Checkpoint.snapshot full
     File.WriteAllText(full, updated)
-    "edited " + full + " (" + string count + " replacement" + (if count = 1 then "" else "s") + ")"
+    conflictWarning + "edited " + full + " (" + string count + " replacement" + (if count = 1 then "" else "s") + ")"

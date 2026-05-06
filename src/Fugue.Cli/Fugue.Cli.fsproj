@@ -5,7 +5,22 @@
     <RootNamespace>Fugue.Cli</RootNamespace>
     <AssemblyName>fugue</AssemblyName>
     <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
-    <!-- AOT publish settings -->
+    <!-- NuGet tool metadata -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>fugue</ToolCommandName>
+    <PackageId>fugue</PackageId>
+    <Description>Terminal coding agent. 40ms cold start · 46MB binary · low RSS. Works with Anthropic, OpenAI-compatible endpoints, and Ollama.</Description>
+    <Authors>korat-ai</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/korat-ai/fugue</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/korat-ai/fugue</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>cli;tool;ai;agent;fsharp;dotnet;coding-assistant;llm</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- AOT native publish → no suffix (RID is set by -r flag).
+         dotnet pack / managed JIT tool → append -jit so users can tell distributions apart. -->
+    <VersionSuffix Condition="'$(RuntimeIdentifier)' == ''">jit</VersionSuffix>
+    <!-- AOT publish settings (only applied on dotnet publish, not dotnet pack) -->
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
     <StripSymbols>true</StripSymbols>
@@ -24,13 +39,44 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Fugue.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="prompts\*.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="Surface.fs" />
+    <Compile Include="PromptRegistry.fs" />
+    <Compile Include="SlashCommands.fs" />
+    <Compile Include="Picker.fs" />
     <Compile Include="ReadLine.fs" />
+    <Compile Include="MathRender.fs" />
     <Compile Include="MarkdownRender.fs" />
     <Compile Include="DiffRender.fs" />
+    <Compile Include="StackTraceRender.fs" />
     <Compile Include="Render.fs" />
+    <Compile Include="StreamRender.fs" />
     <Compile Include="StatusBar.fs" />
+    <Compile Include="ApprovalPrompt.fs" />
+    <Compile Include="FileWatcher.fs" />
+    <Compile Include="ClipRing.fs" />
+    <Compile Include="Macros.fs" />
+    <Compile Include="CaBundle.fs" />
+    <Compile Include="DryRun.fs" />
+    <Compile Include="BugReport.fs" />
+    <Compile Include="ToolRetryDiff.fs" />
     <Compile Include="Repl.fs" />
+    <Compile Include="Doctor.fs" />
+    <Compile Include="ProgramArgs.fs" />
     <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>
@@ -67,5 +113,6 @@
     <ProjectReference Include="..\Fugue.Core\Fugue.Core.fsproj" />
     <ProjectReference Include="..\Fugue.Agent\Fugue.Agent.fsproj" />
     <ProjectReference Include="..\Fugue.Tools\Fugue.Tools.fsproj" />
+    <ProjectReference Include="..\Fugue.Surface\Fugue.Surface.fsproj" />
   </ItemGroup>
 </Project>

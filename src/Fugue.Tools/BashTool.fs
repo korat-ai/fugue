@@ -2,22 +2,72 @@ module Fugue.Tools.BashTool
 
 open System
 open System.Diagnostics
+open System.Runtime.InteropServices
 open System.Text
+open System.Threading
 open System.ComponentModel
 
-[<Description("Run a shell command via /bin/zsh -lc and return combined stdout/stderr with exit code.")>]
+/// Patterns for secret-like env var names (suffix-based).
+let private secretSuffixes =
+    [| "_KEY"; "_SECRET"; "_TOKEN"; "_PASSWORD"; "_PASS"; "_CREDENTIAL"; "_CREDENTIALS" |]
+
+/// Prefixes that are always stripped.
+let private secretPrefixes =
+    [| "AWS_"; "AZURE_"; "GCP_"; "DATABASE_URL" |]
+
+/// Names that are always kept.
+let private allowedNames =
+    [| "PATH"; "HOME"; "SHELL"; "USER"; "LOGNAME"; "TERM"; "LANG"; "LC_ALL";
+       "TMPDIR"; "XDG_RUNTIME_DIR"; "DOTNET_ROOT"; "JAVA_HOME"; "CARGO_HOME";
+       "GOPATH"; "GOROOT"; "NVM_DIR" |]
+
+/// Prefixes that are kept.
+let private allowedPrefixes =
+    [| "DOTNET_"; "GO_"; "JAVA_"; "CARGO_" |]
+
+let private isSafe (key: string) : bool =
+    let up = key.ToUpperInvariant()
+    // Always strip known secret patterns
+    if secretPrefixes |> Array.exists (fun p -> up.StartsWith(p, StringComparison.Ordinal)) then false
+    elif secretSuffixes |> Array.exists (fun s -> up.EndsWith(s, StringComparison.Ordinal)) then false
+    // Keep explicit allow-list
+    elif allowedNames |> Array.contains up then true
+    elif allowedPrefixes |> Array.exists (fun p -> up.StartsWith(p, StringComparison.Ordinal)) then true
+    else false
+
+[<Description("Run a shell command (POSIX sh on Unix, PowerShell on Windows) and return combined stdout/stderr with exit code.")>]
 let bash
     ([<Description("Working directory.")>] cwd: string)
-    ([<Description("Command line to execute (shell syntax allowed).")>] command: string)
-    ([<Description("Timeout in milliseconds (default 120000).")>] timeoutMs: int option)
+    ([<Description("Command line to execute (POSIX sh on Unix, PowerShell on Windows).")>] command: string)
+    ([<Description("Timeout in milliseconds (default 60000 = 60s).")>] timeoutMs: int option)
+    ([<Description("Strip secret env vars before starting the process.")>] cleanEnv: bool option)
+    ([<Description("CancellationToken to interrupt the process early.")>] ct: CancellationToken)
     : string =
-    let timeout = timeoutMs |> Option.defaultValue 120_000
+    let timeout = timeoutMs |> Option.defaultValue 60_000
 
-    let psi = ProcessStartInfo("/bin/zsh", "-lc " + "\"" + command.Replace("\"", "\\\"") + "\"")
+    // Pick shell per OS. -EncodedCommand expects UTF-16-LE base64 — the canonical
+    // way to feed a script to PowerShell from another process without quoting bugs.
+    let psi =
+        if RuntimeInformation.IsOSPlatform OSPlatform.Windows then
+            let encoded =
+                command
+                |> Encoding.Unicode.GetBytes
+                |> Convert.ToBase64String
+            ProcessStartInfo("pwsh", $"-NoProfile -NoLogo -EncodedCommand {encoded}")
+        else
+            ProcessStartInfo("/bin/sh", "-c \"" + command.Replace("\"", "\\\"") + "\"")
     psi.WorkingDirectory <- cwd
     psi.RedirectStandardOutput <- true
     psi.RedirectStandardError <- true
     psi.UseShellExecute <- false
+
+    if cleanEnv = Some true then
+        let env = psi.Environment
+        let toRemove =
+            env.Keys
+            |> Seq.filter (fun k -> not (isSafe k))
+            |> Seq.toArray
+        for k in toRemove do env.Remove k |> ignore
 
     let proc =
         match Process.Start psi |> Option.ofObj with
@@ -32,9 +82,21 @@ let bash
     proc.BeginOutputReadLine()
     proc.BeginErrorReadLine()
 
+    // Register cancellation: kill process tree if token is cancelled before timeout.
+    use _cancelReg =
+        ct.Register(fun () ->
+            try proc.Kill(entireProcessTree = true) with _ -> ()
+            if not (proc.WaitForExit 3000) then
+                try proc.Kill() with _ -> ())
+
     let finished = proc.WaitForExit timeout
-    if not finished then
-        try proc.Kill(true) with _ -> ()
+    if ct.IsCancellationRequested then
+        "<cancelled>\nstdout:\n" + string stdout + "\nstderr:\n" + string stderr
+    elif not finished then
+        // SIGTERM the process tree first, then escalate to SIGKILL after 3s
+        try proc.Kill(entireProcessTree = true) with _ -> ()
+        if not (proc.WaitForExit 3000) then
+            try proc.Kill() with _ -> ()
         "<timeout> after " + string timeout + " ms\nstdout:\n" + string stdout + "\nstderr:\n" + string stderr
     else
         proc.WaitForExit()

@@ -19,7 +19,7 @@ let private jsonEl (json: string) : JsonElement =
 
 [<Fact>]
 let ``ReadFn schema declares path required`` () =
-    let fn = ReadFn.create "/tmp"
+    let fn = ReadFn.create "/tmp" Fugue.Core.Hooks.defaultConfig "test"
     let req =
         fn.JsonSchema.GetProperty("required").EnumerateArray()
         |> Seq.map (fun e -> e.GetString())
@@ -32,7 +32,7 @@ let ``ReadFn invocation reads tmp file`` () =
     Directory.CreateDirectory dir |> ignore
     let path = Path.Combine(dir, "x.txt")
     File.WriteAllText(path, "alpha\nbeta\ngamma\n")
-    let fn = ReadFn.create dir
+    let fn = ReadFn.create dir Fugue.Core.Hooks.defaultConfig "test"
     let args = mkArgs [ "path", box (jsonEl (JsonSerializer.Serialize "x.txt")) ]
     let result = (fn.InvokeAsync(args, CancellationToken.None).AsTask()).Result |> string
     result |> should haveSubstring "alpha"
@@ -41,7 +41,7 @@ let ``ReadFn invocation reads tmp file`` () =
 
 [<Fact>]
 let ``ReadFn missing path raises ArgumentException`` () =
-    let fn = ReadFn.create "/tmp"
+    let fn = ReadFn.create "/tmp" Fugue.Core.Hooks.defaultConfig "test"
     let args = mkArgs []
     let task = fn.InvokeAsync(args, CancellationToken.None).AsTask()
     (fun () -> task.Wait())

@@ -12,29 +12,75 @@ type ToolState =
     | Failed    of name: string * args: string * err: string   * elapsed: TimeSpan
 
 let mutable private colorEnabled = true
+let mutable private bubblesMode  = false
+let mutable private activeTheme  = ""
 
 let initColor (enabled: bool) =
     colorEnabled <- enabled
 
 let isColorEnabled () = colorEnabled
 
-/// Path-aware prompt string for ReadLine. Just visible chars; ANSI not added here
-/// because Console.WriteLine inside ReadLine doesn't go through Spectre.
-let prompt (_cwd: string) : string = "› "
+let initBubbles (enabled: bool) = bubblesMode <- enabled
+let toggleBubbles () = bubblesMode <- not bubblesMode
+let isBubblesMode () = bubblesMode
+
+let mutable private typewriterMode = false
+
+let initTheme (theme: string) = activeTheme <- theme
+let initTypewriter (enabled: bool) = typewriterMode <- enabled
+let isTypewriterMode () = typewriterMode
+let toggleTypewriter () = typewriterMode <- not typewriterMode
+
+let private themeColor (normal: string) (nocturne: string) =
+    if activeTheme = "nocturne" then nocturne else normal
+
+/// Render an IRenderable to ANSI string and split into lines for typewriter output.
+let captureLines (r: IRenderable) : string[] =
+    let sw = new System.IO.StringWriter()
+    let settings = AnsiConsoleSettings()
+    settings.Out <- AnsiConsoleOutput(sw)
+    let console = AnsiConsole.Create settings
+    console.Profile.Width <- max 20 Console.WindowWidth
+    console.Write r
+    sw.ToString().TrimEnd([| '\n' |]).Split('\n')
+
+/// Build the input prompt from the UiConfig template.
+/// Interpolate each character of `text` between two RGB colours and return Spectre markup.
+let private gradientMarkup (r0: int, g0: int, b0: int) (r1: int, g1: int, b1: int) (text: string) : string =
+    let n = max 1 (text.Length - 1)
+    text
+    |> Seq.mapi (fun i c ->
+        let t = float i / float n
+        let r = r0 + int (t * float (r1 - r0))
+        let g = g0 + int (t * float (g1 - g0))
+        let b = b0 + int (t * float (b1 - b0))
+        $"[#{r:x2}{g:x2}{b:x2}]{Markup.Escape (string c)}[/]")
+    |> String.concat ""
+
+/// One-line startup banner: "♩♪♫ Fugue" with blue-to-purple gradient. No-op when colour is off.
+let showBanner () : unit =
+    if not colorEnabled then () else
+    let title = gradientMarkup (59, 130, 246) (168, 85, 247) "Fugue"
+    Surface.markupLine($"[dim]♩♪♫[/] {title}")
+    Surface.lineBreak ()
+
+/// Supports {model} interpolation. Falls back to "› " if template is empty.
+let prompt (ui: Fugue.Core.Config.UiConfig) (modelShort: string) : string =
+    let tmpl = if System.String.IsNullOrWhiteSpace ui.PromptTemplate then "♩ " else ui.PromptTemplate
+    tmpl.Replace("{model}", modelShort)
 
 let userMessage (ui: UiConfig) (text: string) (turn: int) : IRenderable =
     if colorEnabled then
         let escaped = Markup.Escape text
-        let prefix = sprintf "[dim][[%d]][/] " turn
+        let turnTag = $"[dim][[{turn}]][/]"
         match ui.UserAlignment with
         | Left ->
-            Markup(sprintf "[grey]›[/] %s%s" prefix escaped) :> _
+            Markup($"[grey]›[/] {turnTag} {escaped}") :> _
         | Right ->
-            let bubble = Padder(Markup(sprintf "%s%s" prefix escaped)).PadLeft(2).PadRight(2) :> IRenderable
+            let bubble = Padder(Markup($"{escaped} {turnTag}")).PadLeft(2).PadRight(2) :> IRenderable
             Align(bubble, HorizontalAlignment.Right) :> _
     else
-        let prefix = sprintf "[%d] " turn
-        Text(sprintf "> %s%s" prefix text) :> _
+        Text($"> {text} [{turn}]") :> _
 
 /// Plain assistant text during streaming (no markdown parse — buffer is partial).
 let assistantLive (text: string) : IRenderable =
@@ -42,52 +88,79 @@ let assistantLive (text: string) : IRenderable =
 
 /// Final assistant text rendered as markdown.
 let assistantFinal (text: string) : IRenderable =
-    if colorEnabled then MarkdownRender.toRenderable text
+    if colorEnabled then
+        let inner = MarkdownRender.toRenderable text
+        if bubblesMode then
+            let panel = Panel(inner)
+            panel.Border <- BoxBorder.Rounded
+            panel.BorderStyle <- Style.Parse (themeColor "dim" "dim #1e3a5a")
+            panel.Header <- PanelHeader(" Claude ")
+            panel :> IRenderable
+        else inner
     else Text(text) :> _
 
 let cancelled (s: Strings) : IRenderable =
     if colorEnabled then
-        Markup(sprintf "[yellow]⚠ %s[/]" (Markup.Escape s.Cancelled)) :> _
+        Markup($"[yellow]⚠️ {Markup.Escape s.Cancelled}[/]") :> _
     else
         Text(s.Cancelled) :> _
 
 let errorLine (s: Strings) (msg: string) : IRenderable =
     if colorEnabled then
-        Markup(sprintf "[red]⚠ %s:[/] %s" (Markup.Escape s.ErrorPrefix) (Markup.Escape msg)) :> _
+        Markup($"[red]⚠️ {Markup.Escape s.ErrorPrefix}:[/] {Markup.Escape msg}") :> _
     else
-        Text(sprintf "%s: %s" s.ErrorPrefix msg) :> _
+        Text($"{s.ErrorPrefix}: {msg}") :> _
+
+let private termWidth () =
+    let w = Console.WindowWidth
+    if w >= 20 then w else 120
+
+/// Soft-wrap a single line to `width` columns, appending "↩" at each break.
+let private softWrap (width: int) (line: string) : string list =
+    if line.Length <= width then [ line ]
+    else
+        let usable = width - 1  // reserve 1 col for ↩
+        let mutable result = []
+        let mutable i = 0
+        while i < line.Length do
+            let chunkEnd = min line.Length (i + usable)
+            let chunk = line.[i .. chunkEnd - 1]
+            result <- result @ [ if chunkEnd < line.Length then chunk + "↩" else chunk ]
+            i <- chunkEnd
+        result
 
 let private formatElapsed (e: TimeSpan) =
     if e.TotalMilliseconds >= 1000.0 then
-        sprintf "%.1fs" e.TotalSeconds
+        $"{e.TotalSeconds:F1}s"
     else
-        sprintf "%dms" (int e.TotalMilliseconds)
+        $"{int e.TotalMilliseconds}ms"
 
 let private renderToolBody (output: string) : IRenderable =
+    let w = max 20 (termWidth () - 4)  // 2 col PadLeft + 2 col margin
+    let maxLines = if Console.WindowHeight < 24 then 10 else 20
     if colorEnabled then
         if DiffRender.looksLikeDiff output then DiffRender.toRenderable output
         elif output.Contains "```" || output.Contains "**" || output.StartsWith "#" then
             MarkdownRender.toRenderable output
         else
-            // dim plain text, indented
-            let lines = output.Split('\n')
+        match StackTraceRender.tryRender output with
+        | Some r -> r
+        | None ->
+            let wrapped = output.Split('\n') |> Array.collect (softWrap w >> List.toArray)
             let trimmed =
-                if lines.Length > 12 then
-                    Array.append (Array.truncate 12 lines)
-                        [| "+ " + string (lines.Length - 12) + " more lines" |]
-                else lines
-            let rows =
-                trimmed
-                |> Array.map (fun l ->
-                    Markup(sprintf "[dim]%s[/]" (Markup.Escape l)) :> IRenderable)
+                if wrapped.Length > maxLines then
+                    Array.append (Array.truncate maxLines wrapped)
+                        [| $"+ {wrapped.Length - maxLines} more lines" |]
+                else wrapped
+            let rows = trimmed |> Array.map (fun l -> Markup($"[dim]{Markup.Escape l}[/]") :> IRenderable)
             Padder(Rows(rows)).PadLeft(2) :> _
     else
-        let lines = output.Split('\n')
+        let wrapped = output.Split('\n') |> Array.collect (softWrap w >> List.toArray)
         let trimmed =
-            if lines.Length > 12 then
-                Array.append (Array.truncate 12 lines)
-                    [| "+ " + string (lines.Length - 12) + " more lines" |]
-            else lines
+            if wrapped.Length > maxLines then
+                Array.append (Array.truncate maxLines wrapped)
+                    [| $"+ {wrapped.Length - maxLines} more lines" |]
+            else wrapped
         Padder(Rows(trimmed |> Array.map (fun l -> Text(l) :> IRenderable))).PadLeft(2) :> _
 
 /// Extract the first readable line from a raw error string, suppressing .NET stack frames.
@@ -108,34 +181,29 @@ let private summarizeToolError (raw: string) : string =
 
 let toolBullet (s: Strings) (state: ToolState) : IRenderable =
     if colorEnabled then
+        let cYellow = themeColor "yellow"  "#c0a060"
+        let cGreen  = themeColor "green"   "#5a9060"
+        let cRed    = themeColor "red"     "#a04040"
         match state with
         | Running(name, args) ->
-            let header =
-                sprintf "[yellow]●[/] [bold]%s[/]([dim]%s[/])"
-                    (Markup.Escape name) (Markup.Escape args)
-            let body =
-                Padder(Markup(sprintf "[dim]%s[/]" (Markup.Escape s.ToolRunning))).PadLeft(2)
+            let header = $"[{cYellow}]●[/] [bold]{Markup.Escape name}[/]([dim]{Markup.Escape args}[/])"
+            let body   = Padder(Markup($"[dim]{Markup.Escape s.ToolRunning}[/]")).PadLeft(2)
             Rows([ Markup(header) :> IRenderable; body :> _ ]) :> _
         | Completed(name, args, output, elapsed) ->
-            let header =
-                sprintf "[green]●[/] [bold]%s[/]([dim]%s[/]) [dim]%s[/]"
-                    (Markup.Escape name) (Markup.Escape args) (formatElapsed elapsed)
+            let header = $"[{cGreen}]●[/] [bold]{Markup.Escape name}[/]([dim]{Markup.Escape args}[/]) [dim]{formatElapsed elapsed}[/]"
             Rows([ Markup(header) :> IRenderable; renderToolBody output ]) :> _
         | Failed(name, args, err, elapsed) ->
-            let header =
-                sprintf "[red]●[/] [bold]%s[/]([dim]%s[/]) [dim]%s[/]"
-                    (Markup.Escape name) (Markup.Escape args) (formatElapsed elapsed)
-            let body =
-                Padder(Markup(sprintf "[red]%s[/]" (Markup.Escape (summarizeToolError err)))).PadLeft(2)
+            let header = $"[{cRed}]●[/] [bold]{Markup.Escape name}[/]([dim]{Markup.Escape args}[/]) [dim]{formatElapsed elapsed}[/]"
+            let body   = Padder(Markup($"[{cRed}]{Markup.Escape (summarizeToolError err)}[/]")).PadLeft(2)
             Rows([ Markup(header) :> IRenderable; body :> _ ]) :> _
     else
         match state with
         | Running(name, args) ->
-            Rows([ Text(sprintf "* %s(%s)" name args) :> IRenderable
+            Rows([ Text($"* {name}({args})") :> IRenderable
                    Padder(Text(s.ToolRunning)).PadLeft(2) :> _ ]) :> _
         | Completed(name, args, output, elapsed) ->
-            Rows([ Text(sprintf "* %s(%s) %s" name args (formatElapsed elapsed)) :> IRenderable
+            Rows([ Text($"* {name}({args}) {formatElapsed elapsed}") :> IRenderable
                    renderToolBody output ]) :> _
         | Failed(name, args, err, elapsed) ->
-            Rows([ Text(sprintf "* %s(%s) %s" name args (formatElapsed elapsed)) :> IRenderable
-                   Padder(Text(sprintf "Error: %s" (summarizeToolError err))).PadLeft(2) :> _ ]) :> _
+            Rows([ Text($"* {name}({args}) {formatElapsed elapsed}") :> IRenderable
+                   Padder(Text($"Error: {summarizeToolError err}")).PadLeft(2) :> _ ]) :> _

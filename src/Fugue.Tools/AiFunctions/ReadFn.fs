@@ -7,21 +7,24 @@ let private schema = DelegatedFn.parseSchema """{
   "type":"object",
   "properties":{
     "path":  {"type":"string","description":"Absolute or cwd-relative file path"},
-    "offset":{"type":"integer","description":"1-based start line"},
-    "limit": {"type":"integer","description":"Max lines"}
+    "offset":{"type":"integer","description":"1-based start line. For files over 200 lines always specify offset+limit to read only the relevant section."},
+    "limit": {"type":"integer","description":"Max lines to read. Prefer 100-200 for large files. Omit only for small files (<200 lines)."}
   },
   "required":["path"]
 }"""
 
-let create (cwd: string) : AIFunction =
+let create (cwd: string) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionId: string) : AIFunction =
     DelegatedFn.DelegatedAIFunction(
         name        = "Read",
-        description = "Read a text file. Returns lines prefixed with 1-based line numbers.",
+        description = "Read a text file. Returns lines prefixed with 1-based line numbers. For files >200 lines use offset+limit to read only what you need.",
         schema      = schema,
+        hooksConfig = hooksConfig,
+        sessionId   = sessionId,
         invoke      = fun args ct -> task {
             ct.ThrowIfCancellationRequested()
             let path   = Args.getStr     args "path"
             let offset = Args.tryGetInt  args "offset"
             let limit  = Args.tryGetInt  args "limit"
-            return Fugue.Tools.ReadTool.read cwd path offset limit
+            return! Fugue.Tools.RetryPolicy.retryAsync ct (fun () ->
+                System.Threading.Tasks.Task.FromResult(Fugue.Tools.ReadTool.read cwd path offset limit))
         }) :> AIFunction

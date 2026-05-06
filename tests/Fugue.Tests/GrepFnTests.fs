@@ -21,7 +21,7 @@ let ``GrepFn finds matches in files`` () =
     let dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
     Directory.CreateDirectory dir |> ignore
     File.WriteAllText(Path.Combine(dir, "a.txt"), "alpha\nfoo bar\nbeta\n")
-    let fn = GrepFn.create dir
+    let fn = GrepFn.create dir Fugue.Core.Hooks.defaultConfig "test"
     let args = mkArgs [ "pattern", jsonStr "foo" ]
     let out = (fn.InvokeAsync(args, CancellationToken.None).AsTask()).Result |> string
     out |> should haveSubstring "foo"

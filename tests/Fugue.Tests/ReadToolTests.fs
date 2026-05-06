@@ -29,3 +29,15 @@ let ``Read of missing file throws`` () =
     let path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
     (fun () -> Fugue.Tools.ReadTool.read (Path.GetTempPath()) path None None |> ignore)
     |> should throw typeof<FileNotFoundException>
+
+[<Fact>]
+let ``read raises for file exceeding 1 MB limit`` () =
+    let tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName())
+    Directory.CreateDirectory tmpDir |> ignore
+    try
+        let largeFile = Path.Combine(tmpDir, "large.bin")
+        File.WriteAllBytes(largeFile, Array.zeroCreate 1_100_000)
+        (fun () -> Fugue.Tools.ReadTool.read tmpDir "large.bin" None None |> ignore)
+        |> should throw typeof<InvalidOperationException>
+    finally
+        Directory.Delete(tmpDir, true)

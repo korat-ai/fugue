@@ -14,16 +14,19 @@ let private schema = DelegatedFn.parseSchema """{
   "required":["path","old_string","new_string"]
 }"""
 
-let create (cwd: string) : AIFunction =
+let create (cwd: string) (hooksConfig: Fugue.Core.Hooks.HooksConfig) (sessionId: string) : AIFunction =
     DelegatedFn.DelegatedAIFunction(
         name        = "Edit",
         description = "Edit a text file by exact-string replacement.",
         schema      = schema,
+        hooksConfig = hooksConfig,
+        sessionId   = sessionId,
         invoke      = fun args ct -> task {
             ct.ThrowIfCancellationRequested()
             let path       = Args.getStr     args "path"
             let oldStr     = Args.getStr     args "old_string"
             let newStr     = Args.getStr     args "new_string"
             let replaceAll = Args.tryGetBool args "replace_all"
-            return Fugue.Tools.EditTool.edit cwd path oldStr newStr replaceAll
+            return! Fugue.Tools.RetryPolicy.retryAsync ct (fun () ->
+                System.Threading.Tasks.Task.FromResult(Fugue.Tools.EditTool.edit cwd path oldStr newStr replaceAll))
         }) :> AIFunction

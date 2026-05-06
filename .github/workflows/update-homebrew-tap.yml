@@ -1,0 +1,66 @@
+name: Update Homebrew tap
+
+# Triggered by repository_dispatch from the main repo's release workflow.
+# Lives in korat-ai/homebrew-fugue — copy this file there.
+on:
+  repository_dispatch:
+    types: [new-release]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute download URLs and checksums
+        id: meta
+        env:
+          VERSION: ${{ github.event.client_payload.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION_BARE=${VERSION#v}
+          echo "VERSION_BARE=$VERSION_BARE" >> $GITHUB_ENV
+
+          for RID in osx-arm64 linux-x64; do
+            ARCHIVE="fugue-${VERSION_BARE}-${RID}.tar.gz"
+            URL="https://github.com/korat-ai/fugue/releases/download/${VERSION}/${ARCHIVE}"
+            curl -fsSL "$URL" -o "$ARCHIVE"
+            SHA=$(sha256sum "$ARCHIVE" | awk '{print $1}')
+            echo "SHA_${RID//-/_}=$SHA" >> $GITHUB_ENV
+          done
+
+      - name: Update formula
+        run: |
+          sed -i "s|version \".*\"|version \"$VERSION_BARE\"|" Formula/fugue.rb
+
+          # macOS arm64 sha
+          python3 - <<'PY'
+          import re, os
+          formula = open("Formula/fugue.rb").read()
+          # Replace first placeholder sha256 (osx-arm64 block comes first)
+          sha_arm = os.environ["SHA_osx_arm64"]
+          sha_x64 = os.environ["SHA_linux_x64"]
+          parts = formula.split("0000000000000000000000000000000000000000000000000000000000000000")
+          if len(parts) >= 3:
+              formula = parts[0] + sha_arm + parts[1] + sha_x64 + "".join(parts[2:])
+          else:
+              formula = re.sub(r'sha256 "[a-f0-9]{64}"',
+                               lambda m, it=iter([sha_arm, sha_x64]): f'sha256 "{next(it)}"',
+                               formula, count=2)
+          open("Formula/fugue.rb", "w").write(formula)
+          PY
+
+      - name: Commit and open PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "fugue ${{ env.VERSION_BARE }}"
+          branch: "bump/fugue-${{ env.VERSION_BARE }}"
+          title: "fugue ${{ env.VERSION_BARE }}"
+          body: |
+            Automated formula bump for `fugue` ${{ env.VERSION_BARE }}.
+
+            Triggered by [release workflow](https://github.com/korat-ai/fugue/actions/runs/${{ github.event.client_payload.run_id }}).

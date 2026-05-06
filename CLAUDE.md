@@ -1,10 +1,13 @@
 # Fugue
 
-> A small, fast, F#-on-.NET-AOT terminal coding agent.
-> Cold-starts in ~40ms. Single 44MB native binary. Provider-agnostic (Anthropic / OpenAI-compat / Ollama).
-> Inspired by Claude Code's workflow but built for engineers who don't want a 300MB Node tree.
+> A small, fast F# terminal coding agent. **Two binaries, two runtimes:**
+> `fugue-aot` (Native AOT, ~10–50ms start: 50ms file-system cold, 10ms warm) for CI / pipes / `--print`.
+> `fugue` (JIT + ReadyToRun) for interactive REPL — long-lived, JIT warms once.
+> Provider-agnostic (Anthropic / OpenAI-compat / Ollama).
 
 **Repo:** `korat-ai/fugue` · **Status:** MVP shipped (Phase 1–5 closed, 2026-04-30) · **Default branch:** `main`
+
+**🪡 AOT/JIT split locked 2026-05-02** — see [§ AOT vs JIT](#aot-vs-jit--two-binaries) below.  Trim/AOT discipline applies ONLY to `Fugue.Cli.Aot` and its closure. REPL code (`Fugue.Cli`, `Fugue.Surface`) is JIT-only — write idiomatic F# without trim ceremony.
 
 ---
 
@@ -16,20 +19,46 @@ Polyglot backend / systems engineers on **macOS-arm64 and Linux-x64** working in
 
 ```
 src/
-  Fugue.Core/    — domain types, config, localization, system prompt, JSON DTOs (no UI, no network)
-  Fugue.Agent/   — Microsoft.Agents.AI factory + Conversation streaming + provider Discovery
-  Fugue.Tools/   — Read / Write / Edit / Bash / Glob / Grep as no-reflection AIFunction subclasses
-  Fugue.Cli/     — REPL: ReadLine (own ANSI), MarkdownRender (Markdig), DiffRender, Render, StatusBar (scroll-region), Repl, Program
+  Fugue.Core/         — domain types, config, localization, system prompt, JSON DTOs    [AOT-clean]
+  Fugue.Agent/        — Microsoft.Agents.AI factory + streaming + provider Discovery     [AOT-clean]
+  Fugue.Tools/        — Read / Write / Edit / Bash / Glob / Grep, no-reflection          [AOT-clean]
+  Fugue.Cli.Aot/ — entry point for --print / pipe-input mode                        [AOT-only, single-file]
+  Fugue.Surface/      — typed DrawOps + MailboxProcessor surface, MockExecutor           [JIT-only]
+  Fugue.Cli/          — REPL: ReadLine, MarkdownRender, DiffRender, StatusBar, Repl      [JIT-only, ReadyToRun]
 tests/
-  Fugue.Tests/   — xUnit + FsUnit, 87 unit tests
+  Fugue.Tests/        — xUnit + FsUnit, 540+ unit tests
 docs/
   process.md, role-capabilities.md, workflows/  — orchestrator skill operational manual
   superpowers/specs/, superpowers/plans/        — design docs, implementation plans
 ```
 
-**Stack:** F# 9 · .NET 10 · Spectre.Console 0.49 · Markdig 0.41 · `Microsoft.Agents.AI` 1.3 · xUnit + FsUnit · Native AOT (single-file, trimmed).
+**Stack:** F# 9 · .NET 10 · Spectre.Console 0.49 · Markdig 0.41 · `Microsoft.Agents.AI` 1.3 · `System.CommandLine` (parser; F# DSL wrapper) · xUnit + FsUnit.
 
 **Authoritative spec:** `docs/superpowers/specs/2026-04-29-fugue-spectre-aot-pivot.md`.
+
+## AOT vs JIT — two binaries
+
+Fugue ships as **two distributions** with different runtime tradeoffs. Pivot locked 2026-05-02.
+
+| Binary             | Runtime                    | Cold start | Use case                                                       |
+|--------------------|----------------------------|-----------:|----------------------------------------------------------------|
+| `fugue-aot`   | **Native AOT** single-file | 10–50 ms   | CI / scripting / pipe-input / `--print` / `-p` flag            |
+| `fugue`            | **JIT + ReadyToRun**       | ~150 ms    | Interactive REPL / TUI sessions (long-lived, JIT warms once)   |
+
+**Headless trigger** (decided in one place, `Fugue.Cli.Aot/Program.fs`):
+```fsharp
+let isHeadless (argv: string[]) : bool =
+    argv |> Array.exists (fun a -> a = "--print" || a = "-p")
+    || Console.IsInputRedirected
+```
+
+**Why we split:** keeping all code AOT-clean cost too much — binary 47MB vs 35MB target; constant trim-warning ceremony; `[<DynamicDependency>]` and source-gen workarounds; whole categories of NuGet packages off-limits. Interactive REPL stays alive for hours, so JIT pays its warmup once. Headless runs per-invocation, so its cold start is critical and AOT stays.
+
+**What this means for contributors:**
+- Code in `Fugue.Cli` (REPL) and `Fugue.Surface` (TUI primitives) is **JIT-only**. Write idiomatic F# without trim ceremony — reflection, dynamic loading, full Spectre features all OK.
+- Code in `Fugue.Core`, `Fugue.Tools`, `Fugue.Agent`, `Fugue.Cli.Aot` is **AOT-clean**. Same constraints as before for these modules: no `MakeGenericMethod` outside annotated boundaries, STJ source-gen for new DTOs, etc.
+- New features that don't fit AOT (MCP discovery, plugins, dynamic theme loading) live in `Fugue.Cli` / `Fugue.Surface` and are **interactive-only by design**. If a feature can't pass AOT publish, it doesn't belong in the headless surface — that's a deliberate signal, not a bug.
+- Argument parsing uses `System.CommandLine` (AOT source-gen friendly) wrapped in a thin F# DSL (`Cli.command "print" (fun args -> ...)`). One parser, both binaries.
 
 ## Conventions & red lines
 
@@ -38,10 +67,25 @@ These are **hard rules**. Don't ask, just follow.
 - **F# only under `src/`.** No C# files. C# is allowed only as external NuGet dependencies.
 - **`.slnx`, not `.sln`.** Modern .NET solution format.
 - **No `Co-Authored-By` trailers in commits.**
-- **`TreatWarningsAsErrors=true`** stays. **No `<NoWarn>` for our own code** — fix the underlying issue. `<NoWarn>` is allowed only for known third-party trim/AOT warnings (`IL2026`, `IL3050`, `IL3053`, `IL2104`).
-- **Every PR must produce an AOT-clean publish** (`dotnet publish src/Fugue.Cli -c Release -r osx-arm64`). No regressions in `Build succeeded. 0 Error(s).`
+- **`TreatWarningsAsErrors=true`** stays in `Fugue.Core`, `Fugue.Tools`, `Fugue.Agent`, `Fugue.Cli.Aot` (the AOT closure). For these, `<NoWarn>` is allowed only for known third-party trim/AOT warnings (`IL2026`, `IL3050`, `IL3053`, `IL2104`). For `Fugue.Cli` / `Fugue.Surface` (JIT-only): `TreatWarningsAsErrors=true` still on, but trim/AOT warnings simply don't appear there.
+- **Every PR must produce an AOT-clean publish of the headless binary** (`dotnet publish src/Fugue.Cli.Aot -c Release -r osx-arm64`). The interactive `Fugue.Cli` only needs `dotnet build` + `dotnet test` to pass — it doesn't get AOT-published.
+- **Every 10 commits: full AOT publish + smoke-test the headless binary locally:**
+  ```
+  dotnet publish src/Fugue.Cli.Aot -c Release -r osx-arm64
+  src/Fugue.Cli.Aot/bin/Release/net10.0/osx-arm64/publish/fugue-aot --version
+  src/Fugue.Cli.Aot/bin/Release/net10.0/osx-arm64/publish/fugue-aot --help
+  # Phase 3.2 will add: fugue-aot --print "hello"  (headless agent driver)
+  ```
+  `dotnet build` / `dotnet test` run under JIT and will NOT catch AOT-specific failures in the headless closure (e.g. `MakeGenericMethod`, missing native code). Only the published native binary reveals them.
 - **`git status` stays clean.** No stray files, no half-finished `.bak`/`.tmp`. Tree is always merge-ready.
 - **No tests-on-mocks for things that hit the real boundary.** Tools tests run against `tmp/` directories; config tests isolate `HOME`.
+- **Never squash-merge PRs. Use `--merge` (merge commit) or `--rebase`.** Squash rewrites SHAs, which breaks stacked PRs (downstream branches lose their common history, GitHub auto-closes them when the base branch is deleted). Merge commits preserve original SHAs so downstream PRs see their predecessors as "already applied" and continue cleanly. Default: `gh pr merge <N> --merge --delete-branch`. Past incident: squash-merging Phase 1.2a auto-closed PR #905 and #906 (had to recreate as #907 + #908). Never repeat.
+- **Semver release policy:**
+  - **New features → minor bump** (e.g. `0.1.0` → `0.2.0`). Default for any user-visible feature, command, UX change.
+  - **Bug fixes → patch bump** (e.g. `0.2.0` → `0.2.1`). Only when no new behavior, just fixing existing.
+  - **Breaking changes → major bump** (e.g. `0.x` → `1.0`). Config schema changes, removed flags, changed CLI defaults — require user migration.
+  - Don't retag the same version after fixes — push a new patch.
+- **🚨 NEW SLASH COMMANDS: PROMPT-FIRST, CODE-LAST. THIS IS NON-NEGOTIABLE.** When the user asks for a new `/some-command`, the **first question** is always: *"Can this be solved by sending a smart prompt to the LLM, with zero F# code?"* If yes — implement it as a **prompt template**, not as a hardcoded handler in `Repl.fs`. Hardcoded handlers cost compile time, bloat the binary, bloat `Repl.fs` (already 2800+ lines), and require a release for every prompt tweak. **Code is the last resort, not the default.** Only write F# code when the command genuinely needs side effects (reading files, running shell, mutating session state) that can't be expressed as a prompt. Examples: `/scaffold cqrs <Cmd>`, `/derive codec <Type>`, `/refactor pipeline` — these are pure prompts and **should not exist as code**. They should live in `~/.fugue/prompts/<name>.md` (with embedded defaults shipped in the binary). Past mistake: we burned tokens and code on commands that were just "send X prompt to agent" — never repeat. **When in doubt, write a `.md` template, not F# code.**
 
 ## Decision-making pattern (CEO escalation)
 
@@ -70,16 +114,27 @@ Always confirm with the user before:
 - Rotating or regenerating API keys / secrets
 - Sending anything outside the local machine (paste-bins, telemetry endpoints, gists)
 
-## Status (2026-04-30)
+## Status (2026-05-02)
 
-**Phase 1–5 closed.** Acceptance criteria met (with one accepted deferral on binary size — 44MB vs 35MB target; root cause: `FSharp.Core` + `System.Text.Json` rooted via `TrimmerRootAssembly`; mitigation in v0.2 via STJ source-gen for F# DTOs).
+**Phase 1–5 closed.** Phase 3.1 of AOT/JIT split landed locally: separate `Fugue.Cli.Aot` project (PR #938) — empirical proof that the 35 MB README target is reachable.
 
 Verified metrics:
-- Binary: **44 MB** osx-arm64 single-file AOT
-- Cold start: **40 ms**
-- Peak RSS: **47 MB**
-- Tests: **87/87** pass
+- **`fugue-aot` (Phase 3.1, headless AOT)**: **13 MB** osx-arm64 single-file. Cold-start 8–23 ms, 0 trim warnings. References Core+Tools+Agent only (no Surface, no Cli, no Spectre, no Markdig). Currently a stub — `--version`, `--help`, `version` subcommand, no-args exit-2. Phase 3.2 will add `--print` headless agent driver.
+- **`fugue` (Phase 1–5, current REPL)**: **48 MB** osx-arm64 single-file AOT. Cold-start ~150 ms. Includes Cli + Surface + Spectre + Markdig + ReadLine. Phase 4 (#929) migrates this to JIT/ReadyToRun.
+- Earlier "40–47 MB" measurements referred to `fugue` before the split decision; superseded.
+- Peak RSS (`fugue`): **36.7 MB** (re-measured 2026-05-02). `fugue-aot` RSS not yet measured (stub does too little to be representative).
+- Tests: **551/551** pass on `feat/cli-args-dsl` (#930), **540/540** on main
 - E2E smoke: passed against LM Studio (OpenAI-compat); not yet against real Anthropic / OpenAI cloud / Ollama
+- Multiple PRs in review (batch shipped 2026-04-30):
+  - PR #221: `!cmd` shell shortcut, `/new` session reset, Ctrl+L, 8 UX/bug fixes
+  - PR #321: elapsed time display in status bar (#253)
+  - PR #335: `/tools` command + `/clear-history` (#258, #240)
+  - PR #350: hierarchical FUGUE.md loading cwd→git root + `~/.fugue/FUGUE.md` (#217)
+  - PR #356: `/short` and `/long` verbosity commands (#236)
+  - PR #357: `/summary` session summary command (#209)
+  - PR #166: input history (Up/Down) + word cursor (pending)
+  - #898: `/model set` autocomplete — `ModelDiscovery` module fetches model list from active provider at session start; Tab-cycles through matching names in `/model set <prefix>` context (shipped 2026-05-01)
+  - #901 Phase 2: `/turns` interactive turn picker (arrow-key navigation + Enter to dispatch `/show N`)
 
 Live binary: `src/Fugue.Cli/bin/Release/net10.0/osx-arm64/publish/fugue`
 
@@ -110,7 +165,7 @@ gh issue list -R korat-ai/fugue --label integrations
 
 **Context for what each label group looks like (pre-MVP-close, may have shipped since):**
 
-- *UX & input*: slash commands beyond `/help`+`/clear`+`/exit`, `@file` injection, `!shell` shortcut, input history, ghost suggestions, themes, vim mode, compact tool output, batch labels for parallel tool calls
+- *UX & input*: slash commands beyond `/help`+`/clear`+`/new`+`/exit`, `@file` injection, input history, ghost suggestions, themes, vim mode, compact tool output, batch labels for parallel tool calls
 - *Safety*: approval modes (Plan/Default/Auto-Edit/YOLO with Shift+Tab cycle, covers spec's v0.2 permission-prompt), file-modification checkpointing + `/restore`
 - *Context & sessions*: `FUGUE.md` per-project context (loaded on session start), `/init` to bootstrap it, persistent sessions, context-window % indicator, `/compress` history summarisation
 - *Integrations*: MCP client, LSP integration, headless / non-interactive mode for CI
@@ -136,7 +191,7 @@ This project's domain emphasises:
 
 - **`AI`, `LLM`, `Claude`, `GPT`, `Ollama`, `Anthropic`, `OpenAI`** — agent framework integration is the core feature
 - **`CLI`, `TUI`, `terminal`, `ANSI`, `scroll region`** — UX is terminal-first
-- **`AOT`, `trimming`, `IL2026`, `IL3050`, `single-file`** — deployment constraints affect every code change
+- **`AOT`, `trimming`, `IL2026`, `IL3050`, `single-file`** — deployment constraints affect headless-closure code (`Fugue.Core` / `Fugue.Tools` / `Fugue.Agent` / `Fugue.Cli.Aot`); REPL code (`Fugue.Cli` / `Fugue.Surface`) is JIT-only and free of these
 - **`F#`, `dotnet`, `.NET 10`** — language/runtime is fixed; no polyglot mixing
 - **`performance`, `cold start`, `RSS`, `binary size`** — non-functional targets are first-class
 - **`localization`, `i18n`, `en`, `ru`** — project ships in two languages from day one
