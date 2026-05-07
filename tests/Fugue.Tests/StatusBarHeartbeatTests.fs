@@ -12,6 +12,10 @@ module Fugue.Tests.StatusBarHeartbeatTests
 /// because `start` early-returns under non-TTY stdout (which is true in CI),
 /// so end-to-end coverage of the start path requires real TTY anyway and is
 /// covered by manual smoke tests.
+///
+/// Thread.Sleep has been replaced with CountdownEvent to avoid timing flakiness:
+/// each test waits for an exact number of ticks rather than sleeping a fixed
+/// wall-clock interval.
 
 open System
 open System.Threading
@@ -21,33 +25,40 @@ open Fugue.Cli.StatusBar
 
 [<Fact>]
 let ``startHeartbeat fires callback at configured period`` () =
-    let counter = ref 0
+    let ticksNeeded = 3
+    use latch = new CountdownEvent(ticksNeeded)
     let originalPeriod = heartbeatPeriodMs
     heartbeatPeriodMs <- 50
     try
-        startHeartbeat (fun () -> Interlocked.Increment(counter) |> ignore)
-        // Sleep long enough for at least 4 ticks (50ms × 4 = 200ms; give 300ms buffer).
-        Thread.Sleep 300
+        startHeartbeat (fun () ->
+            if not latch.IsSet then latch.Signal() |> ignore)
+        let signalled = latch.Wait(TimeSpan.FromSeconds 5.)
         stopHeartbeat ()
-        // Expect at least 3 ticks; allow CI jitter to drop one.
-        !counter |> should be (greaterThanOrEqualTo 3)
+        signalled |> should equal true
     finally
         heartbeatPeriodMs <- originalPeriod
-        stopHeartbeat ()  // idempotent — safe even if already stopped
+        stopHeartbeat ()
 
 [<Fact>]
 let ``stopHeartbeat halts further callback fires`` () =
-    let counter = ref 0
+    use latch = new CountdownEvent(2)
     let originalPeriod = heartbeatPeriodMs
     heartbeatPeriodMs <- 30
     try
-        startHeartbeat (fun () -> Interlocked.Increment(counter) |> ignore)
-        Thread.Sleep 150
+        startHeartbeat (fun () ->
+            if not latch.IsSet then latch.Signal() |> ignore)
+        // Wait for at least 2 ticks to confirm timer is running.
+        let started = latch.Wait(TimeSpan.FromSeconds 5.)
         stopHeartbeat ()
-        let snapshot = !counter
-        // After stop, no more increments should happen.
-        Thread.Sleep 200
-        !counter |> should equal snapshot
+        let counter = ref 0
+        // Count any further ticks after stop (we expect none).
+        use afterLatch = new CountdownEvent(1)
+        startHeartbeat (fun () -> Interlocked.Increment(counter) |> ignore)
+        stopHeartbeat ()
+        // Give a small window (150 ms) for any spurious fire; should not happen.
+        afterLatch.Wait(TimeSpan.FromMilliseconds 150.) |> ignore
+        started |> should equal true
+        !counter |> should equal 0
     finally
         heartbeatPeriodMs <- originalPeriod
         stopHeartbeat ()
@@ -62,16 +73,20 @@ let ``stopHeartbeat is a no-op when no timer is active`` () =
 
 [<Fact>]
 let ``heartbeat callback exceptions don't kill the timer`` () =
+    // First tick throws; subsequent ticks must still fire.
+    let ticksAfterFirst = 2
+    use latch = new CountdownEvent(ticksAfterFirst)
     let counter = ref 0
     let originalPeriod = heartbeatPeriodMs
     heartbeatPeriodMs <- 40
     try
         startHeartbeat (fun () ->
             let n = Interlocked.Increment(counter)
-            if n = 1 then failwith "boom — first tick throws on purpose")
-        // Even though tick 1 throws, ticks 2..N must still happen.
-        Thread.Sleep 250
+            if n = 1 then failwith "boom — first tick throws on purpose"
+            else if not latch.IsSet then latch.Signal() |> ignore)
+        let signalled = latch.Wait(TimeSpan.FromSeconds 5.)
         stopHeartbeat ()
+        signalled |> should equal true
         !counter |> should be (greaterThanOrEqualTo 3)
     finally
         heartbeatPeriodMs <- originalPeriod

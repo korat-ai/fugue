@@ -68,6 +68,9 @@
     <Compile Include="SurfaceMockExecutorTests.fs" />
     <Compile Include="PickerRenderTests.fs" />
     <Compile Include="PickerPropertyTests.fs" />
+    <Compile Include="PathSafetyPropertyTests.fs" />
+    <Compile Include="ConfigRoundtripPropertyTests.fs" />
+    <Compile Include="ModelSchedulePropertyTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
@@ -82,6 +85,7 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageReference Include="FsUnit.xUnit" Version="7.1.1" />
     <PackageReference Include="FsCheck.Xunit" Version="3.*" />
+    <PackageReference Include="coverlet.collector" Version="6.*" />
     <PackageReference Include="Spectre.Console.Testing" Version="0.49.*" />
   </ItemGroup>
   <ItemGroup>
