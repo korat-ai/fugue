@@ -26,7 +26,7 @@ let parseOllamaEmbedResponse (json: string) : float32[] option =
         match Option.ofObj (JsonNode.Parse json) with
         | None -> None
         | Some root ->
-            match Option.ofObj root.["embedding"] with
+            match Option.ofObj root["embedding"] with
             | None -> None
             | Some node ->
                 match (node :> obj) with
@@ -46,7 +46,7 @@ let parseLmStudioEmbedResponse (json: string) : float32[] option =
         match Option.ofObj (JsonNode.Parse json) with
         | None -> None
         | Some root ->
-            match Option.ofObj root.["data"] with
+            match Option.ofObj root["data"] with
             | None -> None
             | Some dataNode ->
                 match (dataNode :> obj) with
