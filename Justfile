@@ -39,12 +39,14 @@ publish-aot: build
 # Publish both binaries
 publish: publish-jit publish-aot
 
-# Build JIT binary and launch interactive REPL
-run: publish-jit
+# Build JIT binary and launch interactive REPL (skips test projects)
+run:
+    dotnet publish src/Fugue.Cli -c Release -r {{rid}}
     {{jit_bin}}
 
-# Build AOT binary and launch it
-run-aot: publish-aot
+# Build AOT binary and launch it (skips test projects)
+run-aot:
+    dotnet publish src/Fugue.Cli.Aot -c Release -r {{rid}}
     {{aot_bin}}
 
 # Smoke-test the AOT binary
