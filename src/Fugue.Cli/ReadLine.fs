@@ -85,6 +85,8 @@ type S = {
     mutable RowsBelowCursor: int   // # of rows from cursor's final position down to last rendered row
     mutable HistoryIdx:      int                        // -1 = not browsing; 0..n-1 = browsing
     mutable SavedBuffer:     ResizeArray<char> option   // snapshot before first Up press
+    mutable SuggestionIdx:   int                        // -1 = none; 0..n-1 = highlighted suggestion
+    mutable SuggestionSaved: string option              // buffer text before first Down in slash mode
     PromptText:              string
     PromptVisLen:            int
     HintWhenArmed:           string
@@ -411,13 +413,17 @@ let internal redraw (st: S) =
                 writeRaw $"\n\x1b[2m  … {matches.Length - maxSuggestions} more (keep typing)\x1b[0m"
                 st.LinesRendered <- st.LinesRendered + 1
         else
-            // Show inline slash command suggestions, capped at maxSuggestions to keep
-            // the rendered area bounded (prevents terminal scroll from corrupting
-            // cursor-tracking in eraseLines on the next redraw).
-            let matches = st.SlashHelp |> List.filter (fun (name, _) -> name.StartsWith(bufStr2))
+            // Show inline slash command suggestions, capped at maxSuggestions.
+            // When navigating with arrows, filter by the saved prefix (not the filled buffer text).
+            let filterPrefix = st.SuggestionSaved |> Option.defaultValue bufStr2
+            let matches = st.SlashHelp |> List.filter (fun (name, _) -> name.StartsWith(filterPrefix))
             let maxSuggestions = 8
-            for (name, desc) in matches |> List.truncate maxSuggestions do
-                writeRaw ("\n\x1b[2m  " + name + "  " + desc + "\x1b[0m")
+            let visible = matches |> List.truncate maxSuggestions
+            for i, (name, desc) in visible |> List.indexed do
+                if i = st.SuggestionIdx then
+                    writeRaw ("\n  › " + name + "  \x1b[2m" + desc + "\x1b[0m")
+                else
+                    writeRaw ("\n\x1b[2m    " + name + "  " + desc + "\x1b[0m")
                 st.LinesRendered <- st.LinesRendered + 1
             if matches.Length > maxSuggestions then
                 writeRaw $"\n\x1b[2m  … {matches.Length - maxSuggestions} more (keep typing)\x1b[0m"
@@ -465,6 +471,8 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
           RowsBelowCursor = 0
           HistoryIdx      = -1
           SavedBuffer     = None
+          SuggestionIdx   = -1
+          SuggestionSaved = None
           PromptText      = prompt
           PromptVisLen    = visLen
           HintWhenArmed   = strings.ExitHint
@@ -507,9 +515,37 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
             // Console.ReadKey is blocking; we accept that — cancellation in this
             // path is not expected in normal flow (Ctrl+C while reading is a wipe).
             let k = Console.ReadKey(intercept = true)
+            // Slash-suggestion navigation: Up/Down when buffer starts with '/' (not /model set).
+            // Takes priority over history browsing while the suggestion list is visible.
+            let inSlashMode () =
+                st.Buffer.Count > 0 && st.Buffer.[0] = '/' &&
+                not (String(st.Buffer.ToArray()).StartsWith "/model set ")
+            if k.Key = ConsoleKey.DownArrow && inSlashMode () then
+                tabMatches <- [||]; tabIndex <- -1
+                let saved = st.SuggestionSaved |> Option.defaultWith (fun () -> String(st.Buffer.ToArray()))
+                if st.SuggestionIdx = -1 then st.SuggestionSaved <- Some saved
+                let slashMatches = st.SlashHelp |> List.filter (fun (n, _) -> n.StartsWith saved) |> List.truncate 8
+                if slashMatches.Length > 0 then
+                    st.SuggestionIdx <- (st.SuggestionIdx + 1) % slashMatches.Length
+                    let (name, _) = slashMatches.[st.SuggestionIdx]
+                    st.Buffer.Clear(); st.Buffer.AddRange(name.ToCharArray()); st.Cursor <- st.Buffer.Count
+                    redraw st
+            elif k.Key = ConsoleKey.UpArrow && st.SuggestionIdx >= 0 then
+                tabMatches <- [||]; tabIndex <- -1
+                let saved = st.SuggestionSaved |> Option.defaultValue ""
+                let slashMatches = st.SlashHelp |> List.filter (fun (n, _) -> n.StartsWith saved) |> List.truncate 8
+                if st.SuggestionIdx = 0 then
+                    st.SuggestionIdx <- -1; st.SuggestionSaved <- None
+                    st.Buffer.Clear(); st.Buffer.AddRange(saved.ToCharArray()); st.Cursor <- st.Buffer.Count
+                    redraw st
+                else
+                    st.SuggestionIdx <- st.SuggestionIdx - 1
+                    let (name, _) = slashMatches.[st.SuggestionIdx]
+                    st.Buffer.Clear(); st.Buffer.AddRange(name.ToCharArray()); st.Cursor <- st.Buffer.Count
+                    redraw st
             // Shift+Tab is a SEPARATE intent (cycle approval mode) — handle it
             // through applyKey before the plain-Tab completion branch grabs it.
-            if k.Key = ConsoleKey.Tab && k.Modifiers.HasFlag ConsoleModifiers.Shift then
+            elif k.Key = ConsoleKey.Tab && k.Modifiers.HasFlag ConsoleModifiers.Shift then
                 tabMatches <- [||]
                 tabIndex   <- -1
                 match applyKey k st with
@@ -555,9 +591,11 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
                         redraw st
                 // Tab on empty / non-slash input: ignore.
             else
-                // Any non-Tab key resets the completion cycle.
+                // Any non-Tab/non-arrow key resets both completion and suggestion cycles.
                 tabMatches <- [||]
                 tabIndex   <- -1
+                st.SuggestionIdx   <- -1
+                st.SuggestionSaved <- None
                 let c = k.KeyChar
 
                 // ── Paste state machine ───────────────────────────────────────
