@@ -39,6 +39,14 @@ publish-aot: build
 # Publish both binaries
 publish: publish-jit publish-aot
 
+# Build JIT binary and launch interactive REPL
+run: publish-jit
+    {{jit_bin}}
+
+# Build AOT binary and launch it
+run-aot: publish-aot
+    {{aot_bin}}
+
 # Smoke-test the AOT binary
 smoke-aot: publish-aot
     {{aot_bin}} --version
