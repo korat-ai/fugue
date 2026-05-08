@@ -527,6 +527,25 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
                 tabMatches <- [||]; tabIndex <- -1
                 st.SuggestionIdx <- st.SuggestionIdx - 1
                 redraw st
+            // Enter with a highlighted suggestion: fill buffer with selected command, then submit.
+            elif k.Key = ConsoleKey.Enter && st.SuggestionIdx >= 0 && inSlashMode () then
+                let currentInput = String(st.Buffer.ToArray())
+                let slashMatches = st.SlashHelp |> List.filter (fun (n, _) -> n.StartsWith currentInput) |> List.truncate 8
+                if st.SuggestionIdx < slashMatches.Length then
+                    let (name, _) = slashMatches.[st.SuggestionIdx]
+                    st.Buffer.Clear(); st.Buffer.AddRange(name.ToCharArray()); st.Cursor <- st.Buffer.Count
+                st.SuggestionIdx <- -1
+                tabMatches <- [||]; tabIndex <- -1
+                // Fall through to normal Submit by re-processing Enter via applyKey.
+                eraseRendered ()
+                let submitted = String(st.Buffer.ToArray())
+                let normalized = InputSanitize.normalize submitted
+                if not (String.IsNullOrWhiteSpace normalized) then
+                    if historyStore.Count = 0 || historyStore.[historyStore.Count - 1] <> normalized then
+                        historyStore.Add normalized
+                st.HistoryIdx <- -1
+                st.SavedBuffer <- None
+                result <- ValueSome (Some normalized)
             // Shift+Tab is a SEPARATE intent (cycle approval mode) — handle it
             // through applyKey before the plain-Tab completion branch grabs it.
             elif k.Key = ConsoleKey.Tab && k.Modifiers.HasFlag ConsoleModifiers.Shift then
