@@ -174,5 +174,5 @@ let ``footer row contains navigation hint text`` () =
     let term = run state
     let footer = MockExecutor.lineAt (footerRow 3) term
     footer |> should haveSubstring "↑/↓"
-    footer |> should haveSubstring "Enter"
+    footer |> should haveSubstring "Tab/Enter"
     footer |> should haveSubstring "Esc"

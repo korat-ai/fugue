@@ -88,7 +88,7 @@ let renderState (state: PickerState) : DrawOp list =
             yield DrawOp.Append ""
 
         // Footer help row
-        yield DrawOp.Append "  ↑/↓ navigate · type to filter · Backspace · Enter select · Esc cancel"
+        yield DrawOp.Append "  ↑/↓ navigate · type to filter · Backspace · Tab/Enter select · Esc cancel"
     }
 
 // ---------------------------------------------------------------------------
@@ -215,7 +215,7 @@ let pick (title: string) (items: (string * string) list) (initialIdx: int) : int
                     currentIdx <- fn - 1
                     scrollIntoView ()
                     redraw ()
-            | ConsoleKey.Enter ->
+            | ConsoleKey.Enter | ConsoleKey.Tab ->
                 if filteredItems.Length > 0 then
                     let (_, _, origIdx) = filteredItems.[currentIdx]
                     picked <- Some origIdx
