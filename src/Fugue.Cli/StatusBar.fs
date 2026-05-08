@@ -485,11 +485,13 @@ let start (initialCwd: string) (initialCfg: AppConfig) : unit =
     let width = Console.WindowWidth
     compactMode <- height < 24 || width < 60
     if not compactMode then
-        // reserve three bottom lines: thinking indicator + 2 status lines.
-        // Scroll region becomes 1..(h-3); cursor parks at the last scrollable line.
-        Surface.write "\n\n\n"
-        writeRaw ("\x1b[1;" + string (height - 3) + "r")
-        writeRaw ("\x1b[" + string (height - 3) + ";1H")
+        // Reserve four bottom rows: input line + thinking indicator + 2 status lines.
+        // Scroll region becomes 1..(h-4); cursor parks at the last scrollable line.
+        // Input row (h-3) is outside the scroll region — it never scrolls.
+        Surface.write "\n\n\n\n"
+        writeRaw ("\x1b[1;" + string (height - 4) + "r")
+        writeRaw ("\x1b[" + string (height - 4) + ";1H")
+        ReadLine.setFixedRow (height - 3)
         refresh ()
         // No idle heartbeat: each event-driven refresh (post-stream, post-tool,
         // /model set, etc.) is enough. Periodic ticks added cursor save/restore
@@ -501,12 +503,14 @@ let stop () : unit =
     if not active || not (Render.isColorEnabled ()) then () else
     // Stop the heartbeat first — no point firing more refreshes while we erase.
     stopHeartbeat ()
+    ReadLine.clearFixedRow ()
     if not compactMode then
         let height = Console.WindowHeight
-        // Erase the 3 reserved rows and reset scroll region.
+        // Erase the 4 reserved rows (input + thinking + 2 status) and reset scroll region.
         // If the Surface agent is running, use ExecuteAndAck so the terminal is
         // fully clean before Program.fs exits and the agent is shut down.
         let eraseOps = [
+            DrawOp.EraseLine (Region.InputArea 0)
             DrawOp.EraseLine Region.ThinkingLine
             DrawOp.EraseLine Region.StatusBarLine1
             DrawOp.EraseLine Region.StatusBarLine2
@@ -514,13 +518,12 @@ let stop () : unit =
         ]
         match surfaceAgent with
         | Some agent ->
-            // Synchronous barrier: wait for the agent to flush the erase ops
-            // before we proceed to shut it down.
             agent.PostAndAsyncReply(fun ch -> SurfaceMessage.ExecuteAndAck(eraseOps, ch))
             |> Async.RunSynchronously
         | None ->
-            // Fallback: erase directly (headless / tests / no agent wired).
-            writeRaw "\x1b[r"          // reset scroll region
+            writeRaw "\x1b[r"
+            writeRaw ("\x1b[" + string (height - 3) + ";1H")
+            writeRaw "\x1b[2K"
             writeRaw ("\x1b[" + string (height - 2) + ";1H")
             writeRaw "\x1b[2K"
             writeRaw ("\x1b[" + string (height - 1) + ";1H")

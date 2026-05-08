@@ -341,6 +341,12 @@ let applyPastedText (text: string) (s: S) : unit =
 let inline private writeRaw (s: string) = Surface.write s
 let inline private flushBarrier () = Surface.flush ()
 
+// When set, readline renders at this absolute 1-based terminal row instead of following the cursor.
+// Set by StatusBar.start; cleared by StatusBar.stop.
+let mutable private fixedRow : int option = None
+let setFixedRow (row: int) = fixedRow <- Some row
+let clearFixedRow ()       = fixedRow <- None
+
 /// Clear `count` rows starting at the cursor's current row and moving downward.
 /// Cursor is left at column 0 of the top row of the cleared area.
 /// Uses per-line \x1b[K so it does NOT cross the scroll region (status bar stays).
@@ -358,6 +364,22 @@ let private eraseLines (count: int) : unit =
         writeRaw "\r"
 
 let internal redraw (st: S) =
+    match fixedRow with
+    | Some row ->
+        // Fixed-row mode: always render on the reserved input row using absolute addressing.
+        // No eraseLines needed — \x1b[2K clears the whole line in-place.
+        // Suggestions are suppressed (they would overflow into the status bar area).
+        writeRaw $"\x1b[{row};1H\x1b[2K"
+        writeRaw st.PromptText
+        if st.Buffer.Count = 0 && st.Placeholder <> "" && st.ColorEnabled then
+            writeRaw ("\x1b[2m" + st.Placeholder + "\x1b[0m")
+        else
+            writeRaw (String(st.Buffer.ToArray()))
+        let col = st.PromptVisLen + (min st.Cursor st.Buffer.Count) + 1
+        writeRaw $"\x1b[{row};{col}H"
+        st.LinesRendered   <- 1
+        st.RowsBelowCursor <- 0
+    | None ->
     // 1. cursor up to start of our previous render, clear per-line (not full screen end)
     // Before erasing, move cursor to the bottom of the previously-rendered area so
     // eraseLines (which walks UP count-1 rows) starts from the correct position.
@@ -492,10 +514,13 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
         let mutable escapeBuf   : ResizeArray<char>      = ResizeArray<char>()
 
         let eraseRendered () =
-            if st.RowsBelowCursor > 0 then
-                writeRaw ("\x1b[" + string st.RowsBelowCursor + "B")
-            eraseLines st.LinesRendered
-            st.RowsBelowCursor <- 0
+            match fixedRow with
+            | Some row -> writeRaw $"\x1b[{row};1H\x1b[2K"
+            | None ->
+                if st.RowsBelowCursor > 0 then
+                    writeRaw ("\x1b[" + string st.RowsBelowCursor + "B")
+                eraseLines st.LinesRendered
+                st.RowsBelowCursor <- 0
 
         // Flush accumulated escape prefix as normal key events (no-op chars go through applyKey).
         let flushEscape () =
