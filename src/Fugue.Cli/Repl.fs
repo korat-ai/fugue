@@ -561,9 +561,10 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
     let sessionFilePath = Fugue.Core.SessionPersistence.sessionPath cwd currentSessionId
     Fugue.Core.SessionPersistence.appendRecord sessionFilePath
         (Fugue.Core.SessionRecord.SessionStart(DateTimeOffset.UtcNow, cwd, modelName, providerName))
-    // Pre-fill for the next ReadLine call. Used by /menu and similar pickers
-    // that hand a partial command back to the user for completion.
+    // Pre-fill for the next ReadLine call (Tab in picker — partial template for completion).
     let mutable nextInputPrefill : string = ""
+    // Bypass ReadLine entirely — dispatch this string as if the user submitted it (Enter in picker).
+    let mutable nextInputDispatch : string option = None
     // Model name cache for /model set autocomplete.
     // Populated in background at session start; re-fetched on provider change via /model set.
     // cachedModelsStale flips true when a fetch returns an empty list (HTTP failure
@@ -742,6 +743,11 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 let i = m.LastIndexOf '/'
                 if i >= 0 && i + 1 < m.Length then m.Substring(i + 1) else m
             let! lineOpt =
+                match nextInputDispatch with
+                | Some cmd ->
+                    nextInputDispatch <- None
+                    System.Threading.Tasks.Task.FromResult(Some cmd)
+                | None ->
                 match Macros.dequeueStep() with
                 | Some step ->
                     Surface.writeRenderable(Markup($"[dim]▶ {Markup.Escape step}[/]"))
@@ -809,7 +815,10 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 match Picker.pick "Slash commands" allCmds 0 with
                 | None ->
                     Surface.markupLine "[dim]Cancelled[/]"
-                | Some i ->
+                | Some (Picker.Commit i) ->
+                    let (name, _) = allCmds.[i]
+                    nextInputDispatch <- Some name
+                | Some (Picker.Prefill i) ->
                     let (name, _) = allCmds.[i]
                     nextInputPrefill <- Picker.templateOf name
                 StatusBar.refresh ()
@@ -1307,12 +1316,12 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 else
                     match Picker.pick "Turns — current session" turnItems (turnItems.Length - 1) with
                     | None -> Surface.markupLine "[dim]Cancelled[/]"
-                    | Some i ->
+                    | Some (Picker.Commit i | Picker.Prefill i) ->
                         let (label, _) = turnItems.[i]
                         let closeIdx = label.IndexOf ']'
                         if closeIdx > 1 then
                             let n = label.Substring(1, closeIdx - 1)
-                            nextInputPrefill <- $"/show {n}"
+                            nextInputDispatch <- Some $"/show {n}"
                 StatusBar.refresh ()
             | Some "/templates" ->
                 let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)

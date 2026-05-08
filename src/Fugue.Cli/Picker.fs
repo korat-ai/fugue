@@ -8,6 +8,11 @@ open Fugue.Surface
 // Pure render types
 // ---------------------------------------------------------------------------
 
+/// How the user confirmed a picker selection.
+type PickerResult =
+    | Commit  of int   // Enter — caller should execute immediately
+    | Prefill of int   // Tab   — caller should pre-fill readline buffer
+
 /// Immutable state snapshot for the picker. All fields needed to render
 /// a complete frame — no Console reads inside renderState.
 type PickerState = {
@@ -97,8 +102,8 @@ let renderState (state: PickerState) : DrawOp list =
 
 /// Generic scrollable picker with type-to-filter and arrow-key navigation.
 /// items: (label, hint) pairs. label is the bold left column, hint is the dimmed right column.
-/// Returns the original (pre-filter) index of the chosen item, or None on cancel.
-let pick (title: string) (items: (string * string) list) (initialIdx: int) : int option =
+/// Enter → Commit (execute immediately); Tab → Prefill (insert into readline buffer); Esc → None.
+let pick (title: string) (items: (string * string) list) (initialIdx: int) : PickerResult option =
     if items.IsEmpty then None
     else
         let arr = items |> List.toArray
@@ -178,7 +183,7 @@ let pick (title: string) (items: (string * string) list) (initialIdx: int) : int
         Surface.lineBreak ()
         renderAll ()
 
-        let mutable picked    : int option = None
+        let mutable picked    : PickerResult option = None
         let mutable cancelled = false
         while picked.IsNone && not cancelled do
             let key = Console.ReadKey(intercept = true)
@@ -215,10 +220,14 @@ let pick (title: string) (items: (string * string) list) (initialIdx: int) : int
                     currentIdx <- fn - 1
                     scrollIntoView ()
                     redraw ()
-            | ConsoleKey.Enter | ConsoleKey.Tab ->
+            | ConsoleKey.Enter ->
                 if filteredItems.Length > 0 then
                     let (_, _, origIdx) = filteredItems.[currentIdx]
-                    picked <- Some origIdx
+                    picked <- Some (Commit origIdx)
+            | ConsoleKey.Tab ->
+                if filteredItems.Length > 0 then
+                    let (_, _, origIdx) = filteredItems.[currentIdx]
+                    picked <- Some (Prefill origIdx)
             | ConsoleKey.Escape -> cancelled <- true
             | ConsoleKey.Backspace ->
                 if query.Length > 0 then
