@@ -66,7 +66,6 @@ let private mkState (text: string) (cursor: int) : S =
       HistoryIdx      = -1
       SavedBuffer     = None
       SuggestionIdx   = -1
-      SuggestionSaved = None
       PromptText      = "> "
       PromptVisLen    = 2
       HintWhenArmed   = ""
