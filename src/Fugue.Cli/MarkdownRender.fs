@@ -151,7 +151,7 @@ let rec private renderBlock (block: Block) : IRenderable =
             |> Seq.toArray
         Rows(items) :> IRenderable
     | :? Markdig.Extensions.Tables.Table as tbl ->
-        let table = new Spectre.Console.Table()
+        let table = Spectre.Console.Table()
         let mutable headerSeen = false
         for row in tbl |> Seq.cast<Markdig.Extensions.Tables.TableRow> do
             let cellTexts =

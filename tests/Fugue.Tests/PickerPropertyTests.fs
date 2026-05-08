@@ -35,6 +35,7 @@ type PickerArbs =
             let items    = Array.zip (List.toArray labels) (List.toArray hints)
             return {
                 Title       = title
+                Query       = ""
                 Items       = items
                 CurrentIdx  = currentIdx
                 ScrollTop   = scrollTop
@@ -64,9 +65,9 @@ module PickerProperties =
     //     (title + above-hint + visibleRows items + below-hint + footer)
     // -----------------------------------------------------------------------
     [<Property>]
-    let ``renderState op count equals visibleRows + 4`` (state: PickerState) =
+    let ``renderState op count equals visibleRows + 5`` (state: PickerState) =
         let ops = renderState state
-        let expected = state.VisibleRows + 4
+        let expected = state.VisibleRows + 5
         List.length ops = expected
 
     // -----------------------------------------------------------------------
@@ -88,11 +89,12 @@ module PickerProperties =
         let vr = min 10 visibleRows.Get
         let state =
             { Title       = "title"
+              Query       = ""
               Items       = [||]
               CurrentIdx  = 0
               ScrollTop   = 0
               VisibleRows = vr }
-        List.length (renderState state) = vr + 4
+        List.length (renderState state) = vr + 5
 
     // -----------------------------------------------------------------------
     // P5. Scroll consistency: above hint present iff ScrollTop > 0

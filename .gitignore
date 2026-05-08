@@ -19,3 +19,6 @@ publish/
 # OS
 .DS_Store
 Thumbs.db
+
+# Air (live-reload dev tool)
+.air/
