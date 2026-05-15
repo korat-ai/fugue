@@ -201,3 +201,17 @@ The orchestrator should add `/engineering-ai-engineer` at PLAN+BUILD+VERIFY, `/t
 ---
 
 *This file is the orchestrator's first read. Keep it accurate. When status changes, update.*
+
+<!-- SPECKIT START -->
+**Active Spec Kit plan**: [`specs/001-console-adapter-lib/plan.md`](specs/001-console-adapter-lib/plan.md)
+— F# adapter library wrapping `Spectre.Console 0.49.*` behind an idiomatic
+F# API (typed primitives, `Result`/`Option` returns, escape-tracked
+`SafeText`, no exposed C# types). New project `src/Fugue.Adapters.Console/`
+(JIT-only). Companion artifacts: [spec.md](specs/001-console-adapter-lib/spec.md),
+[research.md](specs/001-console-adapter-lib/research.md),
+[data-model.md](specs/001-console-adapter-lib/data-model.md),
+[contracts/Fugue.Adapters.Console.fsi](specs/001-console-adapter-lib/contracts/Fugue.Adapters.Console.fsi),
+[quickstart.md](specs/001-console-adapter-lib/quickstart.md). Project
+constitution: [`.specify/memory/constitution.md`](.specify/memory/constitution.md)
+v1.1.0.
+<!-- SPECKIT END -->
