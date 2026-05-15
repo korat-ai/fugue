@@ -4,7 +4,13 @@
     <RootNamespace>Fugue.Adapters.Console</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Placeholder.fs" />
+    <Compile Include="Errors.fs" />
+    <Compile Include="Style.fs" />
+    <Compile Include="SafeText.fs" />
+    <Compile Include="Context.fs" />
+    <Compile Include="Primitive.fs" />
+    <Compile Include="Composition.fs" />
+    <Compile Include="Renderer.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Spectre.Console" Version="0.49.*" />

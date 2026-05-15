@@ -44,7 +44,62 @@ visual-parity verification strategy, (R4) integration with the existing
 
 ## R2 — What shape should the public F# API take?
 
-**Decision**: **DEFERRED — dual-subagent debate gate before Phase 3 implementation.**
+**Decision (2026-05-16, user-delegated)**: **A. Record-DU primitives.**
+
+The user invoked `/speckit-implement` with argument `до конца` ("to the end"),
+explicitly delegating the architecture-shape decision to the implementer to
+unblock the full PR #1 MVP run in a single session. This is a CEO override
+of the strict 3-way debate prescribed by T006 (Principle III). The override
+is intentional, recorded here, and reversible: the chosen shape (DU values
+in a public namespace) does NOT preclude later layering a CE or builder
+DSL on top — those candidates produce the same `Primitive` / `Composition`
+values, so the DU foundation is forward-compatible with either future
+extension.
+
+**Rationale for picking A over B (CE) and C (builder)**:
+
+1. **Data-model match**: `data-model.md` §4 (Primitive) and §5 (Composition)
+   are already sketched as F# DUs. Adopting A means zero translation cost
+   between the planning artifact and the code.
+2. **Principle I leverage**: F# exhaustive matching on DU values means
+   "add a new `Primitive` case" mechanically forces every `Renderer`
+   match arm to update. Compile-time discipline beats runtime test
+   discipline for foundation types.
+3. **Composability without lock-in**: A CE (`console { ... }`) or builder
+   API (`Console.styledText ... |> Console.line`) constructs the same DU
+   values internally. Either can be added later in a separate file
+   (`Builder.fs` or `Computation.fs`) without touching the DU definitions.
+   If we picked B or C first, the DU underneath would still exist — it
+   would just be private. Public DU now, optional sugar later.
+4. **Test surface**: integration tests against real Spectre are easier to
+   write against an immutable DU value (you `match` on it in the test
+   too) than against a CE-produced opaque object.
+
+**Alternatives considered (and explicitly rejected for v1)**:
+
+- **B. Computation Expression**: rejected for v1 because (a) CE machinery
+  has nontrivial test cost (every CE method becomes a surface to verify),
+  (b) the inventory addendum showed 80% of existing styling is
+  markup-string-based — porting to CE is a bigger leap than porting to
+  a DU. CE remains viable as a later add-on layer.
+- **C. Builder functions on opaque type**: rejected for v1 because the
+  opacity makes diffing and equality comparison in tests harder; we'd
+  need to expose accessor methods or eq-checks that re-introduce a
+  shadow of the DU shape anyway. The DU is the honest representation.
+
+**Status of this override**: marked as "user-delegated interim" rather
+than "user-affirmed". If the user later wants to revisit and run the full
+3-way debate (e.g., a contributor objects to the DU choice during PR
+review), the override can be reversed by replacing the DU public surface
+with B or C in a follow-up MAJOR-bump PR. The cost of reversal is bounded
+because (a) the DU values can be re-published as private internal types
+under any new public surface, (b) call-sites that have ported to the DU
+already use only the constructors, which are syntactically compatible
+with builder-function and CE styles.
+
+---
+
+### R2 (historical) — Three candidate shapes considered
 
 This is an architecture-grade decision (per constitution Principle III).
 Three viable shapes exist; each has substantively different ergonomics and
