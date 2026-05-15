@@ -68,3 +68,12 @@ clean:
 # Print the resolved Spectre.Console version (used during US3 upgrade workflow)
 verify-spectre-version:
     @dotnet list src/Fugue.Adapters.Console/Fugue.Adapters.Console.fsproj package | grep -i 'Spectre.Console ' || echo "Spectre.Console not pinned in Fugue.Adapters.Console"
+
+# DESTRUCTIVE — regenerates Verify snapshot baselines for the adapter test suite.
+# Only run after an intentional Spectre.Console version bump, not on routine CI.
+# Steps: delete existing verified files, run with auto-accept, commit new baselines
+# alongside the version bump PR. NOT part of `just ci` or `just test`.
+# See specs/001-console-adapter-lib/upgrade-workflow.md for the full guide.
+regenerate-baselines:
+    find tests/Fugue.Adapters.Console.Tests/VisualParity -name '*.verified.txt' -delete
+    DiffEngine_Disabled=true dotnet test tests/Fugue.Adapters.Console.Tests/Fugue.Adapters.Console.Tests.fsproj -- VerifyTests.autoAcceptReceived=true
