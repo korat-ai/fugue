@@ -7,19 +7,38 @@ open System.IO
 /// `Console.Out` directly. Callers route the output to the Fugue.Surface
 /// actor themselves (via `DrawOp.RawAnsi`). The integration seam
 /// described in research.md §R4.
+///
+/// NOTE: `Renderer.render` was dropped from the public API. `Surface.batch`
+/// lives in `Fugue.Cli.Surface` (REPL-only), not in `Fugue.Surface`;
+/// pulling this adapter into Fugue.Cli's namespace violates the "pure render
+/// layer" assumption (spec.md Assumptions). Callers post the DrawOp
+/// themselves via their own Surface/actor wiring.
 module Renderer =
 
-    // Local aliases to avoid namespace pollution when iterating over
-    // our F# DUs that share names with Spectre's enums (Decoration, Style).
-    type private SpectreColour     = Spectre.Console.Color
-    type private SpectreStyle      = Spectre.Console.Style
-    type private SpectreDecoration = Spectre.Console.Decoration
-    type private SpectreText       = Spectre.Console.Text
-    type private SpectreRule       = Spectre.Console.Rule
-    type private SpectreSettings   = Spectre.Console.AnsiConsoleSettings
-    type private SpectreOutput     = Spectre.Console.AnsiConsoleOutput
-    type private SpectreSupport    = Spectre.Console.ColorSystemSupport
-    type private IAC               = Spectre.Console.IAnsiConsole
+    // Local aliases to avoid namespace pollution when our F# DU cases share
+    // names with Spectre's enums and types (Decoration, Style, Border, etc.).
+    type private SpectreColour      = Spectre.Console.Color
+    type private SpectreStyle       = Spectre.Console.Style
+    type private SpectreDecoration  = Spectre.Console.Decoration
+    type private SpectreText        = Spectre.Console.Text
+    type private SpectreRule        = Spectre.Console.Rule
+    type private SpectreSettings    = Spectre.Console.AnsiConsoleSettings
+    type private SpectreOutput      = Spectre.Console.AnsiConsoleOutput
+    type private SpectreSupport     = Spectre.Console.ColorSystemSupport
+    type private IAC                = Spectre.Console.IAnsiConsole
+    type private SpectreRows        = Spectre.Console.Rows
+    type private SpectrePadder      = Spectre.Console.Padder
+    type private SpectrePanel       = Spectre.Console.Panel
+    type private SpectrePanelHeader = Spectre.Console.PanelHeader
+    type private SpectreBoxBorder   = Spectre.Console.BoxBorder
+    type private SpectreColumns     = Spectre.Console.Columns
+    type private SpectreAlign       = Spectre.Console.Align
+    type private SpectreHAlign      = Spectre.Console.HorizontalAlignment
+    type private SpectreTable       = Spectre.Console.Table
+    type private SpectreTableCol    = Spectre.Console.TableColumn
+    type private SpectreMarkup      = Spectre.Console.Markup
+    type private SpectrePadding     = Spectre.Console.Padding
+    type private IRenderable        = Spectre.Console.Rendering.IRenderable
 
     // ------------------------------------------------------------------
     // Canonical theme slot table — single source of truth lives in
@@ -33,20 +52,20 @@ module Renderer =
             let b s = System.Convert.ToByte (s, 16)
             SpectreColour (b (h.Substring (1, 2)), b (h.Substring (3, 2)), b (h.Substring (5, 2)))
         Map.ofList [
-            ("default", "accent"),       hex "#00afff"
-            ("default", "warning"),      hex "#d7af00"
-            ("default", "error"),        hex "#d70000"
-            ("default", "dim-accent"),   hex "#808080"
-            ("default", "diff-add"),     hex "#00af00"
-            ("default", "diff-remove"),  hex "#d70000"
-            ("default", "diff-hunk"),    hex "#d7af00"
-            ("nocturne", "accent"),      hex "#1e3a5a"
-            ("nocturne", "warning"),     hex "#b58900"
-            ("nocturne", "error"),       hex "#cb4b16"
-            ("nocturne", "dim-accent"),  hex "#586e75"
-            ("nocturne", "diff-add"),    hex "#859900"
-            ("nocturne", "diff-remove"), hex "#cb4b16"
-            ("nocturne", "diff-hunk"),   hex "#b58900"
+            ("default",  "accent"),       hex "#00afff"
+            ("default",  "warning"),      hex "#d7af00"
+            ("default",  "error"),        hex "#d70000"
+            ("default",  "dim-accent"),   hex "#808080"
+            ("default",  "diff-add"),     hex "#00af00"
+            ("default",  "diff-remove"),  hex "#d70000"
+            ("default",  "diff-hunk"),    hex "#d7af00"
+            ("nocturne", "accent"),       hex "#1e3a5a"
+            ("nocturne", "warning"),      hex "#b58900"
+            ("nocturne", "error"),        hex "#cb4b16"
+            ("nocturne", "dim-accent"),   hex "#586e75"
+            ("nocturne", "diff-add"),     hex "#859900"
+            ("nocturne", "diff-remove"),  hex "#cb4b16"
+            ("nocturne", "diff-hunk"),    hex "#b58900"
         ]
 
     /// Resolve our `Colour` against the active theme name to a Spectre Color.
@@ -86,6 +105,21 @@ module Renderer =
             background = System.Nullable bg,
             decoration = System.Nullable combinedDecoration)
 
+    /// Map our Border DU to Spectre's BoxBorder static properties.
+    let private toSpectreBoxBorder (b: Border) : SpectreBoxBorder =
+        match b with
+        | Border.None_   -> SpectreBoxBorder.None
+        | Border.Square  -> SpectreBoxBorder.Square
+        | Border.Rounded -> SpectreBoxBorder.Rounded
+        | Border.Heavy   -> SpectreBoxBorder.Heavy
+
+    /// Map our Alignment DU to Spectre's HorizontalAlignment enum.
+    let private toSpectreHAlign (a: Alignment) : SpectreHAlign =
+        match a with
+        | Alignment.LeftAlign   -> SpectreHAlign.Left
+        | Alignment.CentreAlign -> SpectreHAlign.Center
+        | Alignment.RightAlign  -> SpectreHAlign.Right
+
     /// Build an ephemeral Spectre AnsiConsole writing to a StringWriter,
     /// honouring `RenderContext` (width clamp + colour-enabled flag).
     let private withSpectre (ctx: RenderContext) (action: IAC -> unit) : string =
@@ -102,7 +136,7 @@ module Renderer =
         action console
         sw.ToString ()
 
-    /// Render a single primitive to its byte stream.
+    /// Render a single primitive to its raw ANSI byte stream.
     let private renderPrimitive (ctx: RenderContext) (p: Primitive) : Result<string, RenderError> =
         match p with
         | Primitive.LineBreak ->
@@ -127,7 +161,7 @@ module Renderer =
             try
                 let output =
                     withSpectre ctx (fun ac ->
-                        ac.Write (Spectre.Console.Markup hint))
+                        ac.Write (SpectreMarkup hint))
                 Ok output
             with
             | :? System.InvalidOperationException as ex ->
@@ -143,11 +177,158 @@ module Renderer =
             with ex ->
                 Error (RenderError.RenderFailed ("Rule", ex.Message))
 
+    // Forward declaration — `toRenderable` and `toRawAnsi` are mutually
+    // recursive (a composition may contain a composition).
+    // We use a local recursive binding pair rather than module-level `and`
+    // (which F# doesn't support for let-bound values in a module).
+
+    /// Convert a `Primitive` directly into a Spectre `IRenderable` without
+    /// going through the render-to-string path. This is required for composition
+    /// nodes (Stack, Panel, etc.) which need to own the IRenderable tree so
+    /// Spectre can handle layout internally.
+    ///
+    /// LineBreak and RawAnsi cannot be represented as IRenderable — they are
+    /// pass-through and must be rendered at the leaf level. When a composition
+    /// node encounters one, it renders the primitive to a string and wraps it
+    /// in SpectreText (no markup parsing — plain text only).
+    let private primitiveToRenderable (ctx: RenderContext) (prim: Primitive) : Result<IRenderable, RenderError> =
+        match prim with
+        | Primitive.LineBreak ->
+            // Newlines inside a Rows/Panel etc. are expressed as empty text.
+            Ok (SpectreText "\n" :> IRenderable)
+        | Primitive.RawAnsi bytes ->
+            // Raw ANSI bytes: use SpectreText so Spectre doesn't try to parse markup.
+            // The surrounding Rows/Panel will receive this as opaque text.
+            let s = match (bytes: string | null) with | null -> "" | b -> b
+            Ok (SpectreText s :> IRenderable)
+        | Primitive.Styled (style, content) ->
+            let text    = SafeText.unwrap content
+            let spectre = toSpectreStyle ctx.GetThemeName style
+            Ok (SpectreText (text, spectre) :> IRenderable)
+        | Primitive.Markup hint ->
+            try
+                Ok (SpectreMarkup hint :> IRenderable)
+            with
+            | :? System.InvalidOperationException as ex ->
+                Error (RenderError.InvalidMarkup (hint, ex.Message))
+            | ex ->
+                Error (RenderError.RenderFailed ("Markup", ex.Message))
+        | Primitive.Rule style ->
+            let r = SpectreRule ()
+            r.Style <- toSpectreStyle ctx.GetThemeName style
+            Ok (r :> IRenderable)
+
+    /// Convert a `Composition` value into a Spectre `IRenderable`, collecting
+    /// the first render error encountered in any branch of the tree.
+    let rec private toRenderable
+        (ctx:  RenderContext)
+        (comp: Composition)
+        : Result<IRenderable, RenderError> =
+        match comp with
+        | Composition.Leaf prim ->
+            primitiveToRenderable ctx prim
+
+        | Composition.Stack children ->
+            // Collect all child IRenderable values, fail on first error.
+            let folder (acc: Result<IRenderable list, RenderError>) (child: Composition) =
+                match acc with
+                | Error _ -> acc
+                | Ok lst  ->
+                    match toRenderable ctx child with
+                    | Error e -> Error e
+                    | Ok r    -> Ok (lst @ [r])
+            let childResults = children |> List.fold folder (Ok [])
+            match childResults with
+            | Error e -> Error e
+            | Ok renderables ->
+                Ok (SpectreRows (renderables |> List.toArray) :> IRenderable)
+
+        | Composition.Padded (left, right, top, bottom, inner) ->
+            match toRenderable ctx inner with
+            | Error e -> Error e
+            | Ok r    ->
+                let padding = SpectrePadding (left, top, right, bottom)
+                Ok (SpectrePadder (r, System.Nullable padding) :> IRenderable)
+
+        | Composition.Panel (border, header, inner) ->
+            match toRenderable ctx inner with
+            | Error e -> Error e
+            | Ok r    ->
+                let p = SpectrePanel r
+                p.Border <- toSpectreBoxBorder border
+                match header with
+                | None     -> ()
+                | Some txt ->
+                    p.Header <- SpectrePanelHeader (SafeText.unwrap txt, System.Nullable ())
+                Ok (p :> IRenderable)
+
+        | Composition.Columns children ->
+            let folder (acc: Result<IRenderable list, RenderError>) (_, child) =
+                match acc with
+                | Error _ -> acc
+                | Ok lst  ->
+                    match toRenderable ctx child with
+                    | Error e -> Error e
+                    | Ok r    -> Ok (lst @ [r])
+            let childResults = children |> List.fold folder (Ok [])
+            match childResults with
+            | Error e -> Error e
+            | Ok renderables ->
+                Ok (SpectreColumns (renderables |> List.toArray) :> IRenderable)
+
+        | Composition.Aligned (alignment, inner) ->
+            match toRenderable ctx inner with
+            | Error e -> Error e
+            | Ok r    ->
+                Ok (SpectreAlign (r, toSpectreHAlign alignment, System.Nullable ()) :> IRenderable)
+
+        | Composition.Table (headers, rows) ->
+            // Build header renderable list.
+            let folder acc (child: Composition) =
+                match acc with
+                | Error _ -> acc
+                | Ok lst  ->
+                    match toRenderable ctx child with
+                    | Error e -> Error e
+                    | Ok r    -> Ok (lst @ [r])
+            let headerResults = headers |> List.fold folder (Ok [])
+            match headerResults with
+            | Error e -> Error e
+            | Ok headerRenderables ->
+                let t = SpectreTable ()
+                for hr in headerRenderables do
+                    t.AddColumn (SpectreTableCol hr) |> ignore
+                // Build each body row.
+                let mutable rowError : RenderError option = None
+                for row in rows do
+                    if rowError.IsNone then
+                        let rowResult = row |> List.fold folder (Ok [])
+                        match rowResult with
+                        | Error e -> rowError <- Some e
+                        | Ok cellRenderables ->
+                            t.Rows.Add (cellRenderables |> List.toSeq) |> ignore
+                match rowError with
+                | Some e -> Error e
+                | None   -> Ok (t :> IRenderable)
+
     /// Evaluate a Composition into the byte/escape stream the Surface
     /// actor expects. Pure (no side effects on Console.Out, no actor post).
     let toRawAnsi (ctx: RenderContext) (composition: Composition) : Result<string, RenderError> =
+        // For Leaf we use the dedicated renderPrimitive path (which handles
+        // LineBreak and RawAnsi as pass-through — no Spectre IRenderable needed).
+        // For all other cases we build an IRenderable and render it in one pass.
         match composition with
-        | Composition.Leaf prim -> renderPrimitive ctx prim
+        | Composition.Leaf prim ->
+            renderPrimitive ctx prim
+        | other ->
+            match toRenderable ctx other with
+            | Error e -> Error e
+            | Ok r    ->
+                try
+                    let output = withSpectre ctx (fun ac -> ac.Write r)
+                    Ok output
+                with ex ->
+                    Error (RenderError.RenderFailed ("Composition", ex.Message))
 
     /// Convenience: evaluate to a `DrawOp.RawAnsi` ready to hand to the actor.
     /// Caller posts the result via their existing `Surface` wrapper or
