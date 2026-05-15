@@ -64,3 +64,7 @@ ci: build test publish smoke-aot
 clean:
     dotnet clean
     find . -type d \( -name bin -o -name obj \) -not -path '*/.git/*' -exec rm -rf {} + 2>/dev/null || true
+
+# Print the resolved Spectre.Console version (used during US3 upgrade workflow)
+verify-spectre-version:
+    @dotnet list src/Fugue.Adapters.Console/Fugue.Adapters.Console.fsproj package | grep -i 'Spectre.Console ' || echo "Spectre.Console not pinned in Fugue.Adapters.Console"

@@ -1,0 +1,3 @@
+# Placeholder so this directory is committed.
+# Phase 3 (US1) tests will write *.verified.txt snapshots here.
+# Remove this file once the first snapshot lands.
