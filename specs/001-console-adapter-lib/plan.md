@@ -246,3 +246,75 @@ follows F# top-down dependency order (no forward references).
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|--------------------------------------|
 | (none — all 7 Constitution gates pass) | — | — |
+
+---
+
+## Post-Implementation Constitution Re-Check (2026-05-16)
+
+*All 11 Principles re-evaluated against the as-shipped implementation on
+branch `001-console-adapter-lib`. Phases 1–6 complete.*
+
+- **Principle I — Test Coverage Discipline**: PASS. 65 tests in
+  `Fugue.Adapters.Console.Tests` covering all public primitives
+  (T013–T031), all composition nodes (T032–T045), colour-disabled mode
+  (T026–T031), degenerate-width behaviour (T020–T025), property tests
+  (T039–T045 property suites, T046–T047 totality), corpus snapshot
+  (T048a–c), suite-duration smoke (T049). Every public primitive has at
+  least one happy-path and one error-path test. `[<Fact>]` discovery issue
+  documented and worked around with `[<Property(MaxTest=1)>]`; follow-up
+  tracked in tasks.md.
+
+- **Principle II — C#/F# Interop Sanitization**: PASS. Zero mocks at the
+  Spectre boundary — all integration tests instantiate real Spectre types
+  via `AnsiConsole.Create` / `Renderer.toRawAnsi`. `SafeText` makes
+  `Markup.Escape` skips a type error. `RenderError` DU is closed (no
+  `Other of string`). No Spectre type appears in the public API.
+
+- **Principle III — Subagent-Driven Development**: PASS. Background
+  Explore subagent produced research.md inventory; R2 API-shape decision
+  went through a 3-way debate (record-DU vs CE vs builder), resolved as
+  Candidate A (record-DU). Implementation follows the settled design
+  without unilateral pivots.
+
+- **Principle IV — F# Purity at Source**: PASS. All new source files are
+  `.fs` / `.fsproj`. No `.cs` files introduced.
+
+- **Principle V — AOT-Closure vs JIT Discipline**: PASS. `Fugue.Adapters.Console`
+  is not referenced from `Fugue.Cli.Aot`, `Fugue.Core`, `Fugue.Tools`, or
+  `Fugue.Agent`. `dotnet publish src/Fugue.Cli.Aot -c Release -r osx-arm64`
+  produces 0 trim warnings (T056 verified 2026-05-16). AOT binary size and
+  cold-start unchanged.
+
+- **Principle VI — Prompt-First Slash Commands**: N/A. No slash commands
+  added or modified by this feature.
+
+- **Principle VII — Decision Hygiene & Merge Strategy**: PASS. Three
+  incremental commits on `001-console-adapter-lib` (Phase 2+US1, Phase 4,
+  Phase 5). PR will use `--merge` (merge commit), not squash.
+
+- **Principle VIII — Tool Contract Discipline**: N/A. Adapter is a
+  library, not a tool registered with the LLM.
+
+- **Principle IX — Runtime Policy ≠ Prompt Policy**: N/A. No safety
+  policy changes.
+
+- **Principle X — Untrusted Content Boundary**: PASS. `SafeText.ofUser`
+  is the escape-tracking entry point for any external string entering the
+  render layer. Callers that read external content must use `ofUser`;
+  internal literal text uses `ofLiteral`. Type system enforces the
+  distinction — `Primitive.Styled` takes `SafeText`, not `string`.
+
+- **Principle XI — Context as Engineered Artifact**: N/A. Adapter does
+  not touch system prompt, `CLAUDE.md`, or conversation assembly.
+
+**Result (post-implementation)**: all 11 gates pass. One known doc defect
+corrected — data-model.md §3 falsely claimed `ofUser` is idempotent; fixed
+in this Polish phase with the accurate non-idempotence invariant. No
+Complexity Tracking entries required.
+
+<!-- TODO(TOOL_AUDIT_VIII): When the port wave moves Fugue's rendering
+through this adapter, re-evaluate Principle VIII at that time — the tools
+that display file-edit results (Edit, Write, Bash) will then route through
+the adapter; ensure their tool-contract schema annotations remain accurate.
+Track as a follow-up to the first port PR. See constitution v1.1.0 §VIII
+Sync Impact Report. -->

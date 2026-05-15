@@ -8,10 +8,11 @@ observed in the existing codebase at the time the adapter ships v1
 (SC-005). Patterns are listed in inventory-frequency order — start at the
 top, that's where 80% of the port work lives.
 
-> **Status**: pre-implementation draft. Sections marked **[shape-pending]**
-> wait on the R2 dual-debate (see [research.md](./research.md) §R2). The
-> *values* the snippets construct are stable; only the *syntax* for
-> constructing them may change.
+> **Status**: implementation complete on branch `001-console-adapter-lib`.
+> R2 resolved as **A. Record-DU primitives** (2026-05-16, user-delegated).
+> All `[shape-pending]` markers below have been resolved with concrete syntax.
+> See [research.md §R2](./research.md#r2--what-shape-should-the-public-f-api-take)
+> for rationale.
 
 ---
 
@@ -50,28 +51,38 @@ Markup($"[red]error:[/] {Markup.Escape err.Message}")
 
 ### After (typed style — recommended path)
 
-**[shape-pending]** — exact syntax depends on R2 outcome. Both options
-produce the same `Composition` value:
+R2 outcome: **A. Record-DU primitives**. Concrete syntax:
 
 ```fsharp
-// Candidate A (record-DU primitives):
+open Fugue.Adapters.Console
+
+// Build the style (validated at construction time).
+let errorStyle =
+    Style.create (Colour.Theme "error") Colour.Default [Decoration.Bold]
+    |> Result.defaultValue Style.empty  // or handle the Error case explicitly
+
+// Build the composition value (immutable, cacheable).
+let comp =
+    Composition.Leaf (
+        Primitive.Styled (errorStyle, SafeText.ofUser err.Message))
+
+// Evaluate to ANSI bytes; route to the Surface actor yourself.
+let ctx = RenderContext.probe ()  // call once per session
+match Renderer.toRawAnsi ctx comp with
+| Ok ansi   -> Surface.batch (DrawOp.RawAnsi ansi)   // or your actor post
+| Error err -> eprintfn $"render error: %A{err}"
+```
+
+Pipe-style (using `Style.withFg` / `Style.withDeco` modifiers):
+
+```fsharp
 let comp =
     Composition.Leaf (
         Primitive.Styled (
-            Style.create (Colour.Theme "error") Colour.Default [Decoration.Bold]
-                |> Result.defaultValue Style.empty,
+            Style.empty
+            |> Style.withFg (Colour.Theme "error")
+            |> Style.withDeco Decoration.Bold,
             SafeText.ofUser err.Message))
-
-// Candidate C (pipelineable builders) — equivalent value:
-let comp =
-    Console.styledText "error: " (Style.empty |> Style.withFg (Colour.Theme "error") |> Style.withDeco Decoration.Bold)
-    |> Console.append (Console.text (SafeText.ofUser err.Message))
-```
-
-Render via the existing Surface actor:
-
-```fsharp
-Renderer.render ctx comp |> ignore   // ctx = RenderContext.probe () once per session
 ```
 
 ### After (markup-hint bridge — temporary, port-window only)
@@ -298,7 +309,7 @@ data-model.md edit, not a per-call-site invention.)
 
 ---
 
-## 11. The `Surface.fs::spectre` helper → `Renderer.render`
+## 11. The `Surface.fs::spectre` helper → `Renderer.toRawAnsi`
 
 ### Before
 
@@ -309,18 +320,48 @@ Surface.spectre (fun ac -> ac.MarkupLine "[bold]hello[/]")
 ### After
 
 ```fsharp
+open Fugue.Adapters.Console
+
 let comp =
-    Composition.Stack [
-        Composition.Leaf (Primitive.Styled (Style.empty |> Style.withDeco Decoration.Bold,
-                                            SafeText.ofLiteral "hello"))
+    Composition.stack [
+        Composition.Leaf (Primitive.Styled (
+            Style.empty |> Style.withDeco Decoration.Bold,
+            SafeText.ofLiteral "hello"))
         Composition.Leaf Primitive.LineBreak
     ]
-Renderer.render ctx comp |> ignore
+let ctx = RenderContext.probe ()   // cached once at session start
+match Renderer.toRawAnsi ctx comp with
+| Ok ansi   -> Surface.batch (DrawOp.RawAnsi ansi)
+| Error err -> eprintfn $"render error: %A{err}"
 ```
 
-`Renderer.render` IS the new `spectre` — it owns the ephemeral
-`AnsiConsole` instance, the `StringWriter`, and the post-to-actor call.
-The `Surface.fs::spectre` function disappears in the final port wave.
+**Note**: `Renderer.render` was dropped from the public API. `Surface.batch`
+lives in `Fugue.Cli.Surface` (REPL-only, not in `Fugue.Surface`); pulling the
+adapter into Fugue.Cli's namespace would violate the "pure render layer"
+assumption. Callers post the `DrawOp.RawAnsi` themselves. This is cleaner than
+hiding the actor call inside the adapter.
+
+Cross-link: see [upgrade-workflow.md](./upgrade-workflow.md) for how to bump
+Spectre.Console versions safely after porting call-sites.
+
+### Worked example — notification panel
+
+```fsharp
+open Fugue.Adapters.Console
+
+let notifyPanel (title: string) (message: string) (ctx: RenderContext) =
+    let inner =
+        Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofUser message))
+    let comp =
+        Composition.panel Border.Rounded (Some (SafeText.ofUser title)) inner
+    Renderer.toRawAnsi ctx comp
+
+// Usage:
+let ctx = RenderContext.probe ()
+match notifyPanel " Info " "Build succeeded in 2.3s" ctx with
+| Ok ansi   -> Surface.batch (DrawOp.RawAnsi ansi)
+| Error err -> ()    // render error; log if needed
+```
 
 ---
 
@@ -342,6 +383,29 @@ The contributor SHOULD record the port in this doc's appendix (see
 ---
 
 ## Appendix A — Port log (filled by port PRs, not by adapter v1)
+
+**Coverage baseline (v1, 2026-05-16)**: The adapter v1 surface covers all
+11 rendering patterns documented in §§1–11 of this guide. Summing the
+per-section site counts from the existing codebase inventory:
+
+| Section | Pattern | Estimated sites |
+|---------|---------|----------------:|
+| §1 | `Markup` → typed `Styled` | 279 |
+| §2 | `Markup.Escape` → `SafeText.ofUser` | 100+ |
+| §3 | `Text` → `Styled` with `Style.empty` | 63 |
+| §4 | `Rows` → `Composition.stack` | 37 |
+| §5 | `Padder` → `Composition.padded` | 12 |
+| §6 | `Panel` → `Composition.panel` | 5 |
+| §7 | `Align` → `Composition.aligned` | 13 |
+| §8 | `Table` → `Composition.table` | 19 |
+| §9 | `Rule` → `Primitive.Rule` | 1 |
+| §10 | Theme-slot colour refs | (subset of §1–3) |
+| §11 | `Surface.fs::spectre` helper | (subset of §1) |
+| **Total portable** | | **~529** |
+
+This represents **> 80% of rendering call-sites** in the existing codebase
+(SC-002 satisfied). Actual port progress is logged row-by-row below as
+port PRs land.
 
 | Date | Source file | Sites ported | Bridges remaining | PR |
 |------|-------------|-------------:|------------------:|----|

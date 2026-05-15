@@ -6,7 +6,8 @@ type SafeText = private SafeText of string
 
 module SafeText =
     /// Wrap arbitrary user input. Applies `Markup.Escape` exactly once.
-    /// Idempotent: `ofUser (unwrap (ofUser s)) = ofUser s`.
+    /// NOT idempotent — never call on already-escaped content (double-escapes).
+    /// Use `ofLiteral` for strings already known to be markup-free.
     let ofUser (raw: string | null) : SafeText =
         let s =
             match raw with

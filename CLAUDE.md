@@ -178,6 +178,7 @@ gh issue list -R korat-ai/fugue --label integrations
 - E2E smoke against real Anthropic / OpenAI cloud / Ollama
 - STJ source-gen for F# DTOs → drops binary size below 35MB target
 - F# script config (`~/.fugue/fugue.fsx`) — xmonad-style "recompile self" pattern
+- <!-- TODO(TOOL_AUDIT_VIII) --> When the port wave lands (first Fugue.Cli call-site cluster ported through `Fugue.Adapters.Console`), re-evaluate Principle VIII (Tool Contract Discipline) — tool output rendering (Edit, Write, Bash results) will then route through the adapter; confirm tool-contract schema annotations remain accurate. See `specs/001-console-adapter-lib/plan.md` §"Post-Implementation Constitution Re-Check".
 
 ## Style notes
 
@@ -204,14 +205,18 @@ The orchestrator should add `/engineering-ai-engineer` at PLAN+BUILD+VERIFY, `/t
 
 <!-- SPECKIT START -->
 **Active Spec Kit plan**: [`specs/001-console-adapter-lib/plan.md`](specs/001-console-adapter-lib/plan.md)
-— F# adapter library wrapping `Spectre.Console 0.49.*` behind an idiomatic
+— **Phase: implementation complete on branch `001-console-adapter-lib`, ready for PR.**
+F# adapter library wrapping `Spectre.Console 0.49.*` behind an idiomatic
 F# API (typed primitives, `Result`/`Option` returns, escape-tracked
 `SafeText`, no exposed C# types). New project `src/Fugue.Adapters.Console/`
-(JIT-only). Companion artifacts: [spec.md](specs/001-console-adapter-lib/spec.md),
+(JIT-only). Phases 1–6 complete: 65 adapter tests passing, AOT publish
+clean (0 warnings), upgrade-workflow.md authored, quickstart.md finalized.
+Companion artifacts: [spec.md](specs/001-console-adapter-lib/spec.md),
 [research.md](specs/001-console-adapter-lib/research.md),
 [data-model.md](specs/001-console-adapter-lib/data-model.md),
 [contracts/Fugue.Adapters.Console.fsi](specs/001-console-adapter-lib/contracts/Fugue.Adapters.Console.fsi),
-[quickstart.md](specs/001-console-adapter-lib/quickstart.md). Project
-constitution: [`.specify/memory/constitution.md`](.specify/memory/constitution.md)
+[quickstart.md](specs/001-console-adapter-lib/quickstart.md),
+[upgrade-workflow.md](specs/001-console-adapter-lib/upgrade-workflow.md).
+Project constitution: [`.specify/memory/constitution.md`](.specify/memory/constitution.md)
 v1.1.0.
 <!-- SPECKIT END -->

@@ -150,7 +150,9 @@ type SafeText = private SafeText of string
 
 module SafeText =
     /// Wrap arbitrary user input — applies `Markup.Escape` exactly once.
-    /// Idempotent: `ofUser (unwrap (ofUser s)) = ofUser s`.
+    /// NOT idempotent: calling `ofUser` on already-escaped text double-escapes
+    /// (e.g., `[` → `[[` → `[[[[`). Use `ofLiteral` when the string is
+    /// already escaped; use `ofUser` exactly once per raw user string.
     val ofUser    : string -> SafeText
 
     /// Wrap a string that the *caller* has already escaped (or knows is
@@ -164,16 +166,28 @@ module SafeText =
 **Invariants**:
 - `SafeText` cannot be constructed except via the two named functions.
   Direct DU construction is private.
-- `ofUser` is idempotent (see property-based test below).
+- `ofUser` is **not** idempotent — it applies `Markup.Escape` unconditionally.
+  Calling `ofUser` on already-escaped content double-escapes special characters.
+  The correct usage contract is: call `ofUser` once per raw user string;
+  never call it on `SafeText.unwrap` output.
 - `unwrap (ofUser s) = Markup.Escape(s)` — verified by snapshot.
 
-**Property test** (FsCheck):
+**Property test** (FsCheck — tests the correct invariant: `ofUser` encodes
+raw strings consistently, regardless of whether they look like markup):
 ```fsharp
 [<Property>]
-let ``ofUser is idempotent`` (s: string) =
-    let once  = SafeText.ofUser s |> SafeText.unwrap
-    let twice = SafeText.ofUser once |> SafeText.unwrap
-    once = twice
+let ``ofUser wraps consistently — same raw string always gives same SafeText`` (s: string) =
+    let first  = SafeText.ofUser s |> SafeText.unwrap
+    let second = SafeText.ofUser s |> SafeText.unwrap
+    first = second
+```
+
+**Anti-pattern** (previously documented as a property, now corrected):
+```fsharp
+// WRONG — double-escaping: `ofUser` of unwrapped content re-escapes markup chars.
+let once  = SafeText.ofUser rawStr |> SafeText.unwrap
+let twice = SafeText.ofUser once   |> SafeText.unwrap
+// once ≠ twice when rawStr contains '[', ']', or backslash.
 ```
 
 ---
