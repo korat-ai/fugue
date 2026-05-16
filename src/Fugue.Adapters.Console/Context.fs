@@ -4,14 +4,10 @@ namespace Fugue.Adapters.Console
 /// `System.Console` directly except inside `probe` — this isolates the
 /// only IO probe to one function (data-model.md §6 invariant).
 type RenderContext =
-    private {
-        Width:         int
-        ColourEnabled: bool
-        ThemeName:     string
-    }
-    member this.GetWidth         = this.Width
-    member this.GetColourEnabled = this.ColourEnabled
-    member this.GetThemeName     = this.ThemeName
+    private { width: int; colourEnabled: bool; themeName: string }
+    member this.Width         = this.width
+    member this.ColourEnabled = this.colourEnabled
+    member this.ThemeName     = this.themeName
 
 module RenderContext =
     /// Test-friendly constructor. No IO.
@@ -20,9 +16,7 @@ module RenderContext =
             match theme with
             | null -> "default"
             | t    -> t
-        { Width         = width
-          ColourEnabled = colourEnabled
-          ThemeName     = name }
+        { width = width; colourEnabled = colourEnabled; themeName = name }
 
     /// Probe the host. The ONLY function in the adapter that reads
     /// `System.Console`. Never called from tests.
@@ -31,9 +25,11 @@ module RenderContext =
             try System.Console.WindowWidth
             with _ -> 80
         // Colour heuristic: assume enabled if stdout is not redirected.
+        // Swallowing the exception here is deliberate: the probe prefers safety
+        // (assume no colour) over enablement. This matches the data-model.md §6
+        // invariant that says "assume enabled if stdout is not redirected" — if
+        // we can't even check, we fall back to disabled to avoid garbling output.
         let colour =
             try not System.Console.IsOutputRedirected
             with _ -> false
-        { Width         = max 1 w
-          ColourEnabled = colour
-          ThemeName     = "default" }
+        { width = max 1 w; colourEnabled = colour; themeName = "default" }

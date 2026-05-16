@@ -93,10 +93,10 @@ module Renderer =
 
     /// Build a Spectre.Console.Style from our typed Style.
     let private toSpectreStyle (themeName: string) (s: Style) : SpectreStyle =
-        let fg = resolveColour themeName s.GetForeground
-        let bg = resolveColour themeName s.GetBackground
+        let fg = resolveColour themeName s.Foreground
+        let bg = resolveColour themeName s.Background
         let combinedDecoration =
-            s.GetDecorations
+            s.Decorations
             |> Seq.fold
                 (fun acc d -> acc ||| toSpectreDecoration d)
                 SpectreDecoration.None
@@ -127,12 +127,12 @@ module Renderer =
         let settings = SpectreSettings ()
         settings.Out <- SpectreOutput sw
         settings.ColorSystem <-
-            if ctx.GetColourEnabled then
+            if ctx.ColourEnabled then
                 SpectreSupport.TrueColor
             else
                 SpectreSupport.NoColors
         let console = Spectre.Console.AnsiConsole.Create settings
-        console.Profile.Width <- max 1 ctx.GetWidth
+        console.Profile.Width <- max 1 ctx.Width
         action console
         sw.ToString ()
 
@@ -150,7 +150,7 @@ module Renderer =
         | Primitive.Styled (style, content) ->
             try
                 let text    = SafeText.unwrap content
-                let spectre = toSpectreStyle ctx.GetThemeName style
+                let spectre = toSpectreStyle ctx.ThemeName style
                 let output  =
                     withSpectre ctx (fun ac ->
                         ac.Write (SpectreText (text, spectre)))
@@ -171,7 +171,7 @@ module Renderer =
         | Primitive.Rule style ->
             try
                 let r = SpectreRule ()
-                r.Style <- toSpectreStyle ctx.GetThemeName style
+                r.Style <- toSpectreStyle ctx.ThemeName style
                 let output = withSpectre ctx (fun ac -> ac.Write r)
                 Ok output
             with ex ->
@@ -203,7 +203,7 @@ module Renderer =
             Ok (SpectreText s :> IRenderable)
         | Primitive.Styled (style, content) ->
             let text    = SafeText.unwrap content
-            let spectre = toSpectreStyle ctx.GetThemeName style
+            let spectre = toSpectreStyle ctx.ThemeName style
             Ok (SpectreText (text, spectre) :> IRenderable)
         | Primitive.Markup hint ->
             try
@@ -215,7 +215,7 @@ module Renderer =
                 Error (RenderError.RenderFailed ("Markup", ex.Message))
         | Primitive.Rule style ->
             let r = SpectreRule ()
-            r.Style <- toSpectreStyle ctx.GetThemeName style
+            r.Style <- toSpectreStyle ctx.ThemeName style
             Ok (r :> IRenderable)
 
     /// Convert a `Composition` value into a Spectre `IRenderable`, collecting

@@ -47,17 +47,17 @@ let ``SafeText.ofLiteral null is empty`` () =
 let ``Style.create empty inputs returns empty-equivalent style`` () =
     match Style.create Colour.Default Colour.Default [] with
     | Ok s ->
-        s.GetForeground = Colour.Default
-        && s.GetBackground = Colour.Default
-        && Set.isEmpty s.GetDecorations
+        s.Foreground = Colour.Default
+        && s.Background = Colour.Default
+        && Set.isEmpty s.Decorations
     | Error _ -> false
 
 [<Property(MaxTest = 1)>]
 let ``Style.create with valid theme slot succeeds`` () =
     match Style.create (Colour.Theme "error") Colour.Default [ Decoration.Bold ] with
     | Ok s ->
-        s.GetForeground = Colour.Theme "error"
-        && Set.contains Decoration.Bold s.GetDecorations
+        s.Foreground = Colour.Theme "error"
+        && Set.contains Decoration.Bold s.Decorations
     | Error _ -> false
 
 [<Property(MaxTest = 1)>]
@@ -81,7 +81,7 @@ let ``Style.create with upper-case theme slot returns InvalidStyleSpec`` () =
 [<Property(MaxTest = 1)>]
 let ``Decorations form a Set — duplicates collapse`` () =
     match Style.create Colour.Default Colour.Default [ Decoration.Bold; Decoration.Bold; Decoration.Italic ] with
-    | Ok s -> Set.count s.GetDecorations = 2
+    | Ok s -> Set.count s.Decorations = 2
     | Error _ -> false
 
 // ---------- Style.ofMarkupHint (T013a) ----------
@@ -89,30 +89,30 @@ let ``Decorations form a Set — duplicates collapse`` () =
 [<Property(MaxTest = 1)>]
 let ``Style.ofMarkupHint parses 'bold' as Bold decoration`` () =
     match Style.ofMarkupHint "bold" with
-    | Ok s -> Set.contains Decoration.Bold s.GetDecorations
+    | Ok s -> Set.contains Decoration.Bold s.Decorations
     | Error _ -> false
 
 [<Property(MaxTest = 1)>]
 let ``Style.ofMarkupHint parses 'bold #ff0000' to Bold + Rgb`` () =
     match Style.ofMarkupHint "bold #ff0000" with
     | Ok s ->
-        Set.contains Decoration.Bold s.GetDecorations
-        && s.GetForeground = Colour.Rgb (255uy, 0uy, 0uy)
+        Set.contains Decoration.Bold s.Decorations
+        && s.Foreground = Colour.Rgb (255uy, 0uy, 0uy)
     | Error _ -> false
 
 [<Property(MaxTest = 1)>]
 let ``Style.ofMarkupHint parses multi-decoration 'dim italic underline'`` () =
     match Style.ofMarkupHint "dim italic underline" with
     | Ok s ->
-        Set.contains Decoration.Dim       s.GetDecorations
-        && Set.contains Decoration.Italic    s.GetDecorations
-        && Set.contains Decoration.Underline s.GetDecorations
+        Set.contains Decoration.Dim       s.Decorations
+        && Set.contains Decoration.Italic    s.Decorations
+        && Set.contains Decoration.Underline s.Decorations
     | Error _ -> false
 
 [<Property(MaxTest = 1)>]
 let ``Style.ofMarkupHint on empty string returns Ok empty`` () =
     match Style.ofMarkupHint "" with
-    | Ok s -> Set.isEmpty s.GetDecorations
+    | Ok s -> Set.isEmpty s.Decorations
     | Error _ -> false
 
 [<Property(MaxTest = 1)>]
@@ -132,18 +132,18 @@ let ``Style.ofMarkupHint with unknown token returns InvalidStyleSpec`` () =
 [<Property(MaxTest = 1)>]
 let ``RenderContext.create stores given width and theme`` () =
     let ctx = RenderContext.create 120 true "nocturne"
-    ctx.GetWidth = 120
-    && ctx.GetColourEnabled = true
-    && ctx.GetThemeName = "nocturne"
+    ctx.Width = 120
+    && ctx.ColourEnabled = true
+    && ctx.ThemeName = "nocturne"
 
 [<Property(MaxTest = 1)>]
 let ``RenderContext.create with null theme falls back to 'default'`` () =
     let t : string | null = null
     let ctx = RenderContext.create 80 false t
-    ctx.GetThemeName = "default"
+    ctx.ThemeName = "default"
 
 [<Property(MaxTest = 1)>]
 let ``RenderContext.probe returns a valid record`` () =
     let ctx = RenderContext.probe ()
-    ctx.GetWidth > 0
-    && not (System.String.IsNullOrEmpty ctx.GetThemeName)
+    ctx.Width > 0
+    && not (System.String.IsNullOrEmpty ctx.ThemeName)

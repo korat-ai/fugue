@@ -18,21 +18,15 @@ type Decoration =
 /// Smart-constructed text style. Private record so callers cannot construct
 /// an invalid value; `[<Sealed>]` on the public surface (`Console.fsi`).
 type Style =
-    private {
-        Foreground:  Colour
-        Background:  Colour
-        Decorations: Set<Decoration>
-    }
-    member this.GetForeground  = this.Foreground
-    member this.GetBackground  = this.Background
-    member this.GetDecorations = this.Decorations
+    private { fg: Colour; bg: Colour; deco: Set<Decoration> }
+    member this.Foreground  = this.fg
+    member this.Background  = this.bg
+    member this.Decorations = this.deco
 
 module Style =
     /// Empty style: no foreground/background override, no decoration.
     let empty : Style =
-        { Foreground = Colour.Default
-          Background = Colour.Default
-          Decorations = Set.empty }
+        { fg = Colour.Default; bg = Colour.Default; deco = Set.empty }
 
     /// Validates a Theme-slot name is non-empty and contains only
     /// printable lowercase ASCII / `-` / digits. Returns the slot string
@@ -61,18 +55,16 @@ module Style =
             match validateColour bg with
             | Error e -> Error e
             | Ok () ->
-                Ok { Foreground = fg
-                     Background = bg
-                     Decorations = deco |> Set.ofSeq }
+                Ok { fg = fg; bg = bg; deco = deco |> Set.ofSeq }
 
     let withFg (c: Colour) (s: Style) : Style =
-        { s with Foreground = c }
+        { s with fg = c }
 
     let withBg (c: Colour) (s: Style) : Style =
-        { s with Background = c }
+        { s with bg = c }
 
     let withDeco (d: Decoration) (s: Style) : Style =
-        { s with Decorations = s.Decorations |> Set.add d }
+        { s with deco = s.deco |> Set.add d }
 
     /// Parse a Spectre-style markup hint string ("bold #ff0000",
     /// "dim italic", "italic underline"). Returns Error on malformed
@@ -110,6 +102,4 @@ module Style =
             match err with
             | Some e -> Error e
             | None ->
-                Ok { Foreground = fg
-                     Background = Colour.Default
-                     Decorations = decos }
+                Ok { fg = fg; bg = Colour.Default; deco = decos }

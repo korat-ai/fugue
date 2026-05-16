@@ -492,6 +492,16 @@ let start (initialCwd: string) (initialCfg: AppConfig) : unit =
         writeRaw ("\x1b[1;" + string (height - 4) + "r")
         writeRaw ("\x1b[" + string (height - 4) + ";1H")
         ReadLine.setFixedRow (height - 3)
+        // Wipe the fixed area (suggestions + input + status rows) so stale content
+        // from previous sessions — which `\n\n\n\n` may have shifted but not erased —
+        // never bleeds into the suggestion window.  Park the cursor back at h-4
+        // (bottom of scroll region) so subsequent banner writes land in the right place.
+        let fixedAreaTop = max 1 (height - 12)
+        let sb = System.Text.StringBuilder()
+        for r in fixedAreaTop .. height do
+            sb.Append($"\x1b[{r};1H\x1b[2K") |> ignore
+        sb.Append($"\x1b[{height - 4};1H") |> ignore
+        writeRaw (sb.ToString())
         refresh ()
         // No idle heartbeat: each event-driven refresh (post-stream, post-tool,
         // /model set, etc.) is enough. Periodic ticks added cursor save/restore
