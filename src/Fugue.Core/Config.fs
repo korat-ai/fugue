@@ -61,8 +61,16 @@ type AppConfig =
       DryRun: bool         // --dry-run: log tool calls without executing
     }
 
+let private userHome () =
+    match Environment.GetEnvironmentVariable "HOME" |> Option.ofObj with
+    | Some h when h <> "" -> h
+    | _ ->
+        match Environment.GetEnvironmentVariable "USERPROFILE" |> Option.ofObj with
+        | Some h when h <> "" -> h
+        | _ -> Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+
 let loadProfile (name: string) : string option =
-    let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+    let home = userHome ()
     let path = Path.Combine(home, ".fugue", "profiles", name + ".md")
     if File.Exists path then
         try Some (File.ReadAllText path)
@@ -70,7 +78,7 @@ let loadProfile (name: string) : string option =
     else None
 
 let loadTemplate (name: string) : string option =
-    let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+    let home = userHome ()
     let path = Path.Combine(home, ".fugue", "templates", name + ".md")
     if File.Exists path then
         try Some (File.ReadAllText path)
