@@ -3,25 +3,30 @@ module Fugue.Adapters.Console.Tests.CorpusSnapshotTests
 // see Helpers.fs FACT_DISCOVERY for why all tests are [<Property>]
 open FsCheck.Xunit
 open Fugue.Adapters.Console
+open System.Text.RegularExpressions
 
 // ============================================================================
 // T048 — Combined corpus snapshot
 //
-// NOTE on Verify integration: Verify.Xunit tests require [<Fact>] or
-// [<Theory>] attributes which are not discovered in this assembly (known
-// issue — see FoundationTests.fs header). As a workaround, the corpus
-// render is validated programmatically here: we render a representative
-// multi-primitive composition and assert the output is non-empty and
-// contains expected fragments. The Verify snapshot infra (`*.verified.txt`)
-// is deferred to a follow-up once the Fact-discovery issue is resolved;
-// at that point the programmatic assertions here become the first-run
-// baseline for the Verify comparison.
+// Verify.Xunit [<Fact>] tests are not discovered in this assembly (known
+// issue — see Helpers.fs FACT_DISCOVERY). The workaround used in T048v:
+//   [<Property(MaxTest=1)>] calls Verifier.Verify(...).ToTask().GetAwaiter().GetResult()
 //
-// T048 satisfies the spirit of the task: a combined corpus is rendered
-// in a single pass and asserted to be stable (deterministic content).
-// Verify snapshot files in VisualParity/ will be wired in when Fact-
-// discovery is fixed.
+// ANSI CSI codes (\x1b[...m) are stripped before snapshotting so the baseline
+// is readable and stable across Spectre version upgrades that might change
+// colour-code formats. Content-level regressions (missing text, wrong layout)
+// are still caught. Colour-level regressions are caught separately by T015
+// which asserts \x1b[ appears when colour is enabled.
+//
+// First-run flow: the test writes CorpusSnapshotTests.T048v.received.txt
+// next to the test assembly. Inspect it, then copy it to
+// VisualParity/CorpusSnapshotTests.T048v.verified.txt in the repo.
+// Subsequent runs compare against the committed .verified.txt.
 // ============================================================================
+
+/// Strip ANSI CSI escape sequences (\x1b[...m) leaving only printable content.
+let private stripAnsi (s: string) : string =
+    Regex.Replace(s, @"\x1b\[[0-9;]*[a-zA-Z]", "")
 
 let private buildCorpus () : Composition =
     // Build a representative multi-primitive corpus exercising all major
@@ -125,3 +130,56 @@ let ``T048c — Combined corpus output is deterministic (two renders agree)`` ()
     | Ok s1, Ok s2 -> s1 = s2
     | Error _, Error _ -> true
     | _ -> false
+
+// ============================================================================
+// T048v — Snapshot baseline for combined corpus (review #14)
+//
+// Verify.Xunit.Verifier.Verify() requires xunit's test execution context,
+// which is NOT available when called from inside [<Property>] (FsCheck runs
+// in its own scope). The workaround: manage the snapshot file ourselves with
+// plain file I/O, following the same Verify conventions:
+//   - VisualParity/T048v_corpus_snapshot.verified.txt  — committed baseline
+//   - VisualParity/T048v_corpus_snapshot.received.txt  — written on mismatch
+//
+// On first run: the test writes T048v_corpus_snapshot.received.txt and fails.
+// The engineer inspects it, renames it to .verified.txt, and commits it.
+// On subsequent runs: the test compares against .verified.txt byte-for-byte.
+//
+// ANSI CSI escape codes are stripped before comparison so the baseline is
+// readable and stable across Spectre version upgrades.
+// ============================================================================
+
+[<Property(MaxTest = 1)>]
+let ``T048v — Snapshot baseline of combined corpus (ANSI-scrubbed)`` () =
+    let ctx    = RenderContext.create 80 false "default"
+    let corpus = buildCorpus ()
+    match Renderer.toRawAnsi ctx corpus with
+    | Error _ -> false
+    | Ok raw  ->
+        let scrubbed = stripAnsi raw
+        // Pre-checks: text content must survive stripping.
+        let contentOk =
+            scrubbed.Contains "added line"
+            && scrubbed.Contains "padded info text"
+            && scrubbed.Contains "error message"
+            && scrubbed.Contains "alpha"
+        if not contentOk then false
+        else
+            let dir      = System.IO.Path.Combine(__SOURCE_DIRECTORY__, "VisualParity")
+            let verified = System.IO.Path.Combine(dir, "T048v_corpus_snapshot.verified.txt")
+            let received = System.IO.Path.Combine(dir, "T048v_corpus_snapshot.received.txt")
+            if not (System.IO.File.Exists verified) then
+                // First run: write received and fail so the engineer can promote it.
+                System.IO.File.WriteAllText(received, scrubbed)
+                eprintfn "T048v: no .verified.txt found. Wrote:\n  %s\nInspect and rename to .verified.txt to commit the baseline." received
+                false
+            else
+                let baseline = System.IO.File.ReadAllText verified
+                if scrubbed = baseline then
+                    // Clean up any stale received file from a previous mismatch run.
+                    if System.IO.File.Exists received then System.IO.File.Delete received
+                    true
+                else
+                    System.IO.File.WriteAllText(received, scrubbed)
+                    eprintfn "T048v: snapshot mismatch. Diff:\n  baseline: %s\n  received: %s" verified received
+                    false
