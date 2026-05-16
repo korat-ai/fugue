@@ -213,6 +213,14 @@ That is the analyzer's "outcome-only acceptable" classification.)
 
 ---
 
+## Post-Merge Follow-up Tasks
+
+> These tasks are scoped to follow-up PRs, not to the current branch.
+
+- [ ] TODO(review-#8): Seal the public `.fsi` signature file surface. The contract sketch in `contracts/Fugue.Adapters.Console.fsi` specifies `[<Sealed>]` on `Style` and `RenderContext` types. The current implementation exposes members without a `.fsi` file, so downstream callers CAN extend these via object expressions. Before this matters at scale, add a real `Fugue.Adapters.Console.fsi` to `src/Fugue.Adapters.Console/` that locks the public surface. This was deferred from T030/T045 (explicit .fsi) and again by the reviewer in the code-review round. Track as a follow-up issue. Estimated effort: 1 day (write .fsi, fix any exposed internals, update tests that reach private symbols).
+
+---
+
 ## Phase 6: Polish & Cross-Cutting Concerns
 
 **Purpose**: Tighten the surface, satisfy SC-005 deliverable (mapping
