@@ -366,48 +366,72 @@ let private eraseLines (count: int) : unit =
 let internal redraw (st: S) =
     match fixedRow with
     | Some baseRow ->
-        // Fixed-row mode: input line lives at baseRow (h-3, just above thinking/status bar).
-        // When slash suggestions exist they appear BELOW the input line (between input and baseRow),
-        // so the input line floats UP by the number of suggestion rows and returns when they clear.
-        // We always wipe baseRow-9..baseRow to erase any leftover suggestion rows from a previous
-        // render with more suggestions — 9 = maxSuggestions(8) + possible "more" line.
+        // Fixed-row mode: input is ALWAYS at baseRow (= h-3, outside the scroll region 1..h-4).
+        // Suggestions appear ABOVE the input (rows clearFrom..baseRow-1) so they sit inside
+        // the scroll region. This keeps the prompt at a row that can never scroll away —
+        // any LF in the scroll region can shift rows 1..h-4 but NOT h-3.
+        //
+        // Layout when suggestions are present (8 visible + overflow):
+        //   baseRow-9 : "… N more (keep typing)"   ← only if overflow
+        //   baseRow-8 : suggestion 0 (/help …)
+        //   …
+        //   baseRow-1 : suggestion 7 (/alias …)    ← closest to input
+        //   baseRow   : ♩ /model set …             ← prompt (never moves)
+        //
+        // We always clear the SAME 10 rows (baseRow-9..baseRow), so no stale line can survive
+        // outside the window regardless of how many suggestions the previous render had.
         let bufStr = String(st.Buffer.ToArray())
-        // Compute suggestion lines
         let maxSuggestions = 8
         let (visible, moreCount) =
             if st.Buffer.Count > 0 && st.Buffer.[0] = '/' && not (bufStr.StartsWith "/model set ") then
                 let matches = st.SlashHelp |> List.filter (fun (n, _) -> n.StartsWith bufStr)
-                let vis = matches |> List.truncate maxSuggestions
-                (vis, max 0 (matches.Length - maxSuggestions))
+                (matches |> List.truncate maxSuggestions, max 0 (matches.Length - maxSuggestions))
             else ([], 0)
-        let totalSuggRows = visible.Length + (if moreCount > 0 then 1 else 0)
-        let inputRow = max 1 (baseRow - totalSuggRows)
-        // Clear area: wipe 9 rows above baseRow to remove stale suggestions, then baseRow itself
+        // Build the entire redraw as one compound ANSI string → one Execute([RawAnsi]) actor message.
+        // Single message = atomic; no StatusBar SaveAndRestore can interleave mid-render.
+        let sb = System.Text.StringBuilder()
+        let inline emit (s: string) = sb.Append s |> ignore
         let clearFrom = max 1 (baseRow - 9)
         for r in clearFrom .. baseRow do
-            writeRaw $"\x1b[{r};1H\x1b[2K"
-        // Render prompt + buffer at inputRow
-        writeRaw $"\x1b[{inputRow};1H"
-        writeRaw st.PromptText
-        if st.Buffer.Count = 0 && st.Placeholder <> "" && st.ColorEnabled then
-            writeRaw ("\x1b[2m" + st.Placeholder + "\x1b[0m")
-        else
-            writeRaw bufStr
-        // Render suggestion rows below the input
-        for i, (name, desc) in visible |> List.indexed do
-            let r = inputRow + 1 + i
-            writeRaw $"\x1b[{r};1H"
-            if i = st.SuggestionIdx then
-                writeRaw ("  › " + name + "  \x1b[2m" + desc + "\x1b[0m")
-            else
-                writeRaw ("\x1b[2m  " + name + "  " + desc + "\x1b[0m")
+            emit $"\x1b[{r};1H\x1b[2K"
+        // Truncate description to prevent wrapping: each suggestion must fit on one row.
+        // ANSI codes in `emit` calls don't count toward visual width, so we measure
+        // the visible characters only: "  › " (4) + name + "  " (2) + desc.
+        let termWidth    = max 40 (Console.WindowWidth)
+        let truncateDesc (name: string) (desc: string) : string =
+            let prefix = 4 + name.Length + 2  // "  › " or "  " + name + "  "
+            let avail  = termWidth - prefix - 1  // -1 safety margin
+            if avail <= 0 || desc.Length <= avail then desc
+            else desc.[..avail - 2] + "…"
+        // "… N more" at the topmost cleared row when the list overflows
         if moreCount > 0 then
-            writeRaw $"\x1b[{inputRow + 1 + visible.Length};1H\x1b[2m  … {moreCount} more (keep typing)\x1b[0m"
-        // Park cursor at edit position on the input row
+            emit $"\x1b[{clearFrom};1H\x1b[2m  … {moreCount} more (keep typing)\x1b[0m"
+        // Suggestions packed just above baseRow; fewer than 8 float to bottom of the window
+        for i, (name, desc) in visible |> List.indexed do
+            let r =
+                if moreCount > 0 then clearFrom + 1 + i
+                else baseRow - visible.Length + i
+            let desc' = truncateDesc name desc
+            emit $"\x1b[{r};1H"
+            if i = st.SuggestionIdx then
+                emit $"  › {name}  \x1b[2m{desc'}\x1b[0m"
+            else
+                emit $"\x1b[2m  {name}  {desc'}\x1b[0m"
+        // Prompt always at baseRow
+        emit $"\x1b[{baseRow};1H"
+        emit st.PromptText
+        if st.Buffer.Count = 0 && st.Placeholder <> "" && st.ColorEnabled then
+            emit $"\x1b[2m{st.Placeholder}\x1b[0m"
+        else
+            emit bufStr
         let col = st.PromptVisLen + (min st.Cursor st.Buffer.Count) + 1
-        writeRaw $"\x1b[{inputRow};{col}H"
+        emit $"\x1b[{baseRow};{col}H"
         st.LinesRendered   <- 1
         st.RowsBelowCursor <- 0
+        writeRaw (sb.ToString())
+        // Barrier: block until the actor has committed the render to the terminal
+        // so the screen is complete before Console.ReadKey blocks for the next keystroke.
+        flushBarrier ()
     | None ->
     // 1. cursor up to start of our previous render, clear per-line (not full screen end)
     // Before erasing, move cursor to the bottom of the previously-rendered area so
@@ -545,11 +569,14 @@ let readAsync (prompt: string) (strings: Strings) (slashHelp: (string * string) 
         let eraseRendered () =
             match fixedRow with
             | Some baseRow ->
-                // Clear input row and up to 9 suggestion rows, then park in scroll region
+                // Atomic erase: single Execute message so no writer can interleave.
+                let sb = System.Text.StringBuilder()
                 let clearFrom = max 1 (baseRow - 9)
                 for r in clearFrom .. baseRow do
-                    writeRaw $"\x1b[{r};1H\x1b[2K"
-                writeRaw $"\x1b[{baseRow - 1};1H"  // park cursor in scroll region
+                    sb.Append($"\x1b[{r};1H\x1b[2K") |> ignore
+                sb.Append($"\x1b[{baseRow - 1};1H") |> ignore  // park cursor in scroll region
+                writeRaw (sb.ToString())
+                flushBarrier ()
             | None ->
                 if st.RowsBelowCursor > 0 then
                     writeRaw ("\x1b[" + string st.RowsBelowCursor + "B")

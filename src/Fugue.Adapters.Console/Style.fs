@@ -1,0 +1,110 @@
+namespace Fugue.Adapters.Console
+
+/// Foreground/background colour. `Theme` slots resolve against the active
+/// theme name carried by `RenderContext` at render time. Canonical slot
+/// list lives in data-model.md §2 "Canonical theme slots (v1)".
+type Colour =
+    | Default
+    | Rgb of r: byte * g: byte * b: byte
+    | Theme of slot: string
+
+type Decoration =
+    | Bold
+    | Italic
+    | Dim
+    | Underline
+    | Strikethrough
+
+/// Smart-constructed text style. Private record so callers cannot construct
+/// an invalid value; `[<Sealed>]` on the public surface (`Console.fsi`).
+type Style =
+    private { fg: Colour; bg: Colour; deco: Set<Decoration> }
+    member this.Foreground  = this.fg
+    member this.Background  = this.bg
+    member this.Decorations = this.deco
+
+module Style =
+    /// Empty style: no foreground/background override, no decoration.
+    let empty : Style =
+        { fg = Colour.Default; bg = Colour.Default; deco = Set.empty }
+
+    /// Validates a Theme-slot name is non-empty and contains only
+    /// printable lowercase ASCII / `-` / digits. Returns the slot string
+    /// or an InvalidStyleSpec error.
+    let private validateSlot (slot: string) : Result<string, RenderError> =
+        if System.String.IsNullOrWhiteSpace slot then
+            Error (InvalidStyleSpec (slot, "theme slot must be non-empty"))
+        elif slot
+             |> Seq.forall (fun c ->
+                 (c >= 'a' && c <= 'z')
+                 || (c >= '0' && c <= '9')
+                 || c = '-')
+        then Ok slot
+        else Error (InvalidStyleSpec (slot, "theme slot must be lowercase a-z, 0-9, or '-'"))
+
+    let private validateColour (c: Colour) : Result<unit, RenderError> =
+        match c with
+        | Colour.Default | Colour.Rgb _ -> Ok ()
+        | Colour.Theme s -> validateSlot s |> Result.map ignore
+
+    /// Smart constructor. Returns Error on invalid theme-slot names.
+    let create (fg: Colour) (bg: Colour) (deco: Decoration seq) : Result<Style, RenderError> =
+        match validateColour fg with
+        | Error e -> Error e
+        | Ok () ->
+            match validateColour bg with
+            | Error e -> Error e
+            | Ok () ->
+                Ok { fg = fg; bg = bg; deco = deco |> Set.ofSeq }
+
+    let withFg (c: Colour) (s: Style) : Style =
+        { s with fg = c }
+
+    let withBg (c: Colour) (s: Style) : Style =
+        { s with bg = c }
+
+    let withDeco (d: Decoration) (s: Style) : Style =
+        { s with deco = s.deco |> Set.add d }
+
+    /// Parse a Spectre-style markup hint string ("bold #ff0000",
+    /// "dim italic", "italic underline"). Returns Error on malformed
+    /// hints. Bridge for the port window — every successful port should
+    /// migrate the call-site away from this onto typed `create`.
+    ///
+    /// Supported subset: foreground colour name ("default") or `#rrggbb`;
+    /// decoration keywords (bold/italic/dim/underline/strikethrough).
+    /// The `on <colour>` Spectre background-colour form is NOT supported —
+    /// use `Style.create` with an explicit `bg` argument for that.
+    let ofMarkupHint (hint: string) : Result<Style, RenderError> =
+        if System.String.IsNullOrWhiteSpace hint then
+            Ok empty
+        else
+            let tokens =
+                hint.Split([| ' '; '\t' |], System.StringSplitOptions.RemoveEmptyEntries)
+                |> Array.toList
+            // Accumulator: (current foreground colour, accumulated decorations)
+            let tryParseByte (h: string) =
+                try Ok (System.Convert.ToByte (h, 16))
+                with _ -> Error (InvalidStyleSpec (hint, "bad hex byte: " + h))
+            let applyToken (acc: Result<Colour * Set<Decoration>, RenderError>) (tok: string) =
+                match acc with
+                | Error e -> Error e
+                | Ok (curFg, curDeco) ->
+                    match tok.ToLowerInvariant() with
+                    | "bold"          -> Ok (curFg, curDeco.Add Bold)
+                    | "italic"        -> Ok (curFg, curDeco.Add Italic)
+                    | "dim"           -> Ok (curFg, curDeco.Add Dim)
+                    | "underline"     -> Ok (curFg, curDeco.Add Underline)
+                    | "strikethrough" -> Ok (curFg, curDeco.Add Strikethrough)
+                    | "default"       -> Ok (Colour.Default, curDeco)
+                    | t when t.StartsWith "#" && t.Length = 7 ->
+                        match tryParseByte (t.Substring(1, 2)),
+                              tryParseByte (t.Substring(3, 2)),
+                              tryParseByte (t.Substring(5, 2)) with
+                        | Ok r, Ok g, Ok b -> Ok (Colour.Rgb (r, g, b), curDeco)
+                        | Error e, _, _ | _, Error e, _ | _, _, Error e -> Error e
+                    | other ->
+                        Error (InvalidStyleSpec (hint, "unknown style token: " + other))
+            match tokens |> List.fold applyToken (Ok (Colour.Default, Set.empty)) with
+            | Error e       -> Error e
+            | Ok (fg, deco) -> Ok { fg = fg; bg = Colour.Default; deco = deco }

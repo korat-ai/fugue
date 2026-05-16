@@ -1,0 +1,17 @@
+╭─Diff──────────────╮
+│ + added line      │
+│ - removed line    │
+│ @@ hunk header @@ │
+╰───────────────────╯
+────────────
+  padded info text  
+                                                                   error message
+────────────
+┌───────┬───────┐
+│ Key   │ Value │
+├───────┼───────┤
+│ alpha │ 1     │
+│ beta  │ 2     │
+└───────┴───────┘
+
+

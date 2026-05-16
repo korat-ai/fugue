@@ -64,3 +64,33 @@ ci: build test publish smoke-aot
 clean:
     dotnet clean
     find . -type d \( -name bin -o -name obj \) -not -path '*/.git/*' -exec rm -rf {} + 2>/dev/null || true
+
+# Print the resolved Spectre.Console version (used during US3 upgrade workflow)
+verify-spectre-version:
+    @dotnet list src/Fugue.Adapters.Console/Fugue.Adapters.Console.fsproj package | grep -i 'Spectre.Console ' || echo "Spectre.Console not pinned in Fugue.Adapters.Console"
+
+# Generate an aggregate .fsi signature dump for Fugue.Adapters.Console via fsc --sig.
+# Output is one combined signature file at .fsi-snapshots/aggregate.fsi.
+# Next step is manual: split per-module into src/Fugue.Adapters.Console/<Module>.fsi
+# and add each to the .fsproj BEFORE the matching <Compile Include="<Module>.fs" />.
+# See specs/001-console-adapter-lib/follow-up-fsi-sealing.md for the wider plan.
+# Untested recipe — first run will validate the OtherFlags injection on .NET 10 SDK.
+regen-fsi:
+    @mkdir -p .fsi-snapshots
+    dotnet build src/Fugue.Adapters.Console/Fugue.Adapters.Console.fsproj \
+        -c Release \
+        -p:OtherFlags="--sig:$(pwd)/.fsi-snapshots/aggregate.fsi" \
+        --no-incremental
+    @echo ""
+    @echo "Aggregate signature: .fsi-snapshots/aggregate.fsi"
+    @echo "Next: split per-module → src/Fugue.Adapters.Console/<Module>.fsi"
+    @echo "      add each to fsproj BEFORE the matching .fs entry, then 'just build'."
+
+# DESTRUCTIVE — regenerates Verify snapshot baselines for the adapter test suite.
+# Only run after an intentional Spectre.Console version bump, not on routine CI.
+# Steps: delete existing verified files, run with auto-accept, commit new baselines
+# alongside the version bump PR. NOT part of `just ci` or `just test`.
+# See specs/001-console-adapter-lib/upgrade-workflow.md for the full guide.
+regenerate-baselines:
+    find tests/Fugue.Adapters.Console.Tests/VisualParity -name '*.verified.txt' -delete
+    DiffEngine_Disabled=true dotnet test tests/Fugue.Adapters.Console.Tests/Fugue.Adapters.Console.Tests.fsproj -- VerifyTests.autoAcceptReceived=true
