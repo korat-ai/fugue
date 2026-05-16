@@ -1,5 +1,6 @@
 module Fugue.Tests.BashFnTests
 
+open System.IO
 open System.Text.Json
 open System.Threading
 open Microsoft.Extensions.AI
@@ -20,14 +21,14 @@ let private jsonInt (n: int) : obj | null =
 
 [<Fact>]
 let ``BashFn runs echo and returns stdout`` () =
-    let fn = BashFn.create "/tmp" Fugue.Core.Hooks.defaultConfig "test"
+    let fn = BashFn.create (Path.GetTempPath()) Fugue.Core.Hooks.defaultConfig "test"
     let args = mkArgs [ "command", jsonStr "echo hello-fugue" ]
     let out = (fn.InvokeAsync(args, CancellationToken.None).AsTask()).Result |> string
     out |> should haveSubstring "hello-fugue"
 
 [<Fact>]
 let ``BashFn schema requires command`` () =
-    let fn = BashFn.create "/tmp" Fugue.Core.Hooks.defaultConfig "test"
+    let fn = BashFn.create (Path.GetTempPath()) Fugue.Core.Hooks.defaultConfig "test"
     let req =
         fn.JsonSchema.GetProperty("required").EnumerateArray()
         |> Seq.map (fun e -> e.GetString())
@@ -36,7 +37,7 @@ let ``BashFn schema requires command`` () =
 
 [<Fact>]
 let ``BashFn timeout_ms causes timeout result`` () =
-    let fn = BashFn.create "/tmp" Fugue.Core.Hooks.defaultConfig "test"
+    let fn = BashFn.create (Path.GetTempPath()) Fugue.Core.Hooks.defaultConfig "test"
     let args = mkArgs [
         "command",    jsonStr "sleep 5"
         "timeout_ms", jsonInt 200
