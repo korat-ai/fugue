@@ -70,36 +70,41 @@ module Style =
     /// "dim italic", "italic underline"). Returns Error on malformed
     /// hints. Bridge for the port window — every successful port should
     /// migrate the call-site away from this onto typed `create`.
+    ///
+    /// Supported subset: foreground colour name ("default") or `#rrggbb`;
+    /// decoration keywords (bold/italic/dim/underline/strikethrough).
+    /// The `on <colour>` Spectre background-colour form is NOT supported —
+    /// use `Style.create` with an explicit `bg` argument for that.
     let ofMarkupHint (hint: string) : Result<Style, RenderError> =
         if System.String.IsNullOrWhiteSpace hint then
             Ok empty
         else
             let tokens =
                 hint.Split([| ' '; '\t' |], System.StringSplitOptions.RemoveEmptyEntries)
-            let mutable fg = Colour.Default
-            let mutable decos : Set<Decoration> = Set.empty
-            let mutable err : RenderError option = None
-            for tok in tokens do
-                if err.IsNone then
+                |> Array.toList
+            // Accumulator: (current foreground colour, accumulated decorations)
+            let tryParseByte (h: string) =
+                try Ok (System.Convert.ToByte (h, 16))
+                with _ -> Error (InvalidStyleSpec (hint, "bad hex byte: " + h))
+            let applyToken (acc: Result<Colour * Set<Decoration>, RenderError>) (tok: string) =
+                match acc with
+                | Error e -> Error e
+                | Ok (curFg, curDeco) ->
                     match tok.ToLowerInvariant() with
-                    | "bold"           -> decos <- decos.Add Bold
-                    | "italic"         -> decos <- decos.Add Italic
-                    | "dim"            -> decos <- decos.Add Dim
-                    | "underline"      -> decos <- decos.Add Underline
-                    | "strikethrough"  -> decos <- decos.Add Strikethrough
-                    | "default"        -> fg <- Colour.Default
+                    | "bold"          -> Ok (curFg, curDeco.Add Bold)
+                    | "italic"        -> Ok (curFg, curDeco.Add Italic)
+                    | "dim"           -> Ok (curFg, curDeco.Add Dim)
+                    | "underline"     -> Ok (curFg, curDeco.Add Underline)
+                    | "strikethrough" -> Ok (curFg, curDeco.Add Strikethrough)
+                    | "default"       -> Ok (Colour.Default, curDeco)
                     | t when t.StartsWith "#" && t.Length = 7 ->
-                        let tryParse (h: string) =
-                            try
-                                Ok (System.Convert.ToByte (h, 16))
-                            with _ ->
-                                Error (InvalidStyleSpec (hint, "bad hex byte: " + h))
-                        match tryParse (t.Substring(1, 2)), tryParse (t.Substring(3, 2)), tryParse (t.Substring(5, 2)) with
-                        | Ok r, Ok g, Ok b -> fg <- Colour.Rgb (r, g, b)
-                        | Error e, _, _ | _, Error e, _ | _, _, Error e -> err <- Some e
+                        match tryParseByte (t.Substring(1, 2)),
+                              tryParseByte (t.Substring(3, 2)),
+                              tryParseByte (t.Substring(5, 2)) with
+                        | Ok r, Ok g, Ok b -> Ok (Colour.Rgb (r, g, b), curDeco)
+                        | Error e, _, _ | _, Error e, _ | _, _, Error e -> Error e
                     | other ->
-                        err <- Some (InvalidStyleSpec (hint, "unknown style token: " + other))
-            match err with
-            | Some e -> Error e
-            | None ->
-                Ok { fg = fg; bg = Colour.Default; deco = decos }
+                        Error (InvalidStyleSpec (hint, "unknown style token: " + other))
+            match tokens |> List.fold applyToken (Ok (Colour.Default, Set.empty)) with
+            | Error e       -> Error e
+            | Ok (fg, deco) -> Ok { fg = fg; bg = Colour.Default; deco = deco }

@@ -142,11 +142,10 @@ module Renderer =
         | Primitive.LineBreak ->
             Ok "\r\n"
         | Primitive.RawAnsi bytes ->
-            let s =
-                match (bytes: string | null) with
-                | null -> ""
-                | b    -> b
-            Ok s
+            // `bytes` is a non-nullable F# string; the null branch is dead code.
+            // Principle II prevents C# from constructing DU cases directly, so
+            // null can never flow in from outside the F# boundary.
+            Ok bytes
         | Primitive.Styled (style, content) ->
             try
                 let text    = SafeText.unwrap content
@@ -198,9 +197,8 @@ module Renderer =
             Ok (SpectreText "\n" :> IRenderable)
         | Primitive.RawAnsi bytes ->
             // Raw ANSI bytes: use SpectreText so Spectre doesn't try to parse markup.
-            // The surrounding Rows/Panel will receive this as opaque text.
-            let s = match (bytes: string | null) with | null -> "" | b -> b
-            Ok (SpectreText s :> IRenderable)
+            // `bytes` is non-nullable; see renderPrimitive for null-guard rationale.
+            Ok (SpectreText bytes :> IRenderable)
         | Primitive.Styled (style, content) ->
             let text    = SafeText.unwrap content
             let spectre = toSpectreStyle ctx.ThemeName style
@@ -218,6 +216,22 @@ module Renderer =
             r.Style <- toSpectreStyle ctx.ThemeName style
             Ok (r :> IRenderable)
 
+    // ------------------------------------------------------------------
+    // traverseM — collect Results over a list, fail on first error.
+    // Accumulates in reverse with :: then reverses once, giving O(n) rather
+    // than the O(n²) `lst @ [r]` pattern.  Used wherever we map a list of
+    // Composition nodes to a list of IRenderable values.
+    // ------------------------------------------------------------------
+    let private traverseM (f: 'a -> Result<'b, RenderError>) (xs: 'a list) : Result<'b list, RenderError> =
+        let folder acc x =
+            match acc with
+            | Error _ -> acc
+            | Ok lst  ->
+                match f x with
+                | Error e -> Error e
+                | Ok v    -> Ok (v :: lst)
+        xs |> List.fold folder (Ok []) |> Result.map List.rev
+
     /// Convert a `Composition` value into a Spectre `IRenderable`, collecting
     /// the first render error encountered in any branch of the tree.
     let rec private toRenderable
@@ -229,19 +243,9 @@ module Renderer =
             primitiveToRenderable ctx prim
 
         | Composition.Stack children ->
-            // Collect all child IRenderable values, fail on first error.
-            let folder (acc: Result<IRenderable list, RenderError>) (child: Composition) =
-                match acc with
-                | Error _ -> acc
-                | Ok lst  ->
-                    match toRenderable ctx child with
-                    | Error e -> Error e
-                    | Ok r    -> Ok (lst @ [r])
-            let childResults = children |> List.fold folder (Ok [])
-            match childResults with
-            | Error e -> Error e
-            | Ok renderables ->
-                Ok (SpectreRows (renderables |> List.toArray) :> IRenderable)
+            children
+            |> traverseM (toRenderable ctx)
+            |> Result.map (fun rs -> SpectreRows (rs |> List.toArray) :> IRenderable)
 
         | Composition.Padded (left, right, top, bottom, inner) ->
             match toRenderable ctx inner with
@@ -263,18 +267,9 @@ module Renderer =
                 Ok (p :> IRenderable)
 
         | Composition.Columns children ->
-            let folder (acc: Result<IRenderable list, RenderError>) (_, child) =
-                match acc with
-                | Error _ -> acc
-                | Ok lst  ->
-                    match toRenderable ctx child with
-                    | Error e -> Error e
-                    | Ok r    -> Ok (lst @ [r])
-            let childResults = children |> List.fold folder (Ok [])
-            match childResults with
-            | Error e -> Error e
-            | Ok renderables ->
-                Ok (SpectreColumns (renderables |> List.toArray) :> IRenderable)
+            children
+            |> traverseM (fun (_, child) -> toRenderable ctx child)
+            |> Result.map (fun rs -> SpectreColumns (rs |> List.toArray) :> IRenderable)
 
         | Composition.Aligned (alignment, inner) ->
             match toRenderable ctx inner with
@@ -283,33 +278,22 @@ module Renderer =
                 Ok (SpectreAlign (r, toSpectreHAlign alignment, System.Nullable ()) :> IRenderable)
 
         | Composition.Table (headers, rows) ->
-            // Build header renderable list.
-            let folder acc (child: Composition) =
-                match acc with
-                | Error _ -> acc
-                | Ok lst  ->
-                    match toRenderable ctx child with
-                    | Error e -> Error e
-                    | Ok r    -> Ok (lst @ [r])
-            let headerResults = headers |> List.fold folder (Ok [])
-            match headerResults with
-            | Error e -> Error e
-            | Ok headerRenderables ->
+            headers
+            |> traverseM (toRenderable ctx)
+            |> Result.bind (fun headerRenderables ->
                 let t = SpectreTable ()
                 for hr in headerRenderables do
                     t.AddColumn (SpectreTableCol hr) |> ignore
-                // Build each body row.
+                // Build each body row, failing on first error.
                 let mutable rowError : RenderError option = None
                 for row in rows do
                     if rowError.IsNone then
-                        let rowResult = row |> List.fold folder (Ok [])
-                        match rowResult with
-                        | Error e -> rowError <- Some e
-                        | Ok cellRenderables ->
-                            t.Rows.Add (cellRenderables |> List.toSeq) |> ignore
+                        match row |> traverseM (toRenderable ctx) with
+                        | Error e      -> rowError <- Some e
+                        | Ok cellRs    -> t.Rows.Add (cellRs |> List.toSeq) |> ignore
                 match rowError with
                 | Some e -> Error e
-                | None   -> Ok (t :> IRenderable)
+                | None   -> Ok (t :> IRenderable))
 
     /// Evaluate a Composition into the byte/escape stream the Surface
     /// actor expects. Pure (no side effects on Console.Out, no actor post).
