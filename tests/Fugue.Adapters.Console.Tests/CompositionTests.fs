@@ -1,10 +1,8 @@
 module Fugue.Adapters.Console.Tests.CompositionTests
 
+// see Helpers.fs FACT_DISCOVERY for why all tests are [<Property>]
 open FsCheck.Xunit
 open Fugue.Adapters.Console
-
-// All tests written as [<Property(MaxTest=1)>] returning bool — see
-// FoundationTests.fs header for the Fact-discovery workaround rationale.
 
 let private ctx80 () = RenderContext.create 80 true "default"
 
@@ -96,6 +94,55 @@ let ``T034c — Panel Heavy border renders without error`` () =
     match Renderer.toRawAnsi ctx comp with
     | Ok _ -> true
     | Error _ -> false
+
+// ============================================================================
+// T034d — Panel header stress: Unicode, long text, bracket chars, empty-after-escape
+// (Fix #12 — escape regression guard)
+// ============================================================================
+
+[<Property(MaxTest = 1)>]
+let ``T034d — Panel with Unicode header renders without throw`` () =
+    // Unicode header text: contains multi-byte chars and emoji-adjacent codepoints.
+    let ctx    = ctx80 ()
+    let header = SafeText.ofLiteral " Héllo — wörld · 🎵 "
+    let inner  = Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofLiteral "body"))
+    let comp   = Composition.panel Border.Rounded (Some header) inner
+    try
+        match Renderer.toRawAnsi ctx comp with
+        | Ok s  -> s.Contains "body"
+        | Error _ -> false
+    with _ ->
+        false
+
+[<Property(MaxTest = 1)>]
+let ``T034e — Panel with very long header (>200 chars) renders without throw`` () =
+    let ctx    = ctx80 ()
+    let longHdr = System.String('A', 210)
+    let header = SafeText.ofLiteral longHdr
+    let inner  = Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofLiteral "body"))
+    let comp   = Composition.panel Border.Square (Some header) inner
+    try
+        match Renderer.toRawAnsi ctx comp with
+        | Ok s  -> s.Contains "body"
+        | Error _ -> false
+    with _ ->
+        false
+
+[<Property(MaxTest = 1)>]
+let ``T034f — Panel header with '[' chars via ofUser renders without throw (escape regression)`` () =
+    // Spectre interprets '[' as markup start; SafeText.ofUser escapes brackets via
+    // Markup.Escape, so the panel header is rendered as literal text, not markup.
+    let ctx    = ctx80 ()
+    let header = SafeText.ofUser " [Status] — [OK] "
+    let inner  = Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofLiteral "body"))
+    let comp   = Composition.panel Border.Rounded (Some header) inner
+    try
+        // Must not throw; Spectre sees escaped "[[Status]]" etc., no parse error.
+        match Renderer.toRawAnsi ctx comp with
+        | Ok s  -> s.Contains "body"
+        | Error _ -> false
+    with _ ->
+        false
 
 // ============================================================================
 // T035 — Columns

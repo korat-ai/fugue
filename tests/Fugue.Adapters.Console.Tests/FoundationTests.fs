@@ -1,5 +1,6 @@
 module Fugue.Adapters.Console.Tests.FoundationTests
 
+// see Helpers.fs FACT_DISCOVERY for why all tests are [<Property>]
 open FsCheck.Xunit
 open Fugue.Adapters.Console
 
