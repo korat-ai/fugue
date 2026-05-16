@@ -40,7 +40,7 @@ let captureLines (r: IRenderable) : string[] =
     let settings = AnsiConsoleSettings()
     settings.Out <- AnsiConsoleOutput(sw)
     let console = AnsiConsole.Create settings
-    console.Profile.Width <- max 20 Console.WindowWidth
+    console.Profile.Width <- max 20 (try Console.WindowWidth with _ -> 120)
     console.Write r
     sw.ToString().TrimEnd([| '\n' |]).Split('\n')
 
@@ -112,7 +112,7 @@ let errorLine (s: Strings) (msg: string) : IRenderable =
         Text($"{s.ErrorPrefix}: {msg}") :> _
 
 let private termWidth () =
-    let w = Console.WindowWidth
+    let w = try Console.WindowWidth with _ -> 0
     if w >= 20 then w else 120
 
 /// Soft-wrap a single line to `width` columns, appending "↩" at each break.
@@ -137,7 +137,7 @@ let private formatElapsed (e: TimeSpan) =
 
 let private renderToolBody (output: string) : IRenderable =
     let w = max 20 (termWidth () - 4)  // 2 col PadLeft + 2 col margin
-    let maxLines = if Console.WindowHeight < 24 then 10 else 20
+    let maxLines = if (try Console.WindowHeight with _ -> 24) < 24 then 10 else 20
     if colorEnabled then
         if DiffRender.looksLikeDiff output then DiffRender.toRenderable output
         elif output.Contains "```" || output.Contains "**" || output.StartsWith "#" then

@@ -73,7 +73,7 @@ let spectre (action: IAnsiConsole -> unit) : unit =
     let settings = AnsiConsoleSettings()
     settings.Out <- AnsiConsoleOutput(sw)
     let console = AnsiConsole.Create settings
-    console.Profile.Width <- max 20 Console.WindowWidth
+    console.Profile.Width <- max 20 (try Console.WindowWidth with _ -> 120)
     action console
     write (sw.ToString())
 
