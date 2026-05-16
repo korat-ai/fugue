@@ -4,12 +4,19 @@
     <RootNamespace>Fugue.Adapters.Console</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Errors.fsi" />
     <Compile Include="Errors.fs" />
+    <Compile Include="Style.fsi" />
     <Compile Include="Style.fs" />
+    <Compile Include="SafeText.fsi" />
     <Compile Include="SafeText.fs" />
+    <Compile Include="Context.fsi" />
     <Compile Include="Context.fs" />
+    <Compile Include="Primitive.fsi" />
     <Compile Include="Primitive.fs" />
+    <Compile Include="Composition.fsi" />
     <Compile Include="Composition.fs" />
+    <Compile Include="Renderer.fsi" />
     <Compile Include="Renderer.fs" />
   </ItemGroup>
   <ItemGroup>
