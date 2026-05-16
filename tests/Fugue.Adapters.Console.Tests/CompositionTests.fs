@@ -46,24 +46,24 @@ let ``T033 — Padded 2 4 0 0 renders inner content without error`` () =
         | Error _ -> false
 
 [<Property(MaxTest = 1)>]
-let ``T033b — padded with negative left returns RenderFailed`` () =
+let ``T033b — padded with negative left returns InvalidArgument`` () =
     let inner = Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofLiteral "x"))
     match Composition.padded -1 0 0 0 inner with
-    | Error (RenderError.RenderFailed _) -> true
+    | Error (RenderError.InvalidArgument _) -> true
     | _ -> false
 
 [<Property(MaxTest = 1)>]
-let ``T033c — padded with negative right returns RenderFailed`` () =
+let ``T033c — padded with negative right returns InvalidArgument`` () =
     let inner = Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofLiteral "x"))
     match Composition.padded 0 -1 0 0 inner with
-    | Error (RenderError.RenderFailed _) -> true
+    | Error (RenderError.InvalidArgument _) -> true
     | _ -> false
 
 [<Property(MaxTest = 1)>]
-let ``T033d — padded with negative top returns RenderFailed`` () =
+let ``T033d — padded with negative top returns InvalidArgument`` () =
     let inner = Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofLiteral "x"))
     match Composition.padded 0 0 -3 0 inner with
-    | Error (RenderError.RenderFailed _) -> true
+    | Error (RenderError.InvalidArgument _) -> true
     | _ -> false
 
 // ============================================================================
@@ -114,25 +114,25 @@ let ``T035 — columns 0.3 0.7 renders both children`` () =
         | Error _ -> false
 
 [<Property(MaxTest = 1)>]
-let ``T035b — columns with ratio sum > 1.0 returns RenderFailed`` () =
+let ``T035b — columns with ratio sum > 1.0 returns InvalidArgument`` () =
     let a = Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofLiteral "x"))
     let b = Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofLiteral "y"))
     match Composition.columns [(0.6, a); (0.6, b)] with
-    | Error (RenderError.RenderFailed _) -> true
+    | Error (RenderError.InvalidArgument _) -> true
     | _ -> false
 
 [<Property(MaxTest = 1)>]
-let ``T035c — columns with negative ratio returns RenderFailed`` () =
+let ``T035c — columns with negative ratio returns InvalidArgument`` () =
     let a = Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofLiteral "x"))
     match Composition.columns [(-0.1, a)] with
-    | Error (RenderError.RenderFailed _) -> true
+    | Error (RenderError.InvalidArgument _) -> true
     | _ -> false
 
 [<Property(MaxTest = 1)>]
-let ``T035d — columns with individual ratio > 1.0 returns RenderFailed`` () =
+let ``T035d — columns with individual ratio > 1.0 returns InvalidArgument`` () =
     let a = Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofLiteral "x"))
     match Composition.columns [(1.5, a)] with
-    | Error (RenderError.RenderFailed _) -> true
+    | Error (RenderError.InvalidArgument _) -> true
     | _ -> false
 
 // ============================================================================
@@ -195,7 +195,7 @@ let ``T037 — table 2 headers 3 rows renders all cell content`` () =
         | Error _ -> false
 
 [<Property(MaxTest = 1)>]
-let ``T037b — table with ragged rows returns RenderFailed`` () =
+let ``T037b — table with ragged rows returns InvalidArgument`` () =
     let headers = [
         Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofLiteral "A"))
         Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofLiteral "B"))
@@ -205,7 +205,7 @@ let ``T037b — table with ragged rows returns RenderFailed`` () =
         seq [Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofLiteral "only-one"))]
     ]
     match Composition.table headers rows with
-    | Error (RenderError.RenderFailed _) -> true
+    | Error (RenderError.InvalidArgument _) -> true
     | _ -> false
 
 [<Property(MaxTest = 1)>]

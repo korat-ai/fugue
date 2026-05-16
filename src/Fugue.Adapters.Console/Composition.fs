@@ -62,7 +62,7 @@ module Composition =
         (inner:  Composition)
         : Result<Composition, RenderError> =
         if left < 0 || right < 0 || top < 0 || bottom < 0 then
-            Error (RenderError.RenderFailed ("Padded", "padding values must be non-negative"))
+            Error (RenderError.InvalidArgument ("Padded", "padding values must be non-negative"))
         else
             Ok (Padded (left, right, top, bottom, inner))
 
@@ -78,18 +78,18 @@ module Composition =
 
     /// Lay out children in horizontal columns. Each child is given a ratio
     /// (0.0–1.0) of the available width; ratios MUST sum to ≤ 1.0.
-    /// Returns Error if any ratio is negative, > 1.0, or the sum exceeds 1.0.
+    /// Returns Error if any ratio is negative, > 1.0 + 1e-9, or the sum exceeds 1.0 + 1e-9.
     let columns (children: (float * Composition) seq) : Result<Composition, RenderError> =
         let list = children |> Seq.toList
         let anyNegative = list |> List.exists (fun (r, _) -> r < 0.0)
-        let anyOverOne  = list |> List.exists (fun (r, _) -> r > 1.0)
+        let anyOverOne  = list |> List.exists (fun (r, _) -> r > 1.0 + 1e-9)
         let total       = list |> List.sumBy fst
         if anyNegative then
-            Error (RenderError.RenderFailed ("Columns", "column ratios must be non-negative"))
+            Error (RenderError.InvalidArgument ("Columns", "column ratios must be non-negative"))
         elif anyOverOne then
-            Error (RenderError.RenderFailed ("Columns", "individual column ratio must be ≤ 1.0"))
+            Error (RenderError.InvalidArgument ("Columns", "individual column ratio must be ≤ 1.0"))
         elif total > 1.0 + 1e-9 then
-            Error (RenderError.RenderFailed ("Columns", $"column ratios sum to {total:F4} which exceeds 1.0"))
+            Error (RenderError.InvalidArgument ("Columns", $"column ratios sum to {total:F4} which exceeds 1.0"))
         else
             Ok (Columns list)
 
@@ -113,7 +113,7 @@ module Composition =
             let ragged = rList |> List.tryFind (fun row -> row.Length <> colCount)
             match ragged with
             | Some row ->
-                Error (RenderError.RenderFailed ("Table",
+                Error (RenderError.InvalidArgument ("Table",
                     $"ragged row: expected {colCount} columns, got {row.Length}"))
             | None ->
                 Ok (Table (hList, rList))

@@ -8,4 +8,8 @@ type RenderError =
     | InvalidStyleSpec of spec: string * detail: string
     | DegenerateWidth  of reportedWidth: int
     | EmptyComposition of node: string
+    /// Caller-supplied argument failed structural validation in a smart
+    /// constructor (e.g. negative padding, ratio > 1.0, ragged table row).
+    /// Distinct from `RenderFailed` which means Spectre threw at render time.
+    | InvalidArgument  of node: string * detail: string
     | RenderFailed     of primitive: string * message: string
