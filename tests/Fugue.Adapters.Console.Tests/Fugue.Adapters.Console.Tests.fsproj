@@ -22,8 +22,14 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
-    <PackageReference Include="Verify.Xunit" Version="26.*" />
     <PackageReference Include="xunit" Version="2.9.3" />
+    <!-- Pinned to 2.8.2 here while the rest of the solution uses 3.1.5: this
+         test project is 100% FsCheck.Xunit [<Property(MaxTest=1)>] (the
+         FACT_DISCOVERY workaround documented in Helpers.fs), and runner 3.x
+         currently discovers [<Fact>] but loses [<Property>] in this assembly.
+         Until the FsCheck.Xunit ↔ xunit.runner.visualstudio 3.x interaction
+         is sorted out, this lib keeps the older runner. Fugue.Tests (mixed
+         Fact + Property) uses 3.1.5 and is happy. Issue #943 follow-up. -->
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageReference Include="FsUnit.xUnit" Version="7.1.1" />
     <PackageReference Include="FsCheck.Xunit" Version="3.*" />
