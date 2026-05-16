@@ -9,6 +9,7 @@ open Xunit
 open FsUnit.Xunit
 open Fugue.Core.Hooks
 open Fugue.Core.ProviderCache
+open Fugue.Tests.TestCollections
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -44,7 +45,7 @@ let private useTmpCacheDir () : string * IDisposable =
 
 // ── Test 1: cache miss → fetch → write → second call hits cache ───────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``getCached returns stdout on hit, skips re-execution on second call`` () =
     let tmpCacheDir, cleanup = useTmpCacheDir ()
     use _ = cleanup
@@ -97,7 +98,7 @@ let ``getCached returns None when cache file is older than TTL`` () =
 
 // ── Test 3: provider exits non-zero → returns None, no cache written ──────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``assembleWithProviders returns empty when provider exits non-zero`` () =
     let tmpCacheDir, cleanup = useTmpCacheDir ()
     use _ = cleanup
@@ -114,7 +115,7 @@ let ``assembleWithProviders returns empty when provider exits non-zero`` () =
 
 // ── Test 4: provider times out → returns None ────────────────────────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``assembleWithProviders returns empty when provider times out`` () =
     let tmpCacheDir, cleanup = useTmpCacheDir ()
     use _ = cleanup
@@ -131,7 +132,7 @@ let ``assembleWithProviders returns empty when provider times out`` () =
 
 // ── Test 5: assembleWithProviders includes [Context: foo] block ───────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``assembleWithProviders includes Context block header for successful provider`` () =
     let _tmpCacheDir, cleanup = useTmpCacheDir ()
     use _ = cleanup

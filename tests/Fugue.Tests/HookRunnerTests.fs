@@ -10,6 +10,7 @@ open Microsoft.Extensions.AI
 open Xunit
 open FsUnit.Xunit
 open Fugue.Core.Hooks
+open Fugue.Tests.TestCollections
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ let ``runLifecycle is a no-op when config has no hooks`` () =
 
 // ── Test 2: sync hook receives correct JSON payload ───────────────────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``sync SessionStart hook receives the JSON payload via stdin`` () =
     let outFile = Path.GetTempFileName()
     // Script: read all of stdin and write it to outFile
@@ -72,7 +73,7 @@ let ``sync SessionStart hook receives the JSON payload via stdin`` () =
 
 // ── Test 3: async hook fires-and-forgets (exit 1 is swallowed) ────────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``async hook does not throw even when the script exits with code 1`` () =
     let script = makeScript "exit 1"
     try
@@ -85,7 +86,7 @@ let ``async hook does not throw even when the script exits with code 1`` () =
 
 // ── Test 4: sync hook timeout kills process and returns failure ───────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``sync hook timeout kills the process and log-continue swallows the error`` () =
     let script = makeScript "sleep 30"
     try
@@ -99,7 +100,7 @@ let ``sync hook timeout kills the process and log-continue swallows the error`` 
 
 // ── Test 5: onError=log-block propagates failure ──────────────────────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``sync hook that exits non-zero with log-block raises`` () =
     let script = makeScript "exit 2"
     try
@@ -116,7 +117,7 @@ let ``sync hook that exits non-zero with log-block raises`` () =
 
 // ── Test 6: onError=log-continue swallows non-zero exit ──────────────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``sync hook that exits non-zero with log-continue does not raise`` () =
     let script = makeScript "exit 3"
     try
@@ -184,7 +185,7 @@ let private jsonStrArg (s: string) : obj | null =
 
 // ── Test 9: block=true hook returns Block ─────────────────────────────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``PreToolUse block=true returns Block with reason`` () =
     let script = makeScript """echo '{"block":true,"reason":"no rm -rf"}'"""
     try
@@ -199,7 +200,7 @@ let ``PreToolUse block=true returns Block with reason`` () =
 
 // ── Test 10: modified_args merges into AIFunctionArguments ────────────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``PreToolUse modified_args returns ModifyArgs with new value`` () =
     let script = makeScript """echo '{"modified_args":{"command":"echo safe"}}'"""
     try
@@ -225,7 +226,7 @@ let ``PreToolUse modified_args returns ModifyArgs with new value`` () =
 
 // ── Test 11: matcher filter skips non-matching tool ───────────────────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``PreToolUse matcher Bash skips non-matching toolName Read`` () =
     let outFile = Path.GetTempFileName()
     // Script writes to outFile so we can probe whether it ran
@@ -244,7 +245,7 @@ let ``PreToolUse matcher Bash skips non-matching toolName Read`` () =
 
 // ── Test 12: PostToolUse is fire-and-forget (returns immediately) ─────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``PostToolUse fire-and-forget returns before slow script finishes`` () =
     let outFile = Path.GetTempFileName()
     // Script sleeps 5s then writes; runPostToolUse should return well before that.
@@ -264,7 +265,7 @@ let ``PostToolUse fire-and-forget returns before slow script finishes`` () =
 
 // ── Test 13: PreToolUse timeout with LogContinue returns Proceed ─────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``PreToolUse hook timeout returns Proceed (LogContinue)`` () =
     let script = makeScript "sleep 30"
     try
@@ -306,7 +307,7 @@ let ``runUserPromptSubmit with no hooks returns PassThrough immediately`` () =
 
 // ── Test 16: block=true returns BlockPrompt with reason ───────────────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``UserPromptSubmit block=true returns BlockPrompt with reason`` () =
     let script = makeScript """echo '{"block":true,"reason":"no profanity allowed"}'"""
     try
@@ -320,7 +321,7 @@ let ``UserPromptSubmit block=true returns BlockPrompt with reason`` () =
 
 // ── Test 17: replace="..." returns Replace with new string ────────────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``UserPromptSubmit replace returns Replace with substituted prompt`` () =
     let script = makeScript """echo '{"replace":"augmented prompt"}'"""
     try
@@ -334,7 +335,7 @@ let ``UserPromptSubmit replace returns Replace with substituted prompt`` () =
 
 // ── Test 18: append="..." returns Append fragment ─────────────────────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``UserPromptSubmit append returns Append with extra text`` () =
     let script = makeScript """echo '{"append":"extra context"}'"""
     try
@@ -348,7 +349,7 @@ let ``UserPromptSubmit append returns Append with extra text`` () =
 
 // ── Test 19: empty stdout → PassThrough ──────────────────────────────────────
 
-[<Fact>]
+[<FactUnlessWindows>]
 let ``UserPromptSubmit empty stdout returns PassThrough`` () =
     let script = makeScript "exit 0"  // exits cleanly with no stdout
     try
