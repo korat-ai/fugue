@@ -22,16 +22,17 @@
     <Compile Include="Renderer.fs" />
     <Compile Include="DataDisplays.fsi" />
     <Compile Include="DataDisplays.fs" />
+    <Compile Include="Console.fsi" />
+    <Compile Include="Console.fs" />
     <Compile Include="Live.fsi" />
     <Compile Include="Live.fs" />
     <Compile Include="Prompts.fsi" />
     <Compile Include="Prompts.fs" />
-    <Compile Include="Console.fsi" />
-    <Compile Include="Console.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Spectre.Console" Version="0.49.*" />
     <PackageReference Include="Spectre.Console.Json" Version="0.49.*" />
+    <PackageReference Include="Spectre.Console.Testing" Version="0.49.*" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Fugue.Surface\Fugue.Surface.fsproj" />
