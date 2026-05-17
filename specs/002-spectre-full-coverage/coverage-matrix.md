@@ -22,14 +22,14 @@ classified under their parent's row.
 | Status | Count |
 |---|---|
 | covered | 60 |
-| excluded | 169 |
+| excluded | 178 |
 | pending | 0 |
-| **Total public types** | **229** |
+| **Total public types** | **238** |
 
 Breakdown by assembly:
 - `Spectre.Console.dll`: 214 exported types → 55 covered, 159 excluded, 0 pending
 - `Spectre.Console.Testing.dll`: 14 exported types → 4 covered, 10 excluded, 0 pending
-- `Spectre.Console.Json.dll`: 1 exported type → 1 covered, 0 excluded, 0 pending (Phase 2 P2 new dependency — see data-model.md §0.2)
+- `Spectre.Console.Json.dll`: 10 exported types → 1 covered, 9 excluded, 0 pending (Phase 2 P2 new dependency — see data-model.md §0.2; initial matrix counted only the public-facing `JsonText`; T079 Polish audit adds 9 internal AST types as excluded)
 
 ---
 
@@ -219,7 +219,7 @@ Breakdown by assembly:
 
 ---
 
-## Spectre.Console.Json namespace (1 type — separate NuGet package)
+## Spectre.Console.Json namespace (10 types — separate NuGet package)
 
 This namespace is shipped in the `Spectre.Console.Json` NuGet package
 (NOT `Spectre.Console.dll`). Phase 2 P2 introduces this package as a
@@ -227,9 +227,25 @@ new `PackageReference` in `Fugue.Adapters.Console.fsproj` to support the
 `DataDisplays.Json` primitive (decision recorded in
 [data-model.md §0.2](./data-model.md)).
 
+The package exports 10 public types: 1 user-facing widget (`JsonText`) and
+9 internal JSON-AST types (`IJsonParser`, `JsonArray`, `JsonBoolean`,
+`JsonMember`, `JsonNull`, `JsonObject`, `JsonString`, `JsonSyntax`) plus
+one C# fluent-extension (`JsonTextExtensions`). Only `JsonText` has a
+Fugue use-case; the AST types are implementation details of the `JsonText`
+widget's internal parser and are excluded.
+
 | Type | Kind | Status | Phase / Justification |
 |---|---|---|---|
+| `IJsonParser` | interface | excluded | Internal JSON-AST parser interface used by `JsonText` implementation; no Fugue use-case |
+| `JsonArray` | class | excluded | Internal JSON-AST node type; implementation detail of `JsonText` renderer |
+| `JsonBoolean` | class | excluded | Internal JSON-AST node type |
+| `JsonMember` | class | excluded | Internal JSON-AST node type (key-value pair in object) |
+| `JsonNull` | class | excluded | Internal JSON-AST node type |
+| `JsonObject` | class | excluded | Internal JSON-AST node type |
+| `JsonString` | class | excluded | Internal JSON-AST node type |
+| `JsonSyntax` | class | excluded | Internal JSON-AST syntax element used by the `JsonText` renderer |
 | `JsonText` | sealed class | covered | Phase 2 (P2) — `DataDisplays.Json` smart constructor; requires `Spectre.Console.Json 0.49.*` PackageReference (added in P2 PR) |
+| `JsonTextExtensions` | static class | excluded | C# fluent-extension on `JsonText`; adapter exposes typed F# constructor directly |
 
 ---
 
@@ -354,8 +370,10 @@ Note: The `Spectre.Console.Cli` types do **not** appear in the per-row count abo
 - `Json` does not exist in `Spectre.Console 0.49.1` itself; it lives in `Spectre.Console.Json`,
   a separate NuGet package. **Phase 1 design resolution** (data-model.md §0.2): add the
   `Spectre.Console.Json 0.49.*` PackageReference to `Fugue.Adapters.Console.fsproj` in the P2
-  PR. A new section "Spectre.Console.Json namespace (1 type)" above tracks the one new public
-  type (`JsonText`) introduced by this dependency.
+  PR. The matrix initially listed only `JsonText` (1 type); the T079 Polish audit found the
+  assembly actually exports 10 types — the 9 additional entries (`IJsonParser`, `JsonArray`,
+  `JsonBoolean`, `JsonMember`, `JsonNull`, `JsonObject`, `JsonString`, `JsonSyntax`,
+  `JsonTextExtensions`) are internal AST infrastructure excluded with justification above.
 - `Layout` was the only `pending` entry at the close of the matrix's initial enumeration. It is
   now **classified as `excluded`** per Phase 1 design 2026-05-16 (data-model.md §7.1) —
   deferred to Phase 3 (Fugue-specific Layout framework, a separate Spec Kit feature). The
