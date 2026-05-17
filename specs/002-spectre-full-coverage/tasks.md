@@ -147,7 +147,7 @@ and the `Renderable` bridge are how all eight widgets lower into compositions.
 - [ ] T021 [P] [US2] In `tests/Fugue.Adapters.Console.Tests/DataDisplaysTests.fs`, write property tests for `Calendar`: (a) valid year/month (e.g. 2026, 5) with empty events returns `Ok` and renders; (b) month = 0 returns `Error (InvalidArgument ("Calendar", _))`; (c) month = 13 returns `Error (InvalidArgument ("Calendar", _))`.
 - [ ] T022 [P] [US2] In `tests/Fugue.Adapters.Console.Tests/DataDisplaysTests.fs`, write property tests for `FigletText`: (a) `FigletFont.default_` + `FigletText.create` with short text returns `Ok` and renders non-empty output; (b) text of length 101 returns `Error (InvalidArgument ("FigletText", _))`.
 - [ ] T023 [P] [US2] In `tests/Fugue.Adapters.Console.Tests/DataDisplaysTests.fs`, write property tests for `Grid`: (a) 2 columns with 2 rows of exactly 2 cells each returns `Ok` and renders; (b) 2 columns with a row of 1 cell returns `Error (InvalidArgument ("Grid", _))` containing "ragged rows"; (c) empty columns list returns `Error (EmptyComposition _)`.
-- [ ] T024 [P] [US2] In `tests/Fugue.Adapters.Console.Tests/DataDisplaysTests.fs`, write property tests for `TextPath`: (a) any non-null `SafeText` path value returns `Ok` and renders; (b) `null` path (passed as `SafeText.ofLiteral null` — degenerate) is handled gracefully (either `Ok` with empty content or `Error (InvalidArgument _)`, per implementation choice — document the chosen behaviour in a comment).
+- [ ] T024 [P] [US2] In `tests/Fugue.Adapters.Console.Tests/DataDisplaysTests.fs`, write property tests for `TextPath`: (a) any non-null `SafeText` path value returns `Ok` and renders; (b) `null` path (passed as `SafeText.ofLiteral null` — degenerate) MUST assert `Error (InvalidArgument ("TextPath", "null content not permitted"))` — data-model.md §3.2.8 is the binding decision; the "either/or" implementation choice is not permitted.
 - [ ] T024a [P] [US2] Add parametric test in `tests/Fugue.Adapters.Console.Tests/DataDisplaysTests.fs` that for each new widget (`Tree`, `JsonText`, `BarChart`, `BreakdownChart`, `Calendar`, `FigletText`, `Grid`, `TextPath`) renders the same value at `colourEnabled=true` and `colourEnabled=false` through `Renderer.toRawAnsi` and asserts the colour-off output is identical to the colour-on output with all `"\x1b["` sequences stripped. Verifies edge case "Colour downgrade" per spec.md.
 - [ ] T025 [US2] Write one snapshot test per widget in `tests/Fugue.Adapters.Console.Tests/DataDisplaysTests.fs` using the programmatic pattern from Phase 1 `CorpusSnapshotTests.fs` (not Verify.Xunit, due to the known FACT_DISCOVERY issue): for each widget, render at width 80 twice and assert the two outputs are byte-identical (determinism gate). One test covers all eight widgets sequentially — name it `` ``all data-display primitives render deterministically at fixed width`` ``.
 
@@ -212,7 +212,7 @@ The `[P]` markers in this phase assume they ship together; if split, remove
 - [ ] T044 [US3] Implement the per-console session guard in `src/Fugue.Adapters.Console/Live.fs`: a `private let sessionGuard = System.Runtime.CompilerServices.ConditionalWeakTable<Spectre.Console.IAnsiConsole, obj>()` shared across `Live.run`, `Status.run`, `Progress.run`. At entry, attempt `sessionGuard.TryAdd(backend, obj())`; on failure return `Error (ConcurrentLiveSession (backend.GetHashCode().ToString("x8")))`. Release in `finally` via `sessionGuard.Remove`. Use the `IAnsiConsole` from the `Console` opaque type via an `internal` accessor (see T049).
 - [ ] T045 [US3] Implement `LiveSession`, `Live.run` in `src/Fugue.Adapters.Console/Live.fs` per data-model.md §4.3. `LiveSession` wraps `Spectre.Console.LiveDisplayContext`. `Live.run` calls Spectre's `AnsiConsole.Live(initial).StartAsync(fun ctx -> task { ... })` internally; provides the typed `LiveSession` to the user body; catches `OperationCanceledException` → `Error (UserCancelled "live")`; calls the session guard (T044). `LiveSession.update` runs `Renderer.toRawAnsi` on the new composition and calls `ctx.UpdateTarget(renderable)` + `ctx.Refresh()`. `LiveSession.refresh` calls `ctx.Refresh()` directly.
 - [ ] T046 [US3] Implement `StatusSession`, `Status.run` in `src/Fugue.Adapters.Console/Live.fs` per data-model.md §4.4. `StatusSession` wraps `Spectre.Console.StatusContext`. Non-TTY fallback (FR-016): when `Console.isInteractive = false`, degrade to writing the message once to the console output (no redraw loop). `StatusSession.updateMessage` and `updateSpinner` update the Spectre context fields.
-- [ ] T046a [US3] Cursor-restore assertion in `tests/Fugue.Adapters.Console.Tests/LiveTests.fs`: after a cancelled `Live.run` / `Status.run` / `Progress.run`, assert that `Console.cursorState` (via `Console.test` fixture) returns to `Visible` + row0 baseline. Verifies FR-011 + edge case "Cancellation mid-Live".
+- [ ] T046a [US3] Cursor-restore assertion in `tests/Fugue.Adapters.Console.Tests/LiveTests.fs`: after a cancelled `Live.run` / `Status.run` / `Progress.run`, assert that `Console.cursorState` (via `Console.test` fixture) returns `Visible (_, _)` — cursor is visible at some position. Do NOT assert a specific row index; data-model.md §6.3 does not specify a post-tear-down cursor row for `Console.test`, and the exact row is implementation-incidental. The cancellation contract is "cursor is restored to a visible state and the next adapter call lands on a clean line". Verifies FR-011 + edge case "Cancellation mid-Live".
 - [ ] T047 [US3] Implement `ProgressSession`, `ProgressTask`, `Progress.run` in `src/Fugue.Adapters.Console/Live.fs` per data-model.md §4.5. `ProgressTask.increment`, `setValue`, `complete`, `value`, `maxValue` wrap the Spectre `ProgressTask` methods. Non-TTY fallback: emit a final tally line. `ProgressSession.addTask` calls `Spectre.Console.ProgressContext.AddTask`.
 
 **Checkpoint**: US3 PR shippable (together with US5 Console type). `Live.run`, `Status.run`, `Progress.run` all compile; session guard works; cancellation flows correctly; non-TTY fallback tested; 83 + US1 + US2 tests still green; new LiveTests.fs green.
@@ -321,7 +321,7 @@ US3 + US5 in one PR.
 clean; SC-003 test count ≥ 250 and suite ≤ 5s; SC-002 note; `just regen-fsi`
 drift check.
 
-- [ ] T072 Create `tests/Fugue.Adapters.Console.Tests/CoverageMatrixTests.fs`. Implement a `CoverageMatrix` test-internal module that parses `specs/002-spectre-full-coverage/coverage-matrix.md` — extracts the `Type` column (column 1, 0-indexed) from every `| ... |` row. Implement `` ``Every public Spectre type is in the coverage matrix`` `` test: enumerate `typeof<Spectre.Console.AnsiConsole>.Assembly.GetExportedTypes()`, append `typeof<Spectre.Console.Json.JsonText>.Assembly.GetExportedTypes()`, append `typeof<Spectre.Console.Testing.TestConsole>.Assembly.GetExportedTypes()`; assert each type's simple name appears in the parsed matrix set. This is the SC-001 gate and FR-019 enforcement.
+- [ ] T072 Create `tests/Fugue.Adapters.Console.Tests/CoverageMatrixTests.fs`. Implement a `CoverageMatrix` test-internal module that parses `specs/002-spectre-full-coverage/coverage-matrix.md` — extracts the `Type` column (column 1, 0-indexed) from every `| ... |` row. Implement `` ``Every public Spectre type is in the coverage matrix`` `` test: enumerate `typeof<Spectre.Console.AnsiConsole>.Assembly.GetExportedTypes()`, append `typeof<Spectre.Console.Json.JsonText>.Assembly.GetExportedTypes()`, append `typeof<Spectre.Console.Testing.TestConsole>.Assembly.GetExportedTypes()`; assert each type's simple name appears in the parsed matrix set. Use `Type.Name` (not `Type.FullName`) for matrix-key matching — generics-arity markers (e.g. `TextPrompt\`1`) and nested types (e.g. `Spinner+Known`) are stored as simple names in the matrix. This is the SC-001 gate and FR-019 enforcement.
 - [ ] T073 [P] In `tests/Fugue.Adapters.Console.Tests/CoverageMatrixTests.fs`, implement `` ``Every covered type produces non-empty render output`` `` (FR-019 second half): a hand-rolled registry mapping each `covered` type name to a `unit -> Result<string, RenderError>` function that builds a representative value and calls `Renderer.toRawAnsi`. One entry per covered type (60 entries). Assert every entry returns `Ok output` where `output.Length > 0`. Mark entries for Live/Status/Progress/Prompts session types as `"not applicable to static render"` and skip those (they require `Async` + `Console`; static coverage is verified by LiveTests.fs, PromptsTests.fs).
 - [ ] T074 [P] Verify SC-004: run `rg 'Spectre\.' src/Fugue.Adapters.Console/*.fsi` and confirm exactly ONE match — the `IRenderable` argument in `Renderable.fsi`. Document the match in a comment at the top of `Renderable.fsi`. If additional matches appear (from stub or implementation drift), fix before declaring SC-004 satisfied.
 - [ ] T075 [P] Verify SC-006: run `dotnet publish src/Fugue.Cli.Aot -c Release -r osx-arm64` and confirm zero new trim/AOT warnings. The adapter is JIT-only and is NOT in the headless closure — this should hold by construction. Document the publish output in the PR description.
@@ -359,7 +359,7 @@ Phase 4 US2 P2 (T017–T035)            Phase 7 US5 P5 (T067–T071)
    │
    └──────────────────────────────┐
                                   ▼
-                          Phase 8 Polish (T072–T080)
+                          Phase 8 Polish (T072–T081)
                           [runs after all US phases complete]
 ```
 
@@ -463,8 +463,8 @@ in any order once US1 is merged.
 
 ## Format Validation
 
-All task IDs follow the `T001`–`T081` sequential numbering in execution order
-within their phase. Checklist format compliance:
+All task IDs follow `T001`–`T081` sequential numbering in execution order
+within their phase, plus T024a + T046a inserted (82 tasks total). Checklist format compliance:
 
 | Requirement | Verified |
 |---|---|
@@ -474,7 +474,7 @@ within their phase. Checklist format compliance:
 | Setup and Foundational tasks have no `[Story]` label | ✅ |
 | Polish tasks have no `[Story]` label | ✅ |
 | Every task description includes exact file path | ✅ |
-| Tasks sequential T001–T081; no gaps (suffix form `TxxxA` allowed for inserted tasks, e.g. T024a, T046a) | ✅ |
+| Tasks sequential T001–T081; no gaps (suffix form `Txxxa` allowed for inserted tasks, e.g. T024a, T046a) | ✅ |
 
 ---
 
