@@ -331,3 +331,63 @@ let ``T025 — all data-display primitives render deterministically at fixed wid
         let out2 = renderOk ctx2 comp
         // byte-identical output
         out1 = out2)
+
+// ============================================================================
+// T026 — CalendarEvent (review finding 2A + regression for finding 1)
+// ============================================================================
+
+[<Property(MaxTest = 1)>]
+let ``T026a — CalendarEvent.create: happy-path returns Ok`` () =
+    let date = System.DateOnly (2026, 5, 17)
+    match CalendarEvent.create date (SafeText.ofLiteral "Eurovision final") with
+    | Ok _    -> true
+    | Error e -> failwith $"Expected Ok but got Error: %A{e}"
+
+[<Property(MaxTest = 1)>]
+let ``T026b — Calendar render marks the event day (regression for 5-arg overload fix)`` () =
+    // Spectre.Console's Calendar widget marks event days with an asterisk ("17*")
+    // but does not embed the description as visible text.  The 5-arg overload
+    // (CalendarExtensions.AddCalendarEvent(cal, description, year, month, day))
+    // is the correct call; this test proves the event is registered at all,
+    // which is observable as the "*" marker on the event day.
+    let date = System.DateOnly (2026, 5, 17)
+    let ev =
+        match CalendarEvent.create date (SafeText.ofLiteral "Eurovision final") with
+        | Ok e    -> e
+        | Error e -> failwith $"CalendarEvent.create Error: %A{e}"
+    let cal =
+        match Calendar.create 2026 5 [ ev ] with
+        | Ok c    -> c
+        | Error e -> failwith $"Calendar.create Error: %A{e}"
+    let comp = Calendar.toComposition cal
+    let ctx  = RenderContext.create 200 false "default"
+    match Renderer.toRawAnsi ctx comp with
+    | Error e  -> failwith $"Render Error: %A{e}"
+    | Ok output ->
+        // Day 17 must appear with the event marker (asterisk).
+        // Spectre renders event days as "17*" in the calendar grid.
+        output.Contains "17*"
+
+// ============================================================================
+// T027 — FigletFont.fromFile (review finding 2B)
+// ============================================================================
+
+[<Property(MaxTest = 1)>]
+let ``T027a — FigletFont.fromFile rejects missing path with InvalidArgument`` () =
+    // TODO: FigletFont.fromFile happy-path test pending fixture .flf file.
+    match FigletFont.fromFile "/definitely/not/a/real/path/figlet.flf" with
+    | Error (RenderError.InvalidArgument ("FigletFont", _)) -> true
+    | Error e -> failwith $"Expected InvalidArgument(FigletFont) but got: %A{e}"
+    | Ok _    -> failwith "Expected Error for missing path but got Ok"
+
+// ============================================================================
+// T028 (review finding 2C) — FigletFont.fromStream with garbage bytes
+// ============================================================================
+
+[<Property(MaxTest = 1)>]
+let ``T028a — FigletFont.fromStream rejects garbage bytes with Error`` () =
+    // TODO: FigletFont.fromStream happy-path test pending embedded .flf fixture.
+    use stream = new System.IO.MemoryStream([| 0xFFuy; 0xFEuy; 0x00uy |])
+    match FigletFont.fromStream stream with
+    | Error _ -> true
+    | Ok _    -> failwith "Expected Error for garbage stream content but got Ok"
