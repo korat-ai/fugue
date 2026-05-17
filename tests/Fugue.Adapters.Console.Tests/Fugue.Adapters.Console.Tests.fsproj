@@ -19,6 +19,8 @@
     <Compile Include="PromptsTests.fs" />
     <Compile Include="CoverageMatrixTests.fs" />
     <Compile Include="SuiteDurationSmoke.fs" />
+    <!-- Phase 3 Layout framework tests -->
+    <Compile Include="Layout\CommonTypesTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
