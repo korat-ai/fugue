@@ -54,8 +54,8 @@ let ``T010 — Vertical Stack with 3 children renders all marker strings`` () =
             // consecutive children, so the row-index difference must be ≥ 2
             // (content row + 1 blank separator). We find the first line containing
             // each marker and check the distance.
-            let findRow marker =
-                lines |> Array.tryFindIndex (fun l -> l.Contains marker)
+            let findRow (marker: string) =
+                lines |> Array.tryFindIndex (fun (l: string) -> l.Contains marker)
             let gapOk =
                 match findRow "STACK-CHILD-1", findRow "STACK-CHILD-2", findRow "STACK-CHILD-3" with
                 | Some l1, Some l2, Some l3 -> (l2 - l1) >= 2 && (l3 - l2) >= 2
