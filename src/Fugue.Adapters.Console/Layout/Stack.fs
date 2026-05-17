@@ -43,7 +43,7 @@ module internal StackInternals =
 /// Opaque sealed Stack type. Callers obtain values only via `Stack.create`.
 [<Sealed>]
 type Stack (data: StackData) =
-    member _.Data = data
+    member internal _.Data = data
 
 module Stack =
 
@@ -58,9 +58,20 @@ module Stack =
         elif gap < 0 then
             Error (RenderError.InvalidArgument ("Stack", "gap must be non-negative"))
         else
+            // Horizontal layout: cross-axis alignment beyond Start is not yet
+            // implemented in MVP (tracked as Phase 3 follow-up — see tasks.md T082
+            // "horizontal cross-axis alignment").
+            match orientation, align with
+            | Horizontal, CrossAxisAlignment.Center
+            | Horizontal, CrossAxisAlignment.End_
+            | Horizontal, CrossAxisAlignment.Stretch ->
+                Error (RenderError.InvalidArgument
+                    ("Stack", "horizontal layout currently only supports Start cross-axis alignment; Center/End_/Stretch tracked as Phase 3 follow-up"))
+            | _ ->
             // Depth check: each child contributes its depth; the Stack itself adds 1.
-            // Maximum depth for a child is 99 — the resulting Stack would be at depth 100.
-            // Depth 100 itself is the limit; depth > 100 is rejected.
+            // Spec edge case: depth ≤ 100 permitted; depth > 100 rejected.
+            // Stack itself adds 1 layer, so child's max depth must be ≤ 99 for total ≤ 100.
+            // Reject when childDepth >= 100 (total would be ≥ 101).
             let childDepth = StackInternals.maxChildDepth children
             if childDepth >= 100 then
                 Error (RenderError.InvalidArgument ("Layout", "depth exceeds 100"))

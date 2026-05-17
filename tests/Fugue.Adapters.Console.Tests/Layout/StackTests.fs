@@ -45,9 +45,22 @@ let ``T010 — Vertical Stack with 3 children renders all marker strings`` () =
         | Error e -> failwith $"render failed: {e}"
         | Ok output ->
             let stripped = stripAnsi output
-            stripped.Contains "STACK-CHILD-1"
-            && stripped.Contains "STACK-CHILD-2"
-            && stripped.Contains "STACK-CHILD-3"
+            let lines = stripped.Split([|'\n'|])
+            let allPresent =
+                stripped.Contains "STACK-CHILD-1"
+                && stripped.Contains "STACK-CHILD-2"
+                && stripped.Contains "STACK-CHILD-3"
+            // Gap-distance assertion: gap=1 means exactly 1 blank line between
+            // consecutive children, so the row-index difference must be ≥ 2
+            // (content row + 1 blank separator). We find the first line containing
+            // each marker and check the distance.
+            let findRow marker =
+                lines |> Array.tryFindIndex (fun l -> l.Contains marker)
+            let gapOk =
+                match findRow "STACK-CHILD-1", findRow "STACK-CHILD-2", findRow "STACK-CHILD-3" with
+                | Some l1, Some l2, Some l3 -> (l2 - l1) >= 2 && (l3 - l2) >= 2
+                | _ -> false // markers must all be present
+            allPresent && gapOk
 
 // ============================================================================
 // T011 — Error: empty children
@@ -80,7 +93,8 @@ let ``T012 — Stack.create with negative gap returns InvalidArgument`` () =
 let ``T013 — Horizontal Stack renders both children in output`` () =
     let c1 = namedLeaf "HSTACK-LEFT"
     let c2 = namedLeaf "HSTACK-RIGHT"
-    match Stack.create Horizontal 2 Center [c1; c2] with
+    // Must use Start — Center/End_/Stretch are rejected for Horizontal (T013b/c/d).
+    match Stack.create Horizontal 2 Start [c1; c2] with
     | Error e -> failwith $"Stack.create failed: {e}"
     | Ok stack ->
         let comp = Composition.ofStack stack
@@ -88,8 +102,50 @@ let ``T013 — Horizontal Stack renders both children in output`` () =
         | Error e -> failwith $"render failed: {e}"
         | Ok output ->
             let stripped = stripAnsi output
-            stripped.Contains "HSTACK-LEFT"
-            && stripped.Contains "HSTACK-RIGHT"
+            let containsBoth =
+                stripped.Contains "HSTACK-LEFT"
+                && stripped.Contains "HSTACK-RIGHT"
+            // Gap-distance assertion: with gap=2, column position of RIGHT marker
+            // must be at least past LEFT marker + its length + gap.
+            let row =
+                stripped.Split([|'\n'|])
+                |> Array.tryFind (fun l -> l.Contains "HSTACK-LEFT" && l.Contains "HSTACK-RIGHT")
+            let gapOk =
+                match row with
+                | None -> true // markers may be on separate lines at narrow widths — skip
+                | Some r ->
+                    let p1 = r.IndexOf "HSTACK-LEFT"
+                    let p2 = r.IndexOf "HSTACK-RIGHT"
+                    (p2 - p1) >= ("HSTACK-LEFT".Length + 2)
+            containsBoth && gapOk
+
+// ============================================================================
+// T013b/c/d — Horizontal Stack rejects non-Start cross-axis alignment
+// ============================================================================
+
+[<Property(MaxTest = 1)>]
+let ``T013b — Stack.create Horizontal with Center align returns InvalidArgument`` () =
+    let child = namedLeaf "any"
+    match Stack.create Horizontal 0 Center [child] with
+    | Error (RenderError.InvalidArgument ("Stack", detail)) ->
+        detail.Contains "horizontal" || detail.Contains "Start"
+    | _ -> false
+
+[<Property(MaxTest = 1)>]
+let ``T013c — Stack.create Horizontal with End_ align returns InvalidArgument`` () =
+    let child = namedLeaf "any"
+    match Stack.create Horizontal 0 End_ [child] with
+    | Error (RenderError.InvalidArgument ("Stack", detail)) ->
+        detail.Contains "horizontal" || detail.Contains "Start"
+    | _ -> false
+
+[<Property(MaxTest = 1)>]
+let ``T013d — Stack.create Horizontal with Stretch align returns InvalidArgument`` () =
+    let child = namedLeaf "any"
+    match Stack.create Horizontal 0 Stretch [child] with
+    | Error (RenderError.InvalidArgument ("Stack", detail)) ->
+        detail.Contains "horizontal" || detail.Contains "Start"
+    | _ -> false
 
 // ============================================================================
 // T014 — Cross-axis alignment: all 4 cases render without error
@@ -153,11 +209,16 @@ let ``T015 — Colour-off output equals colour-on output with ANSI stripped`` ()
         | _, Error e -> failwith $"no-colour render failed: {e}"
 
 // ============================================================================
-// T015a — CJK wide-character width test
+// T015a — CJK codepoint preservation test
 // ============================================================================
 
+// NOTE: This test verifies CJK codepoints survive lowering — NOT that
+// Spectre computes display width correctly (6 cells for "日本語"). True
+// width verification deferred to T082 follow-up (R-4) where the new
+// SafeText.displayWidth API will land.
+
 [<Property(MaxTest = 1)>]
-let ``T015a — Stack containing CJK text renders without error`` () =
+let ``T015a — Stack containing CJK text preserves codepoints in output (display-width verification deferred to follow-up)`` () =
     // "日本語" is 3 Unicode code points, each East Asian Wide = 2 display columns = 6 total.
     // Layout must not corrupt the string or error on it.
     // NOTE: ZWJ family emoji (e.g. "👨‍👩‍👧") are a known gap per research R-4:
