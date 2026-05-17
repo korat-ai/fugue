@@ -122,9 +122,13 @@ module Json =
     let private tenMiB = 10 * 1024 * 1024
 
     let create (payload: string) : Result<Json, RenderError> =
-        if payload.Length > tenMiB then
+        // Measure UTF-8 byte length (no allocation; walks UTF-16 once) to match
+        // the "10 MiB" wording in data-model.md §3.2.2 and the error message.
+        // payload.Length (UTF-16 code units) would allow ~20 MiB of ASCII text.
+        let byteLen = System.Text.Encoding.UTF8.GetByteCount payload
+        if byteLen > tenMiB then
             Error (RenderError.InvalidArgument ("Json",
-                $"payload size {payload.Length} bytes exceeds 10 MiB"))
+                $"payload size {byteLen} bytes exceeds 10 MiB"))
         else
             try
                 use _doc = System.Text.Json.JsonDocument.Parse payload
