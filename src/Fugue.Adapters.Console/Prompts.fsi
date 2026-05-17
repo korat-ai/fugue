@@ -66,8 +66,9 @@ module SelectionPrompt =
     /// is pre-flighted via the label projection; any label that fails to
     /// render returns `Error (InvalidArgument ("SelectionPrompt", _))`.
     ///
-    /// The `'T: not null` constraint is propagated from the underlying
-    /// prompt type's generic parameter requirement.
+    /// Required by F# strict nullability on the `Converter` callback
+    /// parameter (`Func<'T, string>`). The upstream library imposes no
+    /// such requirement — this is an adapter-layer constraint.
     val ask :
         console: Console ->
             title: Composition ->
@@ -83,8 +84,9 @@ module MultiSelectionPrompt =
     /// error; multi-selection naturally permits the empty subset.
     /// Other validation rules identical to `SelectionPrompt.ask`.
     ///
-    /// The `'T: not null` constraint is propagated from the underlying
-    /// prompt type's generic parameter requirement.
+    /// Required by F# strict nullability on the `Converter` callback
+    /// parameter (`Func<'T, string>`). The upstream library imposes no
+    /// such requirement — this is an adapter-layer constraint.
     val ask :
         console: Console ->
             title: Composition ->
