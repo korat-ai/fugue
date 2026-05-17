@@ -398,6 +398,32 @@ let ``T046a — Spinner DU has the expected known spinner cases`` () =
         | Error e -> failwith $"Spinner {spinner} failed: %A{e}")
 
 // ============================================================================
+// T046b — every named Spinner DU case maps successfully via spinnerToSpectre
+// ============================================================================
+
+[<Property(MaxTest = 1)>]
+let ``T046b — every named Spinner case maps to a valid spectre spinner`` () =
+    // Enumerate all DU cases except Custom (which has fields and is validated separately).
+    let cases =
+        FSharp.Reflection.FSharpType.GetUnionCases(typeof<Spinner>)
+        |> Array.filter (fun c -> c.Name <> "Custom")
+    let c  = testConsole ()
+    let ct = CancellationToken.None
+    // Each Status.run acquires then releases the session guard, so each iteration
+    // starts with a clean guard — no ConcurrentLiveSession possible.
+    cases
+    |> Array.forall (fun caseInfo ->
+        let spinnerValue =
+            unbox<Spinner> (FSharp.Reflection.FSharpValue.MakeUnion(caseInfo, [||]))
+        let result =
+            Status.run c spinnerValue (SafeText.ofLiteral "x") ct (fun _ ->
+                async { return Ok () })
+            |> runSync
+        match result with
+        | Ok ()   -> true
+        | Error e -> failwith $"Spinner {caseInfo.Name} failed: %A{e}")
+
+// ============================================================================
 // T042-T043 — StatusSession.updateMessage / updateSpinner
 // ============================================================================
 
