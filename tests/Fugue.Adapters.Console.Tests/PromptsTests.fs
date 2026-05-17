@@ -214,6 +214,79 @@ let ``MultiSelectionPrompt.ask pre-cancelled on non-TTY returns appropriate erro
     | Error (UserCancelled _)        -> true
     | other -> failwith $"Expected Error(NoInteractiveConsole or UserCancelled), got: %A{other}"
 
+// ============================================================================
+// T058a/b/c — Direct unit tests for Internal.preflightLabels
+// (was 0% covered because all prior tests short-circuit on non-TTY before
+// preflightLabels is reached in SelectionPrompt.ask / MultiSelectionPrompt.ask)
+// ============================================================================
+
+/// A minimal IRenderable that always throws when Spectre calls Render.
+/// Mirrors the ThrowingRenderable in RenderableTests.fs (private there).
+type private ThrowingRenderable(msg: string) =
+    interface Spectre.Console.Rendering.IRenderable with
+        member _.Measure(_console, _maxWidth) =
+            Spectre.Console.Rendering.Measurement(0, 0)
+        member _.Render(_console, _options) =
+            raise (System.InvalidOperationException msg)
+            Seq.empty
+
+/// A Composition that wraps a ThrowingRenderable, causing Renderer.toRawAnsi
+/// to return Error when the label is projected.
+let private throwingComp (msg: string) =
+    let r = Renderable.fromSpectre (ThrowingRenderable msg :> Spectre.Console.Rendering.IRenderable)
+    Composition.ofRenderable r
+
+[<Property(MaxTest = 1)>]
+let ``T058a — preflightLabels accepts empty-string labels (regression: was a false-positive Error)`` () =
+    // An intentional empty-string label: Leaf of a styled empty SafeText.
+    // Before the fix, projectLabel returned "" and preflightLabels treated
+    // "" as a sentinel for render failure — causing a spurious InvalidArgument.
+    let emptyLabel = Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofLiteral ""))
+    let choices = [ "a", emptyLabel ]
+    match Fugue.Adapters.Console.Internal.preflightLabels "SelectionPrompt" choices with
+    | Ok pairs ->
+        // Must succeed; the projected label may be "" or whitespace — both fine.
+        pairs.Length = 1
+    | Error e ->
+        failwith $"Expected Ok for empty-string label, got Error: %A{e}"
+
+[<Property(MaxTest = 1)>]
+let ``T058b — preflightLabels rejects a choice whose Composition throws on render`` () =
+    let choices = [ "good", helloComp; "bad", throwingComp "deliberate-render-throw" ]
+    match Fugue.Adapters.Console.Internal.preflightLabels "SelectionPrompt" choices with
+    | Error (InvalidArgument ("SelectionPrompt", msg)) ->
+        // Message must mention the index of the failing choice (index 1).
+        msg.Contains "1"
+    | Error other ->
+        failwith $"Expected InvalidArgument for SelectionPrompt, got: %A{other}"
+    | Ok _ ->
+        failwith "Expected Error for a throwing Composition, got Ok"
+
+[<Property(MaxTest = 1)>]
+let ``T058c — preflightLabels colour-strips labels (no RGB colour ANSI codes in output)`` () =
+    // Build a label with an RGB foreground colour (255, 0, 0) and bold decoration.
+    // The projection runs with ColourEnabled=false (NoColors colour system), so
+    // Spectre suppresses 24-bit colour codes (\x1b[38;2;R;G;Bm) in the output.
+    // Decoration codes (\x1b[1m for bold) may still be present — that is expected
+    // and acceptable; "colour stripped" per data-model.md §0.1 refers to fg/bg
+    // colour codes, not to all escape sequences.
+    let colouredStyle =
+        Style.empty
+        |> Style.withFg (Colour.Rgb (255uy, 0uy, 0uy))
+        |> Style.withDeco Decoration.Bold
+    let colouredLabel = Composition.Leaf (Primitive.Styled (colouredStyle, SafeText.ofLiteral "hello"))
+    let choices = [ "x", colouredLabel ]
+    match Fugue.Adapters.Console.Internal.preflightLabels "SelectionPrompt" choices with
+    | Ok [ (_, label) ] ->
+        // 1. The text content is present.
+        // 2. No 24-bit RGB colour escape (\x1b[38;2;...) — colour was stripped.
+        //    (If colour were enabled, Spectre would emit \x1b[38;2;255;0;0m.)
+        label.Contains "hello" && not (label.Contains "\x1b[38;2;")
+    | Ok pairs ->
+        failwith $"Expected exactly one pair, got: %A{pairs}"
+    | Error e ->
+        failwith $"Expected Ok for coloured label, got Error: %A{e}"
+
 // ── ConfirmationPrompt cancellation ──────────────────────────────────────────
 
 [<Property(MaxTest = 1)>]
