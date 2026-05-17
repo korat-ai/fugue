@@ -21,6 +21,7 @@
     <Compile Include="SuiteDurationSmoke.fs" />
     <!-- Phase 3 Layout framework tests -->
     <Compile Include="Layout\CommonTypesTests.fs" />
+    <Compile Include="Layout\StackTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
