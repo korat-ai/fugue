@@ -183,7 +183,7 @@ type FigletText
 
 module FigletFont =
 
-    /// The default ("standard") FIGlet font shipped with Spectre.
+    /// The default ("standard") FIGlet font (built-in).
     val default_ : FigletFont
 
     /// Load a FIGlet font from a file path. Returns:
