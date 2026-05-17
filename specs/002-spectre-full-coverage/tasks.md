@@ -383,7 +383,7 @@ boundaries"):
 - **PR P3+P5**: US3 + US5 in one PR (T036–T047 + T061–T071), since US3 needs
   `Console` which is US5
 - **PR P4**: US4 (T048–T060)
-- **PR Polish**: Phase 8 (T072–T080)
+- **PR Polish**: Phase 8 (T072–T081)
 
 ---
 
@@ -464,7 +464,7 @@ in any order once US1 is merged.
 ## Format Validation
 
 All task IDs follow `T001`–`T081` sequential numbering in execution order
-within their phase, plus T024a + T046a inserted (82 tasks total). Checklist format compliance:
+within their phase, plus T024a + T046a inserted (83 tasks total). Checklist format compliance:
 
 | Requirement | Verified |
 |---|---|
