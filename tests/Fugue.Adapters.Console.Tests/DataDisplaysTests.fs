@@ -9,8 +9,12 @@ open System.Text.RegularExpressions
 // Helpers
 // ---------------------------------------------------------------------------
 
-let private ctx80colour  () = RenderContext.create 80 true  "default"
-let private ctx80nocolour () = RenderContext.create 80 false "default"
+let private ctx80colour  () =
+    RenderContext.create 80 System.Int32.MaxValue true  "default"
+    |> function Ok c -> c | Error e -> failwith $"test ctx: {e}"
+let private ctx80nocolour () =
+    RenderContext.create 80 System.Int32.MaxValue false "default"
+    |> function Ok c -> c | Error e -> failwith $"test ctx: {e}"
 
 /// Strip ANSI CSI escape sequences (\x1b[...m) from a string.
 let private stripAnsi (s: string) : string =
@@ -325,8 +329,8 @@ let ``T025 — all data-display primitives render deterministically at fixed wid
     compositions
     |> List.forall (fun comp ->
         // Two separate RenderContext instances at width 80, colour on.
-        let ctx1 = RenderContext.create 80 true "default"
-        let ctx2 = RenderContext.create 80 true "default"
+        let ctx1 = ctx80colour ()
+        let ctx2 = ctx80colour ()
         let out1 = renderOk ctx1 comp
         let out2 = renderOk ctx2 comp
         // byte-identical output
@@ -360,7 +364,9 @@ let ``T026b — Calendar render marks the event day (regression for 5-arg overlo
         | Ok c    -> c
         | Error e -> failwith $"Calendar.create Error: %A{e}"
     let comp = Calendar.toComposition cal
-    let ctx  = RenderContext.create 200 false "default"
+    let ctx  =
+        RenderContext.create 200 System.Int32.MaxValue false "default"
+        |> function Ok c -> c | Error e -> failwith $"test ctx: {e}"
     match Renderer.toRawAnsi ctx comp with
     | Error e  -> failwith $"Render Error: %A{e}"
     | Ok output ->

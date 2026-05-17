@@ -344,7 +344,14 @@ module Grid =
             g.AddColumn gc |> ignore
         // Render each Composition cell to a plain string, wrap as Spectre.Text.
         // Width 200 / no-colour gives deterministic cell text for Grid layout.
-        let ctx = RenderContext.create 200 false "default"
+        // Width 200 / no-colour gives deterministic cell text for Grid layout.
+        // Height is unconstrained (MaxValue sentinel = no vertical clipping).
+        let ctx =
+            match RenderContext.create 200 System.Int32.MaxValue false "default" with
+            | Ok c    -> c
+            // Width=200, height=MaxValue are both > 0 — this branch is unreachable
+            // by construction. failwith is appropriate as a programmer-error guard.
+            | Error e -> failwith $"DataDisplays: internal RenderContext failure: {e}"
         for row in grid.GcRows do
             let cells =
                 row

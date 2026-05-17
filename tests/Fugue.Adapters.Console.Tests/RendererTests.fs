@@ -8,8 +8,12 @@ open Fugue.Surface
 // All tests written as [<Property(MaxTest=1)>] returning bool — see
 // FoundationTests.fs header for rationale (Fact-discovery workaround).
 
-let private ctxDefault () = RenderContext.create 80 true "default"
-let private ctxNoColour () = RenderContext.create 80 false "default"
+let private ctxDefault () =
+    RenderContext.create 80 System.Int32.MaxValue true "default"
+    |> function Ok c -> c | Error e -> failwith $"test context: {e}"
+let private ctxNoColour () =
+    RenderContext.create 80 System.Int32.MaxValue false "default"
+    |> function Ok c -> c | Error e -> failwith $"test context: {e}"
 
 // ============================================================================
 // T014-T019 — per-primitive integration tests vs real Spectre
@@ -97,7 +101,9 @@ let ``T019 — Primitive.Rule renders without error at width 80`` () =
 
 [<Property(MaxTest = 1)>]
 let ``T019b — Primitive.Rule renders at width 40`` () =
-    let ctx = RenderContext.create 40 true "default"
+    let ctx =
+        RenderContext.create 40 System.Int32.MaxValue true "default"
+        |> function Ok c -> c | Error e -> failwith $"test context: {e}"
     let comp = Composition.Leaf (Primitive.Rule Style.empty)
     match Renderer.toRawAnsi ctx comp with
     | Ok s  -> s.Length > 0
@@ -125,22 +131,18 @@ let ``T021 — Styled with red foreground emits NO colour escapes when ColourEna
 // ============================================================================
 
 [<Property(MaxTest = 1)>]
-let ``T022 — Width 0 doesn't throw — Styled returns Ok`` () =
-    let ctx = RenderContext.create 0 true "default"
-    let prim = Primitive.Styled (Style.empty, SafeText.ofUser "x")
-    let comp = Composition.Leaf prim
-    match Renderer.toRawAnsi ctx comp with
-    | Ok _ -> true
-    | Error _ -> false
+let ``T022 — Width 0 returns InvalidArgument from create`` () =
+    // T002a: create now rejects non-positive dimensions before render.
+    match RenderContext.create 0 System.Int32.MaxValue true "default" with
+    | Error (RenderError.InvalidArgument ("Renderer", _)) -> true
+    | _ -> false
 
 [<Property(MaxTest = 1)>]
-let ``T022b — Width -5 doesn't throw — Styled returns Ok`` () =
-    let ctx = RenderContext.create -5 true "default"
-    let prim = Primitive.Styled (Style.empty, SafeText.ofUser "x")
-    let comp = Composition.Leaf prim
-    match Renderer.toRawAnsi ctx comp with
-    | Ok _ -> true
-    | Error _ -> false
+let ``T022b — Width -5 returns InvalidArgument from create`` () =
+    // T002a: create now rejects non-positive dimensions before render.
+    match RenderContext.create -5 System.Int32.MaxValue true "default" with
+    | Error (RenderError.InvalidArgument ("Renderer", _)) -> true
+    | _ -> false
 
 // ============================================================================
 // T022a — Renderer.toDrawOp delivers the right DrawOp shape

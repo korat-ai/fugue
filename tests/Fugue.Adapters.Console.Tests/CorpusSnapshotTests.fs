@@ -97,7 +97,9 @@ let private buildCorpus () : Composition =
 
 [<Property(MaxTest = 1)>]
 let ``T048 — Combined corpus renders without error at width 80 colour enabled`` () =
-    let ctx    = RenderContext.create 80 true "default"
+    let ctx    =
+        RenderContext.create 80 System.Int32.MaxValue true "default"
+        |> function Ok c -> c | Error e -> failwith $"test ctx: {e}"
     let corpus = buildCorpus ()
     match Renderer.toRawAnsi ctx corpus with
     | Error _ -> false
@@ -111,7 +113,9 @@ let ``T048 — Combined corpus renders without error at width 80 colour enabled`
 
 [<Property(MaxTest = 1)>]
 let ``T048b — Combined corpus renders without error at width 80 colour disabled`` () =
-    let ctx    = RenderContext.create 80 false "default"
+    let ctx    =
+        RenderContext.create 80 System.Int32.MaxValue false "default"
+        |> function Ok c -> c | Error e -> failwith $"test ctx: {e}"
     let corpus = buildCorpus ()
     match Renderer.toRawAnsi ctx corpus with
     | Error _ -> false
@@ -124,7 +128,9 @@ let ``T048b — Combined corpus renders without error at width 80 colour disable
 
 [<Property(MaxTest = 1)>]
 let ``T048c — Combined corpus output is deterministic (two renders agree)`` () =
-    let ctx    = RenderContext.create 80 true "nocturne"
+    let ctx    =
+        RenderContext.create 80 System.Int32.MaxValue true "nocturne"
+        |> function Ok c -> c | Error e -> failwith $"test ctx: {e}"
     let corpus = buildCorpus ()
     match Renderer.toRawAnsi ctx corpus, Renderer.toRawAnsi ctx corpus with
     | Ok s1, Ok s2 -> s1 = s2
@@ -151,7 +157,9 @@ let ``T048c — Combined corpus output is deterministic (two renders agree)`` ()
 
 [<Property(MaxTest = 1)>]
 let ``T048v — Snapshot baseline of combined corpus (ANSI-scrubbed)`` () =
-    let ctx    = RenderContext.create 80 false "default"
+    let ctx    =
+        RenderContext.create 80 System.Int32.MaxValue false "default"
+        |> function Ok c -> c | Error e -> failwith $"test ctx: {e}"
     let corpus = buildCorpus ()
     match Renderer.toRawAnsi ctx corpus with
     | Error _ -> false

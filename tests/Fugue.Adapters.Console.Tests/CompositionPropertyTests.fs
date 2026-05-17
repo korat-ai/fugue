@@ -12,7 +12,9 @@ open Fugue.Adapters.Console
 /// T039 — stack of single element produces non-empty output if element does.
 [<Property>]
 let ``T039 — stack of single element is consistent with direct leaf render`` (s: string | null) =
-    let ctx  = RenderContext.create 80 true "default"
+    let ctx  =
+        RenderContext.create 80 System.Int32.MaxValue true "default"
+        |> function Ok c -> c | Error e -> failwith $"test ctx: {e}"
     let safe = SafeText.ofUser s
     let leaf = Composition.Leaf (Primitive.Styled (Style.empty, safe))
     let stk  = Composition.stack [leaf]
@@ -28,7 +30,9 @@ let ``T039 — stack of single element is consistent with direct leaf render`` (
 /// padded with all-zero padding is at least as permissive as no padding.
 [<Property>]
 let ``T039b — padded 0 0 0 0 renders content without error`` (s: string | null) =
-    let ctx  = RenderContext.create 80 true "default"
+    let ctx  =
+        RenderContext.create 80 System.Int32.MaxValue true "default"
+        |> function Ok c -> c | Error e -> failwith $"test ctx: {e}"
     let safe = SafeText.ofUser s
     let inner = Composition.Leaf (Primitive.Styled (Style.empty, safe))
     match Composition.padded 0 0 0 0 inner with

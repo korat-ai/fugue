@@ -132,19 +132,44 @@ let ``Style.ofMarkupHint with unknown token returns InvalidStyleSpec`` () =
 
 [<Property(MaxTest = 1)>]
 let ``RenderContext.create stores given width and theme`` () =
-    let ctx = RenderContext.create 120 true "nocturne"
-    ctx.Width = 120
-    && ctx.ColourEnabled = true
-    && ctx.ThemeName = "nocturne"
+    match RenderContext.create 120 System.Int32.MaxValue true "nocturne" with
+    | Ok ctx ->
+        ctx.Width = 120
+        && ctx.ColourEnabled = true
+        && ctx.ThemeName = "nocturne"
+        && ctx.Height = System.Int32.MaxValue
+    | Error _ -> false
 
 [<Property(MaxTest = 1)>]
 let ``RenderContext.create with null theme falls back to 'default'`` () =
     let t : string | null = null
-    let ctx = RenderContext.create 80 false t
-    ctx.ThemeName = "default"
+    match RenderContext.create 80 System.Int32.MaxValue false t with
+    | Ok ctx -> ctx.ThemeName = "default"
+    | Error _ -> false
 
 [<Property(MaxTest = 1)>]
 let ``RenderContext.probe returns a valid record`` () =
     let ctx = RenderContext.probe ()
     ctx.Width > 0
+    && ctx.Height > 0
     && not (System.String.IsNullOrEmpty ctx.ThemeName)
+
+// ---------- RenderContext.create validation (T002a) ----------
+
+[<Property(MaxTest = 1)>]
+let ``T002a — RenderContext.create with width=0 returns InvalidArgument`` () =
+    match RenderContext.create 0 24 true "default" with
+    | Error (RenderError.InvalidArgument ("Renderer", _)) -> true
+    | _ -> false
+
+[<Property(MaxTest = 1)>]
+let ``T002a — RenderContext.create with height=0 returns InvalidArgument`` () =
+    match RenderContext.create 80 0 true "default" with
+    | Error (RenderError.InvalidArgument ("Renderer", _)) -> true
+    | _ -> false
+
+[<Property(MaxTest = 1)>]
+let ``T002a — RenderContext.create with width=-1 returns InvalidArgument`` () =
+    match RenderContext.create -1 24 true "default" with
+    | Error (RenderError.InvalidArgument ("Renderer", _)) -> true
+    | _ -> false

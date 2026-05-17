@@ -6,17 +6,23 @@ namespace Fugue.Adapters.Console
 type RenderContext =
     private
         { width: int
+          height: int
           colourEnabled: bool
           themeName: string }
     member ColourEnabled: bool
     member ThemeName: string
     member Width: int
+    /// Terminal height in rows. `System.Int32.MaxValue` signals "unconstrained"
+    /// (the Phase 1/2 default — layout primitives treat it as "no vertical clip").
+    member Height: int
 
 module RenderContext =
 
     /// Test-friendly constructor. No IO.
+    /// Returns Error if width ≤ 0 or height ≤ 0.
     val create:
-        width: int -> colourEnabled: bool -> theme: (string | null) -> RenderContext
+        width: int -> height: int -> colourEnabled: bool -> theme: (string | null) ->
+            Result<RenderContext, RenderError>
 
     /// Probe the host. The ONLY function in the adapter that reads
     /// `System.Console`. Never called from tests.

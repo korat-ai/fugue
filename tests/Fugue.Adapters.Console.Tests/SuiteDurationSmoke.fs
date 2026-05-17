@@ -45,7 +45,9 @@ let ``T049 — Representative corpus renders 200 times within 30 seconds`` () =
             |> function Ok c -> c | Error _ -> styledLeaf "(err)"
         Composition.stack [stack; padded; panel; cols; aligned; table]
 
-    let ctx    = RenderContext.create 80 true "default"
+    let ctx    =
+        RenderContext.create 80 System.Int32.MaxValue true "default"
+        |> function Ok c -> c | Error e -> failwith $"test ctx: {e}"
     let corpus = mkCorpus ()
 
     let sw = Stopwatch.StartNew ()
