@@ -395,28 +395,19 @@ module Status =
             | Error e -> return Error e
             | Ok spectreSpinner ->
 
-            // Non-TTY fallback (FR-016): run without animation, emit message once.
-            // We use Status.StartAsync with AutoRefresh=false for both TTY and non-TTY
-            // so the body always gets a valid StatusSession regardless.
-            let isInteractive = Console.isInteractive console
+            // Session guard is UNCONDITIONAL (FR-012): concurrent rejection applies
+            // to all consoles, TTY or not. Non-TTY affects RENDERING only (below).
+            if not (LiveHelpers.tryAcquireSession backend) then
+                return Error (RenderError.ConcurrentLiveSession (backend.GetHashCode().ToString "x8"))
+            else
 
+            // Non-TTY fallback (FR-016): emit message once, no animation loop.
+            let isInteractive = Console.isInteractive console
             if not isInteractive then
-                // Write message once to the backend.
                 try
                     backend.Write (Spectre.Console.Text (SafeText.unwrap message))
                 with _ ->
                     ()
-
-            // Session guard — only for interactive (TTY) consoles.
-            let sessionAcquired =
-                if isInteractive then
-                    LiveHelpers.tryAcquireSession backend
-                else
-                    true  // non-TTY: no guard needed
-
-            if not sessionAcquired then
-                return Error (RenderError.ConcurrentLiveSession (backend.GetHashCode().ToString "x8"))
-            else
 
             // For non-TTY we still use StartAsync (with AutoRefresh=false) so
             // the body function can work uniformly.
@@ -463,8 +454,7 @@ module Status =
                 | ex ->
                     return Error (RenderError.RenderFailed ("Status.run", LiveHelpers.exnMessage ex))
             finally
-                if isInteractive then
-                    LiveHelpers.releaseSession backend
+                LiveHelpers.releaseSession backend
         }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -556,13 +546,9 @@ module Progress =
                 return Error (RenderError.UserCancelled "progress")
             else
 
-            let isInteractive = Console.isInteractive console
-
-            let sessionAcquired =
-                if isInteractive then LiveHelpers.tryAcquireSession backend
-                else true
-
-            if not sessionAcquired then
+            // Session guard is UNCONDITIONAL (FR-012): concurrent rejection applies
+            // to all consoles, TTY or not.
+            if not (LiveHelpers.tryAcquireSession backend) then
                 return Error (RenderError.ConcurrentLiveSession (backend.GetHashCode().ToString "x8"))
             else
 
@@ -607,6 +593,5 @@ module Progress =
                 | ex ->
                     return Error (RenderError.RenderFailed ("Progress.run", LiveHelpers.exnMessage ex))
             finally
-                if isInteractive then
-                    LiveHelpers.releaseSession backend
+                LiveHelpers.releaseSession backend
         }
