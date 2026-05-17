@@ -16,6 +16,7 @@
     <Compile Include="DataDisplaysTests.fs" />
     <Compile Include="ConsoleTests.fs" />
     <Compile Include="LiveTests.fs" />
+    <Compile Include="PromptsTests.fs" />
     <Compile Include="SuiteDurationSmoke.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
