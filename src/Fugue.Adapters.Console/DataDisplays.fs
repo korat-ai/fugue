@@ -245,7 +245,7 @@ module Calendar =
     let private buildSpectre (cal: Calendar) : Spectre.Console.Calendar =
         let c = Spectre.Console.Calendar (cal.CalYear, cal.CalMonth)
         for ev in cal.CalEvents do
-            Spectre.Console.CalendarExtensions.AddCalendarEvent (c, ev.CeDate.Year, ev.CeDate.Month, ev.CeDate.Day) |> ignore
+            Spectre.Console.CalendarExtensions.AddCalendarEvent (c, ev.CeDescription, ev.CeDate.Year, ev.CeDate.Month, ev.CeDate.Day) |> ignore
         c
 
     let create (year: int) (month: int) (events: CalendarEvent list) : Result<Calendar, RenderError> =
