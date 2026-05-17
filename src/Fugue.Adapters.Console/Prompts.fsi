@@ -28,6 +28,18 @@ namespace Fugue.Adapters.Console
 /// speeds (see research.md §R3 trade-off note).
 type Validator<'T> = string -> Result<'T, string>
 
+/// Internal accessor — visible only within this assembly.
+/// Exposes label pre-flight for direct unit testing without a real TTY.
+module internal Internal =
+
+    /// Runs label pre-flight for a list of (value, Composition) choices.
+    /// Returns Ok with projected (value, plain-text label) pairs on success,
+    /// or Error on the first choice whose Composition fails to render.
+    val preflightLabels :
+        promptName: string ->
+            choices: ('T * Composition) list ->
+            Result<('T * string) list, RenderError>
+
 module TextPrompt =
 
     /// Prompt for free-form text input, with typed validation.

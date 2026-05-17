@@ -28,17 +28,16 @@ module private PromptHelpers =
     // T056: Project a Composition label to a plain-text string (colour stripped).
     //
     // Per data-model.md §0.1: forks the RenderContext with ColourEnabled = false,
-    // calls Renderer.toRawAnsi, returns the string or empty on error.
-    // The Converter callback cannot itself return Result, so render errors are
-    // silently swallowed here; pre-flight validation (below) catches them first.
-    let projectLabel (comp: Composition) : string =
+    // calls Renderer.toRawAnsi, and returns the Result directly.
+    // Returns Result so callers (preflightLabels) can distinguish a legitimate
+    // empty-string label from a render failure — "" is a valid render output
+    // for an empty styled leaf; returning it as a sentinel would be incorrect.
+    let projectLabel (comp: Composition) : Result<string, RenderError> =
         // Build a colour-disabled RenderContext at a fixed 80-column width.
         // Width 80 is wide enough for most labels; layout inside the list item
         // is controlled by Spectre, not by us.
         let ctx = RenderContext.create 80 false "default"
-        match Renderer.toRawAnsi ctx comp with
-        | Ok s    -> s
-        | Error _ -> ""
+        Renderer.toRawAnsi ctx comp
 
     // T056: Project a Composition title to a string for the prompt title.
     // Returns Result so callers can bail out before entering ShowAsync.
@@ -58,6 +57,11 @@ module private PromptHelpers =
     // or Error on first failure.
     // Using a plain list avoids Dictionary's 'T: not null + 'T: equality constraints,
     // which would propagate into the public ask signatures and complicate caller code.
+    //
+    // IMPORTANT: projectLabel now returns Result<string, RenderError>. We do NOT
+    // treat "" as an error sentinel — an empty string is a valid render output
+    // (e.g. Composition.Leaf with an empty SafeText). Only an Error from the
+    // renderer is treated as a pre-flight failure.
     let preflightLabels
             (promptName: string)
             (choices: ('T * Composition) list)
@@ -67,17 +71,33 @@ module private PromptHelpers =
         let projected = ResizeArray<'T * string> ()
         for (value, labelComp) in choices do
             if firstError.IsNone then
-                let label = projectLabel labelComp
-                if label = "" then
-                    // Empty projection means projectLabel silently swallowed a render error.
-                    // Surface it as an InvalidArgument pre-flight failure.
-                    firstError <- Some (RenderError.InvalidArgument (promptName, $"choice {i} label failed to render"))
-                else
+                match projectLabel labelComp with
+                | Error e ->
+                    firstError <- Some (RenderError.InvalidArgument (promptName, $"choice {i} label failed to render: {e}"))
+                | Ok label ->
                     projected.Add (value, label)
             i <- i + 1
         match firstError with
         | Some e -> Error e
         | None   -> Ok (projected |> Seq.toList)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Internal accessor — visible only within this assembly (mirroring
+// ConsoleAccess in Console.fs). Exposes preflightLabels so unit tests can
+// exercise the label-projection logic directly without going through
+// ShowAsync (which requires an interactive TTY).
+// ─────────────────────────────────────────────────────────────────────────────
+
+module internal Internal =
+
+    /// Runs label pre-flight for a list of (value, Composition) choices.
+    /// Returns Ok with projected (value, plain-text label) pairs on success,
+    /// or Error on the first choice that fails to render.
+    let preflightLabels
+            (promptName: string)
+            (choices: ('T * Composition) list)
+            : Result<('T * string) list, RenderError> =
+        PromptHelpers.preflightLabels promptName choices
 
 // ─────────────────────────────────────────────────────────────────────────────
 // T057: TextPrompt.ask
