@@ -95,10 +95,10 @@ A Fugue contributor needs the adapter to expose enough of Spectre's console-infr
 - **Cancellation mid-Live**: User cancels (Ctrl+C / token) during a `Live`, `Status`, `Progress`, or interactive `*Prompt` session. The adapter MUST restore the cursor, scroll region, and any alternate-screen state cleanly; the next adapter call must render to a normal terminal.
 - **Non-TTY environment (CI, pipes, headless)**: Live/Status/Progress/Prompts fall back to non-interactive behaviour: `Status` collapses to a single "done" line, `Progress` emits a final tally without per-frame redraws, prompts return a deterministic default or `Result.Error NoInteractiveConsole`.
 - **Colour downgrade**: A `RenderContext` with `colourEnabled = false` must produce the same structural output (panel borders, layout, content) as colour-enabled rendering, with all colour ANSI sequences omitted (not "approximated to monochrome"). Verified per-primitive in property tests.
-- **Concurrent Live sessions**: Two adapter `Live` instances active simultaneously. Spectre's behaviour is undefined; the adapter MUST either serialise them at the wrapper layer or return `Result.Error ConcurrentLiveSession` on the second `start` call.
+- **Concurrent Live sessions**: Two adapter `Live` instances active simultaneously on the same `IAnsiConsole`. Spectre's behaviour is undefined; the adapter MUST reject the second concurrent `start` call with `Result.Error ConcurrentLiveSession` on the same `IAnsiConsole` (no implicit serialisation).
 - **Custom-renderable bridge throws**: A user-provided custom renderable raises an exception during `Render`. The adapter catches it at the boundary and returns `Result.Error (RenderFailed (typeName, message))` — never propagates out.
 - **Smart-constructor degenerate input**: Empty `Tree`, malformed `Json`, negative `BarChart` values, ragged `Grid` rows, zero-column `Table`, empty `SelectionPrompt` choices, etc. — each rejected by its smart constructor with `Result.Error (InvalidArgument (node, detail))` BEFORE render.
-- **Very large input**: `FigletText` with a 100-character input, `Tree` with 10000 nodes, `Json` with deeply nested payload, `Table` with 1000 rows. Adapter MUST NOT silently truncate; it either renders (possibly slowly) or returns `Result.Error InvalidArgument` with a documented size threshold.
+- **Very large input**: `FigletText` with a 100-character input, `Tree` with 10000 nodes, `Json` with deeply nested payload. Adapter MUST NOT silently truncate; it either renders (possibly slowly) or returns `Result.Error InvalidArgument` with a documented size threshold. (Phase 1 `Table` size handling is unchanged by Phase 2 and audited separately.)
 
 ## Requirements *(mandatory)*
 
@@ -106,10 +106,10 @@ A Fugue contributor needs the adapter to expose enough of Spectre's console-infr
 
 **Surface completeness (compiler-enforced):**
 
-- **FR-001**: Adapter MUST expose an F# wrapper for every public type in `Spectre.Console 0.49.*` not already in Phase 1, OR explicitly justify its exclusion in `data-model.md` with reasoning (one of: superseded by Phase 1 primitive; obsolete in 0.49; unsafe in any environment we target).
-- **FR-002**: No `Spectre.Console.*` (or any `Spectre.*` sub-namespace) type MAY appear in the adapter's public signatures. Verified by `.fsi` review and by `rg 'Spectre\.' src/Fugue.Adapters.Console/*.fsi` returning zero results.
+- **FR-001**: Adapter MUST expose an F# wrapper for every public type in `Spectre.Console 0.49.*` not already in Phase 1, OR explicitly justify its exclusion in `data-model.md` with reasoning (one of: superseded by a Phase 1 primitive; obsolete attribute on the upstream type; throws unconditionally on non-TTY consoles; requires reflection or runtime code-gen that this adapter cannot safely host).
+- **FR-002**: No `Spectre.Console.*` (or any `Spectre.*` sub-namespace) type MAY appear in the adapter's public signatures (canonical no-leak rule). Verified by `.fsi` review and by `rg 'Spectre\.' src/Fugue.Adapters.Console/*.fsi` returning zero results, except the single intentional bridge carved out by FR-008. SC-004 measures this for adapter `.fsi` files; SC-002 measures the downstream REPL codebase (different scope — see SC-002 note).
 - **FR-003**: Every adapter public type MUST be sealed via per-module `.fsi`, following the pattern established in PR #942 (records `private`, DU constructors closed unless documented as user-extension points).
-- **FR-004**: Adapter MUST preserve full backward compatibility with Phase 1 public API. No renames, no removed cases, no breaking signature changes. Verified by running the existing 83 adapter tests unchanged.
+- **FR-004**: Adapter MUST preserve full backward compatibility with Phase 1 public API. No renames, no removed cases, no breaking signature changes. Verified by running the existing 83 adapter tests with their assertions intact; pattern-match exhaustiveness updates required by new `RenderError` cases in `Errors.fs` are scaffolding changes, not assertion changes.
 
 **Smart-constructor discipline:**
 
@@ -119,7 +119,7 @@ A Fugue contributor needs the adapter to expose enough of Spectre's console-infr
 
 **Renderable bridge (US1):**
 
-- **FR-008**: Adapter MUST expose a typed F# wrapper that lets callers embed any externally-defined renderable into a `Composition` tree WITHOUT exposing the underlying Spectre interface type in public signatures. The wrapper accepts only the renderable as an opaque value via a dedicated factory function whose argument is the Spectre type but whose return is the adapter's opaque wrapper.
+- **FR-008**: Adapter MUST expose a typed F# wrapper that lets callers embed any externally-defined renderable into a `Composition` tree WITHOUT exposing the underlying Spectre interface type in public signatures. The wrapper accepts only the renderable as an opaque value via a dedicated factory function whose argument is the Spectre type but whose return is the adapter's opaque wrapper. See FR-002 for the general no-leak rule; this FR carves out the single intentional bridge from that rule.
 - **FR-009**: Exceptions thrown by user-supplied renderables during rendering MUST be caught at the adapter boundary and converted to `Result.Error (RenderFailed (typeName, message))`. No Spectre exception type leaks across the adapter boundary.
 
 **Live UI lifetime (US3):**
@@ -130,7 +130,7 @@ A Fugue contributor needs the adapter to expose enough of Spectre's console-infr
 
 **Interactive prompts (US4):**
 
-- **FR-013**: Prompt wrappers (`TextPrompt`, `SelectionPrompt`, `MultiSelectionPrompt`, `ConfirmationPrompt`) MUST return `Async<Result<'T, RenderError>>` (or `Task<Result<...>>`), never `'T` directly. Cancellation returns `Result.Error UserCancelled`. Missing TTY returns `Result.Error NoInteractiveConsole`.
+- **FR-013**: Prompt wrappers (`TextPrompt`, `SelectionPrompt`, `MultiSelectionPrompt`, `ConfirmationPrompt`) MUST return `Async<Result<'T, RenderError>>` (or `Task<Result<...>>`), never `'T` directly. Cancellation returns `Result.Error UserCancelled`. Non-TTY behaviour: see FR-016.
 - **FR-014**: `SelectionPrompt` / `MultiSelectionPrompt` choice labels MUST accept `Composition` values (not just plain strings), so choices can be styled (icon + text, dim suffix, etc.).
 - **FR-015**: `TextPrompt` validators MUST be typed F# functions `string -> Result<'T, string>` returning the parsed value on success and a user-visible error message on failure.
 
@@ -161,10 +161,10 @@ A Fugue contributor needs the adapter to expose enough of Spectre's console-infr
 ### Measurable Outcomes
 
 - **SC-001**: 100% of public types in `Spectre.Console 0.49.*` are accounted for in the coverage matrix (`covered` or `excluded` with justification). Zero `pending` entries at PR merge.
-- **SC-002**: After Phase 2 lands, `rg 'Spectre\.Console' src/Fugue.Cli/ src/Fugue.Surface/` returns zero matches (the adapter is the only consumer of Spectre across the production codebase).
-- **SC-003**: Adapter test suite grows from 83 tests (Phase 1) to ≥250 tests (Phase 2), with the same totality + property + snapshot + perf-budget structure as Phase 1. Suite still runs in under 5 seconds.
-- **SC-004**: Zero `Spectre.*` types appear in any adapter `.fsi` file **except** the single intentional bridge `Renderable.fromSpectre : Spectre.Console.Rendering.IRenderable -> Renderable` carved out by FR-008. Verified by `rg 'Spectre\.' src/Fugue.Adapters.Console/*.fsi` returning at most that one signature match (doc-comment matches in `.fsi` files are OK; only type-signature exposure counts).
-- **SC-005**: Phase 1 backward compatibility: all 83 existing Phase 1 tests pass unchanged after Phase 2.
+- **(Deferred to Phase 3 — REPL port wave)**: **SC-002**: After the Phase 3 REPL port wave lands, `rg 'Spectre\.Console' src/Fugue.Cli/ src/Fugue.Surface/` returns zero matches (the adapter is the only consumer of Spectre across the production codebase). Phase 2 PR-close only guarantees the adapter is *capable* of replacing direct Spectre access, not that the REPL has been ported. Measurement scope differs from SC-004 (which audits adapter `.fsi` internals); see FR-002 for the canonical no-leak rule.
+- **SC-003**: Adapter test suite grows from 83 tests (Phase 1) to ≥250 tests (Phase 2), with the same totality + property + snapshot + perf-budget structure as Phase 1. Suite still runs in under 5 seconds on the project CI matrix (`dotnet test -c Release --no-build`, single cold run, ubuntu-latest / macos-14 / windows-latest).
+- **SC-004**: Zero `Spectre.*` types appear in any adapter `.fsi` file **except** the single intentional bridge `Renderable.fromSpectre : Spectre.Console.Rendering.IRenderable -> Renderable` carved out by FR-008. Verified by `rg 'Spectre\.' src/Fugue.Adapters.Console/*.fsi` returning at most that one signature match (doc-comment matches in `.fsi` files are OK; only type-signature exposure counts). Cross-refs FR-002 (the canonical no-leak rule); SC-002 measures the downstream REPL scope separately.
+- **SC-005**: Phase 1 backward compatibility: all 83 existing Phase 1 tests pass with their assertions intact after Phase 2; pattern-match exhaustiveness updates for new `RenderError` cases are scaffolding changes, not assertion changes.
 - **SC-006**: AOT publish of the headless `fugue-aot` binary stays clean (zero new trim/AOT warnings) — adapter is JIT-only and is NOT included in the headless closure, so this should hold by construction; verify in CI.
 - **SC-007**: Every public adapter type from Phase 2 has at least one property test exercising its smart constructor (both `Ok` and `Error` paths) and at least one snapshot or totality test exercising its renderer path.
 
@@ -181,4 +181,4 @@ A Fugue contributor needs the adapter to expose enough of Spectre's console-infr
 - **Exception rendering reuses Spectre's `GetExceptionFormatter` extension.** The adapter exposes it as a typed F# function; reimplementing exception layout is out of scope.
 - **Tests are written using the same `[<Property(MaxTest=1)>]` workaround documented in `Helpers.fs`** until the upstream xunit Fact-discovery issue (Neftedollar/FsLangMCP#100, korat-ai/fugue follow-up TBD) is resolved.
 - **`engineering-fsharp-developer` and `engineering-fsharp-autotester` subagents will do most of the implementation work**, following the same delegation pattern that produced PR #942.
-- **PR splitting follows user-story boundaries.** Each user story (P1-P5) is its own PR. P1 must merge before P2 can land cleanly (because P2 primitives may need the IRenderable bridge for their internal implementation).
+- **PR splitting follows user-story boundaries with one exception: US3 (Live) and US5 (Console) ship as a single combined PR because `Live.run` writes directly to the `Console` wrapper introduced in US5, and US4 prompts require US5's `TestConsole` for IO scripting in tests. Net PR count: 4 (Setup+US1; US2; US3+US5 combined; US4) plus a Polish PR. See `tasks.md` PR-strategy section for the authoritative breakdown.**

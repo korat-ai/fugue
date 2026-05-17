@@ -549,6 +549,14 @@ content (Spectre's `TextPath` is tolerant of any string, including
 relative paths, drive letters, etc.). No path-existence check —
 `TextPath` is a *display* widget, not a *resolve* widget.
 
+**Null input behaviour**: `TextPath.create` with a `null`-derived
+`SafeText` (i.e. a caller that manages to pass null content) returns
+`Result.Error (InvalidArgument ("TextPath", "null content not permitted"))`.
+Rationale: a null path is a caller bug, not a valid empty path; the
+explicit `Error` gives the call-site a chance to handle the bug rather
+than silently rendering empty content. Contrast with degenerate-but-valid
+inputs (empty string path, single-slash path) which are accepted as `Ok`.
+
 ### 3.3 FR / SC / Principle coverage
 
 | Requirement | Satisfied by |
@@ -828,6 +836,8 @@ module SelectionPrompt =
 **Validation rules** (executed before `ShowAsync` is called):
 - `choices = []` → `Error (EmptyComposition "SelectionPrompt: at least one choice required")`.
 - Any choice label fails to project (renders to `Error` via `Prompts.projectLabel` from §0.1) → `Error (InvalidArgument ("SelectionPrompt", $"choice {n} label failed to render"))`. This pre-flight check prevents the prompt entering an unrunnable state.
+
+**Pre-flight validation scope**: Pre-flight validation runs for ALL prompt types (`TextPrompt`, `SelectionPrompt`, `MultiSelectionPrompt`, `ConfirmationPrompt`) — not just `SelectionPrompt`. Any render failure during `Composition`-label projection surfaces as `Result.Error InvalidArgument` BEFORE entering Spectre's interactive loop, so silent error-swallowing inside `projectLabel` is not the user-facing failure mode.
 
 ### 5.4 `MultiSelectionPrompt` module
 

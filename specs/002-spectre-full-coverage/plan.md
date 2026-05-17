@@ -14,6 +14,7 @@ Extend `Fugue.Adapters.Console` from its Phase 1 MVP surface (Markup, Style, Dec
 
 **Primary Dependencies**:
 - `Spectre.Console 0.49.*` — the target of the wrapping (existing dependency).
+- `Spectre.Console.Json 0.49.*` — NEW in Phase 2 — separate NuGet package containing the `JsonText` widget; resolved per data-model.md §0.2 punt resolution.
 - `Spectre.Console.Testing 0.49.*` — needed for `TestConsole` wrapper in P5 (already in test fsproj).
 - `FsCheck.Xunit 3.*` — existing, property tests on smart constructors.
 - `xunit 2.9.3` + `xunit.runner.visualstudio 2.8.2` (pinned per the FACT_DISCOVERY workaround in `tests/Fugue.Adapters.Console.Tests/Helpers.fs`; adapter test project remains on the older runner because 3.x loses FsCheck `[<Property>]` discovery in this assembly — see Neftedollar/FsLangMCP#100 and PR #944).
@@ -98,8 +99,8 @@ src/Fugue.Adapters.Console/
 ├── SafeText.fs         (existing)
 ├── Context.fsi         (existing)
 ├── Context.fs          (existing)
-├── Primitive.fsi       (existing — P1 may add a Renderable bridge case)
-├── Primitive.fs        (existing — P1)
+├── Primitive.fsi       (existing — unchanged in Phase 2; renderable bridge lives in new Composition.Foreign internal DU case)
+├── Primitive.fs        (existing — unchanged in Phase 2; renderable bridge lives in new Composition.Foreign internal DU case)
 ├── Composition.fsi     (existing — unchanged in Phase 2)
 ├── Composition.fs      (existing — unchanged in Phase 2)
 ├── Renderer.fsi        (existing — Phase 2 may add new public functions per Live/Console US)
