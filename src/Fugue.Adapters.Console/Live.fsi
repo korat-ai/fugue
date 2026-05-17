@@ -1,11 +1,12 @@
 namespace Fugue.Adapters.Console
 
-// Named spinner styles. One DU case per Spectre.Console 0.49.1
-// `Spinner.Known.*` static property. `Custom` allows user-defined
-// spinners without referencing Spectre types. `Ascii` is included
-// alongside `Default` to match all 71 entries in the Spinner.Known
-// registry (the contract sketch omitted Ascii; this implementation
-// restores it per data-model.md §4.2 "one case per Known field").
+// Named spinner styles. One DU case per upstream `Spinner.Known.*`
+// static property (0.49.1 registry). `Custom` allows user-defined
+// spinners without referencing the underlying library's types.
+// `Ascii` is included alongside `Default` to match all 71 entries in
+// the Spinner.Known registry (the contract sketch omitted Ascii; this
+// implementation restores it per data-model.md §4.2 "one case per
+// Known field").
 type Spinner =
     | Default
     | Ascii

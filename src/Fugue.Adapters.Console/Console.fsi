@@ -40,8 +40,8 @@ module Console =
 
     /// Default production console: writes to stdout, respects terminal
     /// capabilities (auto-detected). Single shared instance across the
-    /// process; subsequent calls return the same value. Underlying
-    /// implementation uses `Spectre.Console.AnsiConsole.Console` directly.
+    /// process; subsequent calls return the same value. Wraps the
+    /// upstream library's default singleton.
     val default_ : unit -> Console
 
     /// Test console: captures all output to an in-memory buffer.
