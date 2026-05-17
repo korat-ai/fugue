@@ -13,3 +13,9 @@ type RenderError =
     /// Distinct from `RenderFailed` which means Spectre threw at render time.
     | InvalidArgument of node: string * detail: string
     | RenderFailed of primitive: string * message: string
+    /// A user-initiated cancellation interrupted the operation (e.g. via CancellationToken).
+    | UserCancelled of operation: string
+    /// The operation requires an interactive console (TTY) but none is available.
+    | NoInteractiveConsole of operation: string
+    /// A concurrent live session is already running on this console.
+    | ConcurrentLiveSession of console: string

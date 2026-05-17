@@ -12,6 +12,7 @@
     <Compile Include="CompositionPropertyTests.fs" />
     <Compile Include="RendererTotalityTests.fs" />
     <Compile Include="CorpusSnapshotTests.fs" />
+    <Compile Include="RenderableTests.fs" />
     <Compile Include="SuiteDurationSmoke.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
