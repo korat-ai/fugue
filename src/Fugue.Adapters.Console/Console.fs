@@ -112,7 +112,9 @@ module Console =
     let write (c: Console) (comp: Composition) : Result<unit, RenderError> =
         let w   = ConsoleImpl.consoleWidth  c.Backend
         let col = ConsoleImpl.consoleColour c.Backend
-        let ctx = RenderContext.create w col "default"
+        match RenderContext.create (max 1 w) System.Int32.MaxValue col "default" with
+        | Error e -> Error e
+        | Ok ctx  ->
         match Renderer.toRawAnsi ctx comp with
         | Error e -> Error e
         | Ok s    ->

@@ -94,7 +94,9 @@ let ``T072 — Every public Spectre type is in the coverage matrix`` () =
 // T073 helpers — build a representative value and render it
 // ============================================================================
 
-let private ctx () = RenderContext.create 80 true "default"
+let private ctx () =
+    RenderContext.create 80 System.Int32.MaxValue true "default"
+    |> function Ok c -> c | Error e -> failwith $"test ctx: {e}"
 
 let private renderComp (comp: Composition) : Result<string, RenderError> =
     Renderer.toRawAnsi (ctx ()) comp

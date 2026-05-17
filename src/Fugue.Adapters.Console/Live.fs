@@ -224,11 +224,13 @@ module LiveSession =
             Error (RenderError.RenderFailed ("LiveSession", "session used after run() returned"))
         else
             let backend = unbox<Spectre.Console.IAnsiConsole> (ConsoleAccess.backend sess.LiveConsole)
-            let ctx =
-                RenderContext.create
-                    backend.Profile.Width
+            match RenderContext.create
+                    (max 1 backend.Profile.Width)
+                    System.Int32.MaxValue
                     (backend.Profile.Capabilities.ColorSystem <> Spectre.Console.ColorSystem.NoColors)
-                    "default"
+                    "default" with
+            | Error e   -> Error e
+            | Ok ctx    ->
             match Renderer.toRawAnsi ctx comp with
             | Error e -> Error e
             | Ok s    ->
@@ -274,12 +276,16 @@ module Live =
 
             // Render the initial composition BEFORE entering the Spectre session.
             // If it fails, bail immediately — no session acquired, no cursor held.
-            let ctx0 =
+            let ctx0Result =
                 RenderContext.create
-                    backend.Profile.Width
+                    (max 1 backend.Profile.Width)
+                    System.Int32.MaxValue
                     (backend.Profile.Capabilities.ColorSystem <> Spectre.Console.ColorSystem.NoColors)
                     "default"
-            let initRenderResult = Renderer.toRawAnsi ctx0 initial
+            let initRenderResult =
+                match ctx0Result with
+                | Error e -> Error e
+                | Ok ctx0 -> Renderer.toRawAnsi ctx0 initial
 
             match initRenderResult with
             | Error e ->

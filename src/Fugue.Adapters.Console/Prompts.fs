@@ -36,8 +36,9 @@ module private PromptHelpers =
         // Build a colour-disabled RenderContext at a fixed 80-column width.
         // Width 80 is wide enough for most labels; layout inside the list item
         // is controlled by Spectre, not by us.
-        let ctx = RenderContext.create 80 false "default"
-        Renderer.toRawAnsi ctx comp
+        match RenderContext.create 80 System.Int32.MaxValue false "default" with
+        | Error e   -> Error e
+        | Ok ctx    -> Renderer.toRawAnsi ctx comp
 
     // T056: Project a Composition title to a string for the prompt title.
     // Returns Result so callers can bail out before entering ShowAsync.

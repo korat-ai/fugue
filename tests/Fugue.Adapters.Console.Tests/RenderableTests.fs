@@ -4,7 +4,9 @@ module Fugue.Adapters.Console.Tests.RenderableTests
 open FsCheck.Xunit
 open Fugue.Adapters.Console
 
-let private ctx80 () = RenderContext.create 80 true "default"
+let private ctx80 () =
+    RenderContext.create 80 System.Int32.MaxValue true "default"
+    |> function Ok c -> c | Error e -> failwith $"test ctx: {e}"
 
 // ============================================================================
 // T007 — Happy path: Renderable.fromSpectre wraps a real IRenderable and
