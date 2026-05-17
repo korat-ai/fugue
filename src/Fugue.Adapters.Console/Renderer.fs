@@ -295,6 +295,27 @@ module Renderer =
                 | Some e -> Error e
                 | None   -> Ok (t :> IRenderable))
 
+        | Composition.Foreign r ->
+            // Bridge case: the user supplied an externally-defined IRenderable
+            // via Renderable.fromSpectre. Unwrap the opaque handle and return
+            // it directly — Spectre owns the rendering from here.
+            // Exception boundary (FR-009): any throw from the backend is caught
+            // and surfaced as RenderFailed rather than propagating to the caller.
+            // backendObj returns obj (SC-004: Spectre type not in .fsi); downcast here.
+            let backendNullable = Renderable.backendObj r
+            let typeName        = Renderable.typeName r
+            try
+                // Null check first (backend stored as obj|null to avoid Spectre type in .fsi).
+                // The null case means Renderable.fromSpectre was called with null — surface as
+                // RenderFailed at render time per data-model.md §2.2 null-acceptance rule.
+                let backend =
+                    match backendNullable with
+                    | null -> failwith $"Foreign IRenderable backend is null (type: {typeName})"
+                    | b    -> b :?> IRenderable
+                Ok backend
+            with ex ->
+                Error (RenderError.RenderFailed (typeName, ex.Message))
+
     /// Evaluate a Composition into the byte/escape stream the Surface
     /// actor expects. Pure (no side effects on Console.Out, no actor post).
     let toRawAnsi (ctx: RenderContext) (composition: Composition) : Result<string, RenderError> =
