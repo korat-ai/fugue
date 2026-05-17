@@ -19,3 +19,8 @@ type RenderError =
     | NoInteractiveConsole of operation: string
     /// A concurrent live session is already running on this console.
     | ConcurrentLiveSession of console: string
+    /// Content exceeds the available terminal dimension when `Overflow.Strict`
+    /// is active. `layoutKind` names the primitive ("Stack", "Flex", etc.);
+    /// `detail` provides numeric context ("width: requested 100, available 80").
+    /// Distinct from `InvalidArgument` (construction-time) — this is render-time.
+    | LayoutOverflow of layoutKind: string * detail: string

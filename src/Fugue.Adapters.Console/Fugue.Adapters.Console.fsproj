@@ -28,6 +28,21 @@
     <Compile Include="Live.fs" />
     <Compile Include="Prompts.fsi" />
     <Compile Include="Prompts.fs" />
+    <!-- Phase 3 Layout framework — dependency order: Layout → Stack → Dock → LayoutGrid → Flex → LayoutComposition → Scheduler -->
+    <Compile Include="Layout\Layout.fsi" />
+    <Compile Include="Layout\Layout.fs" />
+    <Compile Include="Layout\Stack.fsi" />
+    <Compile Include="Layout\Stack.fs" />
+    <Compile Include="Layout\Dock.fsi" />
+    <Compile Include="Layout\Dock.fs" />
+    <Compile Include="Layout\LayoutGrid.fsi" />
+    <Compile Include="Layout\LayoutGrid.fs" />
+    <Compile Include="Layout\Flex.fsi" />
+    <Compile Include="Layout\Flex.fs" />
+    <Compile Include="Layout\LayoutComposition.fsi" />
+    <Compile Include="Layout\LayoutComposition.fs" />
+    <Compile Include="Layout\Scheduler.fsi" />
+    <Compile Include="Layout\Scheduler.fs" />
   </ItemGroup>
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
