@@ -12,6 +12,11 @@ module Composition =
     // Private helpers
     // -------------------------------------------------------------------------
 
+    // MVP: ratio is computed against a nominal 80-column terminal width.
+    // Real-width-aware ratio computation deferred to follow-up (tasks.md T082
+    // adds: "wide-terminal-aware Stack.Horizontal ratio computation" entry).
+    let private NominalTerminalWidth = 80.0
+
     /// A blank separator row for vertical gap (bottom-padding only).
     /// Uses Padded with bottom=N on a zero-content Markup leaf.
     let private blankRow (rows: int) : Composition =
@@ -24,13 +29,13 @@ module Composition =
         // Ratio: we allocate a narrow spacer relative to the full width.
         // For horizontal stacks we use the column count as a fixed-ratio spacer.
         // The ratio is expressed as a fraction of 1.0; for a spacer of `cols`
-        // display columns inside an 80-column terminal, ratio = cols / 80.0.
+        // display columns inside a NominalTerminalWidth-column terminal.
         // However, since `Composition.Columns` requires ratios summing to ≤ 1.0,
         // we use a small epsilon ratio for spacers and rely on Spectre's layout.
         // Practical choice: spacer gets ratio proportional to its column count
         // out of a nominal 80-column grid (safe for typical terminals).
         // If the ratio sum would exceed 1.0, Spectre clips — acceptable for MVP.
-        let ratio = float cols / 80.0
+        let ratio = float cols / NominalTerminalWidth
         (ratio, Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofLiteral (System.String (' ', cols)))))
 
     /// Apply CrossAxisAlignment wrapping to a single child Composition
@@ -87,7 +92,7 @@ module Composition =
             // to gap spacers, then normalise to sum ≤ 1.0.
             let contentCount = float children.Length
             let gapCount = float (children.Length - 1) // gaps between children
-            let gapRatio = if gap > 0 then float gap / 80.0 else 0.0
+            let gapRatio = if gap > 0 then float gap / NominalTerminalWidth else 0.0
             let totalGapRatio = gapCount * gapRatio
             // Remaining ratio for content children (capped at 1.0 − totalGap).
             let contentRatioTotal = max 0.01 (1.0 - totalGapRatio)
