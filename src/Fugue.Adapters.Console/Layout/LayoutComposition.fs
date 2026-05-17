@@ -110,10 +110,9 @@ module Composition =
             let scale = if total > 1.0 + 1e-9 then 1.0 / total else 1.0
             let normalised = pairs |> List.map (fun (r, c) -> (r * scale, c))
 
-            // Use Composition.Columns (validated smart ctor) or fallback to vertical Stack.
+            // Normalisation above guarantees ratios stay valid; reaching the Error arm is a bug.
             match Composition.columns normalised with
             | Ok comp -> comp
-            | Error _ ->
-                // Fallback: if ratio validation fails (can happen with very many
-                // children or very large gap), degrade to a vertical stack.
-                Composition.Stack (children |> List.map (applyVerticalCrossAlign (Stack.align stack)))
+            | Error e ->
+                // Normalisation above guarantees ratios stay valid; reaching here is a bug.
+                failwithf "Stack.Horizontal lowering produced invalid Composition.columns: %A — please file a bug" e
