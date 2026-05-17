@@ -272,17 +272,25 @@ module Live =
                 return Error (RenderError.ConcurrentLiveSession (backend.GetHashCode().ToString "x8"))
             else
 
+            // Render the initial composition BEFORE entering the Spectre session.
+            // If it fails, bail immediately — no session acquired, no cursor held.
+            let ctx0 =
+                RenderContext.create
+                    backend.Profile.Width
+                    (backend.Profile.Capabilities.ColorSystem <> Spectre.Console.ColorSystem.NoColors)
+                    "default"
+            let initRenderResult = Renderer.toRawAnsi ctx0 initial
+
+            match initRenderResult with
+            | Error e ->
+                // Release the session guard acquired above before returning.
+                LiveHelpers.releaseSession backend
+                return Error e
+            | Ok initStr ->
+
             try
-                // Build the initial IRenderable for Spectre.
-                let ctx0 =
-                    RenderContext.create
-                        backend.Profile.Width
-                        (backend.Profile.Capabilities.ColorSystem <> Spectre.Console.ColorSystem.NoColors)
-                        "default"
                 let initRenderable : Spectre.Console.Rendering.IRenderable =
-                    match Renderer.toRawAnsi ctx0 initial with
-                    | Ok s    -> Spectre.Console.Text s :> Spectre.Console.Rendering.IRenderable
-                    | Error _ -> Spectre.Console.Text "" :> Spectre.Console.Rendering.IRenderable
+                    Spectre.Console.Text initStr :> Spectre.Console.Rendering.IRenderable
 
                 let liveDisplay = new Spectre.Console.LiveDisplay (backend, initRenderable)
 

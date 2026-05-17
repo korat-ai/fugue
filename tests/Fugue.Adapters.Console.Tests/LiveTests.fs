@@ -20,6 +20,19 @@ let private textComp (s: string) =
 let private runSync (a: Async<Result<'T, RenderError>>) : Result<'T, RenderError> =
     Async.RunSynchronously a
 
+/// An IRenderable that always throws when Spectre calls Render.
+/// Used to construct a Composition that fails at render time (BLOCKER 2 regression).
+type private ThrowingRenderable(msg: string) =
+    interface Spectre.Console.Rendering.IRenderable with
+        member _.Measure(_console, _maxWidth) =
+            Spectre.Console.Rendering.Measurement(0, 0)
+        member _.Render(_console, _options) =
+            raise (System.InvalidOperationException msg)
+            Seq.empty
+
+let private throwingComp (msg: string) : Composition =
+    Composition.ofRenderable (Renderable.fromSpectre (ThrowingRenderable msg))
+
 // ============================================================================
 // T036 — Live.run happy path
 // ============================================================================
@@ -52,6 +65,29 @@ let ``T036b — Live.run with initial composition returns Ok`` () =
     | Ok "done" -> true
     | Ok v      -> failwith $"Expected Ok \"done\" but got Ok %A{v}"
     | Error e   -> failwith $"Expected Ok but got Error: %A{e}"
+
+// ============================================================================
+// T036c — Live.run propagates initial render error (BLOCKER 2 regression)
+// ============================================================================
+
+[<Property(MaxTest = 1)>]
+let ``T036c — Live.run returns Error when initial composition fails to render`` () =
+    let c      = testConsole ()
+    let ct     = CancellationToken.None
+    let mutable bodyInvoked = false
+    let result =
+        Live.run c (throwingComp "deliberate-throw") ct (fun _ ->
+            async {
+                bodyInvoked <- true
+                return Ok ()
+            })
+        |> runSync
+    match result with
+    | Error (RenderError.RenderFailed _) ->
+        // body must NOT have been invoked — error surfaces before the session starts
+        not bodyInvoked
+    | Ok _    -> failwith "Expected Error for failing initial composition but got Ok"
+    | Error e -> failwith $"Expected RenderFailed but got: %A{e}"
 
 // ============================================================================
 // T037 — Live.run cancellation
