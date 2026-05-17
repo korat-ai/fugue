@@ -135,6 +135,89 @@ let ``T038 — Live.run returns ConcurrentLiveSession if same console already ac
         | Ok _    -> failwith "Expected ConcurrentLiveSession error but got Ok"
 
 // ============================================================================
+// T038a — Status.run rejects concurrent session on same console
+// ============================================================================
+
+[<Property(MaxTest = 1)>]
+let ``T038a — Status.run rejects concurrent session on same console`` () =
+    let c  = testConsole ()
+    let ct = CancellationToken.None
+    let mutable innerResult : Result<unit, RenderError> = Ok ()
+    let outerResult =
+        Status.run c Spinner.Default (SafeText.ofLiteral "outer") ct (fun _ ->
+            async {
+                let inner =
+                    Status.run c Spinner.Default (SafeText.ofLiteral "inner") ct (fun _ ->
+                        async { return Ok () })
+                    |> runSync
+                innerResult <- inner
+                return Ok ()
+            })
+        |> runSync
+    match outerResult with
+    | Error e -> failwith $"Outer Status.run failed unexpectedly: %A{e}"
+    | Ok () ->
+        match innerResult with
+        | Error (RenderError.ConcurrentLiveSession _) -> true
+        | Error e -> failwith $"Expected ConcurrentLiveSession but got: %A{e}"
+        | Ok _    -> failwith "Expected ConcurrentLiveSession error but got Ok"
+
+// ============================================================================
+// T038b — Progress.run rejects concurrent session on same console
+// ============================================================================
+
+[<Property(MaxTest = 1)>]
+let ``T038b — Progress.run rejects concurrent session on same console`` () =
+    let c  = testConsole ()
+    let ct = CancellationToken.None
+    let mutable innerResult : Result<unit, RenderError> = Ok ()
+    let outerResult =
+        Progress.run c ct (fun _ ->
+            async {
+                let inner =
+                    Progress.run c ct (fun _ -> async { return Ok () })
+                    |> runSync
+                innerResult <- inner
+                return Ok ()
+            })
+        |> runSync
+    match outerResult with
+    | Error e -> failwith $"Outer Progress.run failed unexpectedly: %A{e}"
+    | Ok () ->
+        match innerResult with
+        | Error (RenderError.ConcurrentLiveSession _) -> true
+        | Error e -> failwith $"Expected ConcurrentLiveSession but got: %A{e}"
+        | Ok _    -> failwith "Expected ConcurrentLiveSession error but got Ok"
+
+// ============================================================================
+// T038c — Status.run rejects concurrent Live.run on same console (cross-type)
+// ============================================================================
+
+[<Property(MaxTest = 1)>]
+let ``T038c — Status.run rejects concurrent Live.run on same console (cross-type)`` () =
+    let c  = testConsole ()
+    let ct = CancellationToken.None
+    let mutable innerResult : Result<unit, RenderError> = Ok ()
+    // Outer is Status; inner is Live — session guard is shared across all three.
+    let outerResult =
+        Status.run c Spinner.Default (SafeText.ofLiteral "outer") ct (fun _ ->
+            async {
+                let inner =
+                    Live.run c emptyComp ct (fun _ -> async { return Ok () })
+                    |> runSync
+                innerResult <- inner
+                return Ok ()
+            })
+        |> runSync
+    match outerResult with
+    | Error e -> failwith $"Outer Status.run failed unexpectedly: %A{e}"
+    | Ok () ->
+        match innerResult with
+        | Error (RenderError.ConcurrentLiveSession _) -> true
+        | Error e -> failwith $"Expected ConcurrentLiveSession but got: %A{e}"
+        | Ok _    -> failwith "Expected ConcurrentLiveSession error but got Ok"
+
+// ============================================================================
 // T039 — LiveSession.update
 // ============================================================================
 
