@@ -1,5 +1,13 @@
 namespace Fugue.Adapters.Console.Layout
 
+open Fugue.Adapters.Console
+
+// Internal depth-check helper shared by all layout primitives.
+// Not part of the public API — internal to the assembly only.
+module internal LayoutDepth =
+    val layoutDepth    : Composition -> int
+    val maxChildDepth  : Composition list -> int
+
 /// Axis along which a layout primitive distributes its children.
 type Orientation =
     /// Children flow top-to-bottom.
