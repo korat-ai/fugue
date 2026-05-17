@@ -21,6 +21,13 @@ type Alignment =
 ///
 /// Adding a new case forces every Renderer match arm to update at compile
 /// time (Principle I leverage via exhaustive matching).
+///
+/// [<NoComparison; NoEquality>] — Composition is a layout description, not a
+/// value to be compared. Required because the `Foreign` case carries an opaque
+/// `Renderable` (wrapping an arbitrary IRenderable) for which F# cannot derive
+/// structural comparison or equality. External callers that exhaustively match
+/// `Composition` must handle the `Foreign` case (or use a wildcard).
+[<NoComparison; NoEquality>]
 type Composition =
     /// Leaf — wraps a single Primitive.
     | Leaf of Primitive
@@ -40,6 +47,14 @@ type Composition =
     /// Markdown-style table. Headers determine the column count; every body
     /// row must have the same count. Smart constructor validates.
     | Table of headers: Composition list * rows: Composition list list
+    /// Bridge case: wraps an opaque `Renderable` from `Renderable.fromSpectre`.
+    /// Cannot be constructed directly by external callers — `Renderable` values
+    /// are only obtainable via `Renderable.fromSpectre`, making this case
+    /// factorally constructible only through `Composition.ofRenderable`.
+    /// External code that exhaustively matches `Composition` must add a
+    /// `| Foreign _ -> ...` arm (or `| _ -> ...` wildcard). Introduced by
+    /// the R1 bridge decision (research.md §R1 / FR-008).
+    | Foreign of Renderable
 
 /// Smart constructors for Composition nodes that can fail structurally.
 /// Non-validating constructors (`stack`, `panel`, `aligned`) build the DU
@@ -79,3 +94,9 @@ module Composition =
     val table:
         headers: Composition seq ->
             rows: Composition seq seq -> Result<Composition, RenderError>
+
+    /// Embed a `Renderable` as a `Composition` node. Internally maps to
+    /// the assembly-internal `Composition.Foreign` case, which is invisible
+    /// to external pattern matches (Phase 1 backward compatibility — SC-005).
+    /// This is the entry point for the custom-renderable bridge (US1/FR-008).
+    val ofRenderable : Renderable -> Composition

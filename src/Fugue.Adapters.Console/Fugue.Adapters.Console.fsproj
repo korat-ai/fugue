@@ -14,12 +14,12 @@
     <Compile Include="Context.fs" />
     <Compile Include="Primitive.fsi" />
     <Compile Include="Primitive.fs" />
+    <Compile Include="Renderable.fsi" />
+    <Compile Include="Renderable.fs" />
     <Compile Include="Composition.fsi" />
     <Compile Include="Composition.fs" />
     <Compile Include="Renderer.fsi" />
     <Compile Include="Renderer.fs" />
-    <Compile Include="Renderable.fsi" />
-    <Compile Include="Renderable.fs" />
     <Compile Include="DataDisplays.fsi" />
     <Compile Include="DataDisplays.fs" />
     <Compile Include="Live.fsi" />

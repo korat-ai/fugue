@@ -21,6 +21,12 @@ type Alignment =
 ///
 /// Adding a new case forces every Renderer match arm to update at compile
 /// time (Principle I leverage via exhaustive matching).
+///
+/// [<NoComparison; NoEquality>] — Composition is a layout description, not a
+/// value to be compared. Required because the `Foreign` case carries an opaque
+/// `Renderable` (wrapping an arbitrary IRenderable) for which F# cannot derive
+/// structural comparison or equality automatically.
+[<NoComparison; NoEquality>]
 type Composition =
     /// Leaf — wraps a single Primitive.
     | Leaf    of Primitive
@@ -42,6 +48,12 @@ type Composition =
     /// Markdown-style table. Headers determine the column count; every body
     /// row must have the same count. Smart constructor validates.
     | Table   of headers: Composition list * rows: Composition list list
+    /// Bridge case: wraps an opaque Renderable (from Renderable.fromSpectre).
+    /// External callers who exhaustively match Composition must add a
+    /// `| Foreign _ -> ...` arm. Callers cannot construct this case directly —
+    /// a Renderable value is only obtainable via Renderable.fromSpectre.
+    /// Introduced by the R1 bridge decision (research.md §R1).
+    | Foreign of Renderable
 
 /// Smart constructors for Composition nodes that can fail structurally.
 /// Non-validating constructors (`stack`, `panel`, `aligned`) build the DU
@@ -96,6 +108,12 @@ module Composition =
     /// Align inner content within the available width.
     let aligned (alignment: Alignment) (inner: Composition) : Composition =
         Aligned (alignment, inner)
+
+    /// Embed a `Renderable` as a `Composition` node via the `Foreign` bridge case.
+    /// External callers cannot construct `Foreign` directly — a `Renderable`
+    /// value is only obtainable via `Renderable.fromSpectre`.
+    let ofRenderable (r: Renderable) : Composition =
+        Foreign r
 
     /// Build a table from a header row and body rows. Every body row must
     /// have the same column count as the header row; ragged rows are
