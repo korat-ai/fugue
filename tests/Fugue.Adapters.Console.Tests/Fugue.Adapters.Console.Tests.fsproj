@@ -17,12 +17,19 @@
     <Compile Include="ConsoleTests.fs" />
     <Compile Include="LiveTests.fs" />
     <Compile Include="PromptsTests.fs" />
+    <Compile Include="CoverageMatrixTests.fs" />
     <Compile Include="SuiteDurationSmoke.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
     <None Update="xunit.runner.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <!-- T072: copy coverage-matrix.md next to the test dll so CoverageMatrixTests.fs
+         can parse it via AppContext.BaseDirectory + "coverage-matrix.md". -->
+    <None Include="..\..\specs\002-spectre-full-coverage\coverage-matrix.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>coverage-matrix.md</Link>
     </None>
   </ItemGroup>
   <ItemGroup>
