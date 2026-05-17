@@ -122,14 +122,24 @@ module Console =
             with ex ->
                 Error (RenderError.RenderFailed ("Console.write", ex.Message))
 
-    let capture (c: Console) (comp: Composition) : Result<string, RenderError> =
-        let w   = ConsoleImpl.consoleWidth  c.Backend
-        let col = ConsoleImpl.consoleColour c.Backend
-        let ctx = RenderContext.create w col "default"
-        // For both production and test, render to an ANSI string via the renderer.
-        // Production: mirrors via transient test console (does NOT write to stdout).
-        // Test: same path — Renderer.toRawAnsi captures the string without side effects.
-        Renderer.toRawAnsi ctx comp
+    let rec capture (c: Console) (comp: Composition) : Result<string, RenderError> =
+        match c.Mode with
+        | Test tc ->
+            // Test mode: write comp into the existing TestConsole buffer (accumulates),
+            // then return the full buffer contents. Does NOT clear between calls.
+            match write c comp with
+            | Error e -> Error e
+            | Ok ()   -> Ok tc.Output
+        | Production ->
+            // Production mode: spin up a transient TestConsole mirroring this console's
+            // width/colour profile; render into it; return the rendered string.
+            // Does NOT side-effect stdout.
+            let width  = ConsoleImpl.consoleWidth  c.Backend
+            let colour = ConsoleImpl.consoleColour c.Backend
+            let mirror = ConsoleImpl.buildTestConsole width colour
+            let mirrorConsole = { Backend = mirror :> Spectre.Console.IAnsiConsole
+                                  Mode    = Test mirror }
+            capture mirrorConsole comp
 
     let cursorState (c: Console) : CursorState =
         match c.Mode with

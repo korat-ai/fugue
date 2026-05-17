@@ -107,6 +107,21 @@ let ``T065b — Console.write with Empty composition returns Ok`` () =
     | Error e -> failwith $"Expected Ok but got Error: %A{e}"
 
 // ============================================================================
+// T065b — Console.capture drains accumulated buffer (spec §6.2 + §6.5)
+// ============================================================================
+
+[<Property(MaxTest = 1)>]
+let ``T065b — Console.capture drains accumulated buffer on Test mode`` () =
+    let c = Console.test 80 false
+    // Two writes before capture — buffer must contain all three texts.
+    Console.write c (textComp "alpha") |> ignore
+    Console.write c (textComp "beta")  |> ignore
+    match Console.capture c (textComp "gamma") with
+    | Error e -> failwith $"Expected Ok but got Error: %A{e}"
+    | Ok s    ->
+        s.Contains "alpha" && s.Contains "beta" && s.Contains "gamma"
+
+// ============================================================================
 // T066 — Console.capture
 // ============================================================================
 
