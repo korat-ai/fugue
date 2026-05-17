@@ -98,10 +98,18 @@ constructible only via the factory.
   ```
   (`fromSpectre` is the single intentional leak — see FR-008's "single
   factory function" wording.)
-- **Composition.fsi** gains a one-line `val ofRenderable` addition; the
-  underlying `Composition.Foreign` case is `internal` so external matches
-  cannot reference it. Existing matches remain exhaustive against the
-  public DU shape.
+- **Composition.fsi** adds the `Foreign` case as part of the public DU
+  shape, but the case is **not constructible externally** because its
+  payload type `Renderable` is opaque (no public constructor; only
+  `Renderable.fromSpectre` can produce one). F# language mechanics
+  required the case to be visible in the `.fsi` even though the original
+  design called for a purely internal case — this was forced by the fact
+  that `Renderable` appears as the payload type and leaks into the
+  exported shape. External code doing exhaustive matches must add
+  `| Foreign _ -> ...` arms but cannot construct the case. Existing
+  matches remain source-compatible (the case was not previously visible,
+  so no existing arm breaks; adding a wildcard arm is the only required
+  change for callers who switch to exhaustive matching).
 - **Renderer.fs** gains a new arm in `toRenderable` matching
   `Composition.Foreign r` that unwraps the opaque value and runs Spectre
   with a try/catch around any `Render(...)`-time throw.

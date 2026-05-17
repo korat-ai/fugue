@@ -304,17 +304,14 @@ module Renderer =
             // backendObj returns obj (SC-004: Spectre type not in .fsi); downcast here.
             let backendNullable = Renderable.backendObj r
             let typeName        = Renderable.typeName r
-            try
-                // Null check first (backend stored as obj|null to avoid Spectre type in .fsi).
-                // The null case means Renderable.fromSpectre was called with null — surface as
-                // RenderFailed at render time per data-model.md §2.2 null-acceptance rule.
-                let backend =
-                    match backendNullable with
-                    | null -> failwith $"Foreign IRenderable backend is null (type: {typeName})"
-                    | b    -> b :?> IRenderable
-                Ok backend
-            with ex ->
-                Error (RenderError.RenderFailed (typeName, ex.Message))
+            // Null check first (backend stored as obj|null to avoid Spectre type in .fsi).
+            // The null case means Renderable.fromSpectre was called with null — surface as
+            // RenderFailed at render time per data-model.md §2.2 null-acceptance rule.
+            match backendNullable with
+            | null ->
+                Error (RenderError.RenderFailed (typeName, "Foreign IRenderable backend is null"))
+            | b ->
+                Ok (b :?> IRenderable)
 
     /// Evaluate a Composition into the byte/escape stream the Surface
     /// actor expects. Pure (no side effects on Console.Out, no actor post).
@@ -325,6 +322,22 @@ module Renderer =
         match composition with
         | Composition.Leaf prim ->
             renderPrimitive ctx prim
+
+        // FR-009: dedicated arm for Foreign so render-time exceptions carry the
+        // *captured* typeName (from Renderable.fromSpectre) rather than the
+        // generic "Composition" literal that the catch-all branch below would use.
+        // This is finding #1 from the PR P1 review.
+        | Composition.Foreign r ->
+            let typeName = Renderable.typeName r
+            match toRenderable ctx (Composition.Foreign r) with
+            | Error e -> Error e
+            | Ok backend ->
+                try
+                    let output = withSpectre ctx (fun ac -> ac.Write backend)
+                    Ok output
+                with ex ->
+                    Error (RenderError.RenderFailed (typeName, ex.Message))
+
         | other ->
             match toRenderable ctx other with
             | Error e -> Error e

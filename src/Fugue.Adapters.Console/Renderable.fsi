@@ -13,6 +13,11 @@ namespace Fugue.Adapters.Console
 ///
 /// SC-004 note: `Renderable.fromSpectre` is the SINGLE intentional Spectre
 /// type in this adapter's public `.fsi` surface (FR-008 carve-out).
+///
+/// [<Sealed>] matches the spec sketch in data-model.md §2.1. F# records
+/// are already sealed at the CLR level; the attribute makes the intent
+/// explicit in the .fsi for spec→impl parity.
+[<Sealed>]
 type Renderable
 
 /// Factory for the opaque Renderable bridge.

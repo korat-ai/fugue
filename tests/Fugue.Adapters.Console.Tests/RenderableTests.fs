@@ -45,8 +45,11 @@ let ``T008 — exception in IRenderable.Render is caught as RenderFailed — exc
     let comp = Composition.ofRenderable r
     match Renderer.toRawAnsi (ctx80 ()) comp with
     | Error (RenderError.RenderFailed (typeName, _)) ->
-        // typeName must be non-empty (captured at fromSpectre time).
-        typeName.Length > 0
+        // typeName must be the actual runtime type of the throwing backend,
+        // NOT the generic "Composition" literal that the catch-all arm in
+        // toRawAnsi would produce. The specific check here prevents regression
+        // of PR P1 review finding #1 (typeName plumbing through Foreign arm).
+        typeName.Contains "ThrowingRenderable" && typeName <> "Composition"
     | Ok _  -> false  // exception must NOT be swallowed silently
     | Error _ -> false
 

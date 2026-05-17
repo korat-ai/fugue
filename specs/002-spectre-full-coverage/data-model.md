@@ -154,14 +154,27 @@ assembly DUs.
   exhaustive matching is the whole point.
 
 **Implementation note**: `internal` on a DU case in F# is spelled by
-making the *constructor* invisible while the type stays public. The
-`.fsi` declares the public type with only the five public cases plus
-no-arg type extension; `Composition.fs` declares the full DU including
-`internal Foreign of Renderable`. Cross-assembly visibility is decided
-by the constructor's `internal` modifier, not the type's.
+making the *constructor* invisible while the type stays public. F#
+language mechanics, however, required the `Foreign` case to appear in
+the public `.fsi` as part of the DU's shape — it is listed there but is
+**not constructible externally** because its payload type `Renderable`
+is opaque (no public constructor; only `Renderable.fromSpectre` can
+produce one). External code doing exhaustive matches must add
+`| Foreign _ -> ...` arms but cannot construct the case. This was
+forced by F# language mechanics, not a deliberate design deviation:
+a DU case that is `internal` at the constructor level still appears
+in the type's external shape if the payload type leaks into the
+`.fsi`. `Composition.fs` declares the full DU including
+`| Foreign of Renderable`; `Renderable`'s opacity enforces the
+non-constructibility invariant. Cross-assembly callers see the case
+name but cannot match it with a pattern that binds the payload.
 
 **SC-005 conclusion**: HOLDS. Phase 1 tests do not break; cross-assembly
-callers do not break.
+callers do not break. Note: `Composition.fsi` adds the `Foreign` case
+as part of the public DU shape but the case is **not constructible
+externally** because its payload type `Renderable` is opaque (no public
+ctor; only `Renderable.fromSpectre` can produce one). External code
+doing exhaustive matches must add `| Foreign _ -> ...` arms.
 
 ---
 
@@ -265,12 +278,25 @@ module Renderable =
 **Validation rules**: none at construction time. A `null`
 `IRenderable` argument is accepted as a valid (degenerate) wrapping;
 the failure surfaces at *render* time as
-`RenderFailed ("System.NullReferenceException", "...")` via the
-`Composition.Foreign` arm's try/catch in `Renderer.fs`. Up-front null
+`RenderFailed ("null", "Foreign IRenderable backend is null")` via the
+`Composition.Foreign` arm in `Renderer.fs`. Up-front null
 checking is deliberately avoided because (a) F# callers cannot easily
 produce a null `IRenderable` (it must come from C# interop or
 reflection), and (b) the failure path is already well-defined via
 `RenderFailed`.
+
+**Decision log — null acceptance on `fromSpectre`**: `Renderable.fromSpectre`
+accepts `IRenderable | null` and routes null backends through the
+captured-typeName failure path (returning
+`Error (RenderFailed ("null", "Foreign IRenderable backend is null"))`
+at render time). This was added during PR P1 implementation as a defense
+against C#-interop edge cases where a caller might pass a null reference
+unintentionally. The contract sketch originally argued against this; the
+implementation decision was to be defensive given the bridge's role at
+the F#/C# boundary (Principle II). Future callers should NOT rely on
+null being silently swallowed at construction — null is propagated to a
+typed `Error` at render time, exactly as any other render-time failure
+would be.
 
 ### 2.3 `Composition.ofRenderable` extension
 
