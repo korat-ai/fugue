@@ -6,6 +6,8 @@
   <ItemGroup>
     <Compile Include="Errors.fsi" />
     <Compile Include="Errors.fs" />
+    <Compile Include="InternalErrors.fsi" />
+    <Compile Include="InternalErrors.fs" />
     <Compile Include="Style.fsi" />
     <Compile Include="Style.fs" />
     <Compile Include="SafeText.fsi" />

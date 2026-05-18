@@ -84,3 +84,35 @@ module Composition =
     /// `ofLayoutGrid` on the same `LayoutGrid` value twice yields byte-identical
     /// output at the same `RenderContext` dimensions.
     val ofLayoutGrid : LayoutGrid -> Composition
+
+    /// Lower a `Flex` layout primitive into a Phase 2 `Composition` tree.
+    ///
+    /// Uses the lazy-IRenderable pattern (data-model.md §6 "Lowering"):
+    /// wraps the entire Flex as a single `Composition.Foreign` node whose
+    /// `embeddedDepth` carries the actual pre-lowering depth so that
+    /// `LayoutDepth.layoutDepth` sees the true nesting depth (not depth=1).
+    ///
+    /// Geometry is computed at render time inside a private `FlexRenderable`
+    /// using the actual `maxWidth` (Horizontal axis) or `ConsoleSize.Height`
+    /// (Vertical axis) from the upstream render options.
+    ///
+    /// The CSS §9.7 three-phase solver (`Flex.Internal.solveDistribution`)
+    /// allocates sizes; children are stitched via ANSI CUP cursor-position
+    /// escapes (`\x1b[row;colH`).
+    ///
+    /// Overflow policy:
+    ///   - `Clip`   — sizes that sum > axisLen are accepted; children render
+    ///                at their solved sizes (Spectre clips visually).
+    ///   - `Strict` — if sizes sum > axisLen (no shrink path), returns
+    ///                `Error (LayoutOverflow ("Flex", detail))` via `failwithf`
+    ///                since IRenderable.Render cannot return Result. The caller
+    ///                of `Renderer.toRawAnsi` will receive `Error (RenderFailed …)`.
+    ///   - `WrapNext` — treated as Clip in the MVP (Phase 3 deferred).
+    ///
+    /// FAIL-FAST: if any child render fails during `FlexRenderable.Render`,
+    /// the error propagates as `failwithf` (no silent fallbacks per PR-P1 lesson).
+    ///
+    /// The returned `Composition` is deterministic and immutable: calling
+    /// `ofFlex` on the same `Flex` value twice yields byte-identical output
+    /// at the same `RenderContext` dimensions.
+    val ofFlex : Flex -> Composition
