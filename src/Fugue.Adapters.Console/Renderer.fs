@@ -121,7 +121,7 @@ module Renderer =
         | Alignment.RightAlign  -> SpectreHAlign.Right
 
     /// Build an ephemeral Spectre AnsiConsole writing to a StringWriter,
-    /// honouring `RenderContext` (width clamp + colour-enabled flag).
+    /// honouring `RenderContext` (width clamp + height clamp + colour-enabled flag).
     let private withSpectre (ctx: RenderContext) (action: IAC -> unit) : string =
         let sw = new StringWriter ()
         let settings = SpectreSettings ()
@@ -132,7 +132,15 @@ module Renderer =
             else
                 SpectreSupport.NoColors
         let console = Spectre.Console.AnsiConsole.Create settings
-        console.Profile.Width <- max 1 ctx.Width
+        console.Profile.Width  <- max 1 ctx.Width
+        // Set height so DockRenderable (and future layout IRenderables) can read
+        // the allocated height from RenderOptions.ConsoleSize.Height at render time.
+        // Guard: Int32.MaxValue is the "unconstrained" sentinel; map it to 24 (the
+        // Spectre default) to avoid passing a nonsensical height to Spectre.
+        let heightClamped =
+            if ctx.Height = System.Int32.MaxValue || ctx.Height <= 0 then 24
+            else ctx.Height
+        console.Profile.Height <- heightClamped
         action console
         sw.ToString ()
 
@@ -295,13 +303,14 @@ module Renderer =
                 | Some e -> Error e
                 | None   -> Ok (t :> IRenderable))
 
-        | Composition.Foreign r ->
+        | Composition.Foreign (r, _) ->
             // Bridge case: the user supplied an externally-defined IRenderable
             // via Renderable.fromSpectre. Unwrap the opaque handle and return
             // it directly — Spectre owns the rendering from here.
             // Exception boundary (FR-009): any throw from the backend is caught
             // and surfaced as RenderFailed rather than propagating to the caller.
             // backendObj returns obj (SC-004: Spectre type not in .fsi); downcast here.
+            // embeddedDepth is only meaningful for LayoutDepth.layoutDepth — ignored here.
             let backendNullable = Renderable.backendObj r
             let typeName        = Renderable.typeName r
             // Null check first (backend stored as obj|null to avoid Spectre type in .fsi).
@@ -327,9 +336,10 @@ module Renderer =
         // *captured* typeName (from Renderable.fromSpectre) rather than the
         // generic "Composition" literal that the catch-all branch below would use.
         // This is finding #1 from the PR P1 review.
-        | Composition.Foreign r ->
+        // embeddedDepth is consumed only by LayoutDepth.layoutDepth; ignored here.
+        | Composition.Foreign (r, _) as foreignComp ->
             let typeName = Renderable.typeName r
-            match toRenderable ctx (Composition.Foreign r) with
+            match toRenderable ctx foreignComp with
             | Error e -> Error e
             | Ok backend ->
                 try

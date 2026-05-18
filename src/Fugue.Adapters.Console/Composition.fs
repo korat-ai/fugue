@@ -52,8 +52,12 @@ type Composition =
     /// External callers who exhaustively match Composition must add a
     /// `| Foreign _ -> ...` arm. Callers cannot construct this case directly —
     /// a Renderable value is only obtainable via Renderable.fromSpectre.
-    /// Introduced by the R1 bridge decision (research.md §R1).
-    | Foreign of Renderable
+    /// The optional embeddedDepth carries the pre-lowering depth of the layout
+    /// that produced this Foreign node; None means treat as depth=1 (default
+    /// for non-layout Foreign values). Set by layout lowering factories via
+    /// Composition.ofRenderableWithDepth. Introduced by R1 bridge decision and
+    /// extended by CEO option (b.1) redesign.
+    | Foreign of Renderable * embeddedDepth: int option
 
 /// Smart constructors for Composition nodes that can fail structurally.
 /// Non-validating constructors (`stack`, `panel`, `aligned`) build the DU
@@ -112,8 +116,15 @@ module Composition =
     /// Embed a `Renderable` as a `Composition` node via the `Foreign` bridge case.
     /// External callers cannot construct `Foreign` directly — a `Renderable`
     /// value is only obtainable via `Renderable.fromSpectre`.
+    /// Sets embeddedDepth = None; LayoutDepth.layoutDepth treats this node as depth=1.
     let ofRenderable (r: Renderable) : Composition =
-        Foreign r
+        Foreign (r, None)
+
+    /// Internal factory: embed a Renderable as a Foreign node with an explicit
+    /// embedded depth. Used by layout lowering factories (ofDock, ofLayoutGrid,
+    /// ofFlex) so that LayoutDepth.layoutDepth honors the actual pre-lowering depth.
+    let internal ofRenderableWithDepth (r: Renderable) (depth: int) : Composition =
+        Foreign (r, Some depth)
 
     /// Build a table from a header row and body rows. Every body row must
     /// have the same column count as the header row; ragged rows are

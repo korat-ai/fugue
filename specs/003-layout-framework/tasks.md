@@ -133,22 +133,22 @@ panel left-aligned to column 0 (per spec US1 acceptance scenario 1). Verify
 
 > **Write these tests FIRST, ensure they FAIL before implementation.**
 
-- [ ] T022 [P] [US2] Create `tests/Fugue.Adapters.Console.Tests/Layout/DockTests.fs`. Property test: `Dock.create [DockEdge.Bottom, statusComp; DockEdge.Fill, mainComp]` returns `Ok dock`; `Composition.ofDock` rendered at 80×24 places `"STATUS-MARKER"` content in the last row and `"MAIN-MARKER"` content in rows 0..22.
-- [ ] T023 [P] [US2] In DockTests.fs: multi-edge — `Dock.create [DockEdge.Left, sidebar; DockEdge.Right, metadata; DockEdge.Fill, main]` with sidebar-of-width-20 and metadata-of-width-30 at width=100 assigns columns correctly per US2 acceptance scenario 2.
-- [ ] T024 [P] [US2] In DockTests.fs: top-pin — `Dock.create [DockEdge.Top, header; DockEdge.Fill, body]` renders header in row 0, body in rows 1..(height-1).
-- [ ] T025 [P] [US2] In DockTests.fs: error-path — two `Fill` children → `Error (InvalidArgument ("Dock", "exactly one Fill child permitted"))` synchronous.
-- [ ] T026 [P] [US2] In DockTests.fs: error-path — empty children list → `Error (EmptyComposition "Dock: at least one child required")` synchronous.
-- [ ] T027 [P] [US2] In DockTests.fs: error-path — zero Fill children → `Error (InvalidArgument ("Dock", "exactly one Fill child permitted"))`.
-- [ ] T028 [P] [US2] In DockTests.fs: colour-toggle parametric (mirror Phase 2 T024a pattern + Phase 3 T015).
-- [ ] T028a [P] [US2] In DockTests.fs: depth-limit — nest Docks 101 levels deep; assert `Error (InvalidArgument ("Layout", "depth exceeds 100"))` per spec edge case "Recursive nesting" (mirrors T017 for Stack). Closes finding G4 for Dock.
-- [ ] T029 [P] [US2] In DockTests.fs: determinism — render same Dock twice via separate RenderContext, byte-identical.
+- [X] T022 [P] [US2] Create `tests/Fugue.Adapters.Console.Tests/Layout/DockTests.fs`. Property test: `Dock.create [DockEdge.Bottom, statusComp; DockEdge.Fill, mainComp]` returns `Ok dock`; `Composition.ofDock` rendered at 80×24 places `"STATUS-MARKER"` content in the last row and `"MAIN-MARKER"` content in rows 0..22.
+- [X] T023 [P] [US2] In DockTests.fs: multi-edge — `Dock.create [DockEdge.Left, sidebar; DockEdge.Right, metadata; DockEdge.Fill, main]` with sidebar-of-width-20 and metadata-of-width-30 at width=100 assigns columns correctly per US2 acceptance scenario 2.
+- [X] T024 [P] [US2] In DockTests.fs: top-pin — `Dock.create [DockEdge.Top, header; DockEdge.Fill, body]` renders header in row 0, body in rows 1..(height-1).
+- [X] T025 [P] [US2] In DockTests.fs: error-path — two `Fill` children → `Error (InvalidArgument ("Dock", "exactly one Fill child permitted"))` synchronous.
+- [X] T026 [P] [US2] In DockTests.fs: error-path — empty children list → `Error (EmptyComposition "Dock: at least one child required")` synchronous.
+- [X] T027 [P] [US2] In DockTests.fs: error-path — zero Fill children → `Error (InvalidArgument ("Dock", "exactly one Fill child permitted"))`.
+- [X] T028 [P] [US2] In DockTests.fs: colour-toggle parametric (mirror Phase 2 T024a pattern + Phase 3 T015).
+- [X] T028a [P] [US2] In DockTests.fs: depth-limit — nest Docks 101 levels deep; assert `Error (InvalidArgument ("Layout", "depth exceeds 100"))` per spec edge case "Recursive nesting" (mirrors T017 for Stack). Closes finding G4 for Dock.
+- [X] T029 [P] [US2] In DockTests.fs: determinism — render same Dock twice via separate RenderContext, byte-identical.
 
 ### Implementation for User Story 2
 
-- [ ] T030 [US2] Write `src/Fugue.Adapters.Console/Layout/Dock.fsi` per `contracts/Dock.fsi`: declare `DockEdge = Top | Bottom | Left | Right | Fill`, opaque sealed `Dock`, `module Dock` with `create : (DockEdge * Composition) list -> Result<Dock, RenderError>`.
-- [ ] T031 [US2] Implement `src/Fugue.Adapters.Console/Layout/Dock.fs`: private record + sealed wrapper + smart constructor with validation per data-model.md §4 (non-empty, exactly-one-Fill).
-- [ ] T032 [US2] Implement `Composition.ofDock : Dock -> Composition` in `src/Fugue.Adapters.Console/Layout/LayoutComposition.fs` per data-model.md §4 lowering — two-pass geometry: edges measured for intrinsic size via Spectre `IRenderable.Measure` (transitively, per R-4); Fill takes remainder. Use the lazy-IRenderable pattern (data-model.md §4 + surprise #3 from Phase 1 subagent report) — wrap result in `Composition.Foreign (Renderable.fromSpectre ...)` so geometry defers to render time.
-- [ ] T033 [US2] Update `src/Fugue.Adapters.Console/Layout/LayoutComposition.fsi` to add `Composition.ofDock` signature. Verify SC-004 gate.
+- [X] T030 [US2] Write `src/Fugue.Adapters.Console/Layout/Dock.fsi` per `contracts/Dock.fsi`: declare `DockEdge = Top | Bottom | Left | Right | Fill`, opaque sealed `Dock`, `module Dock` with `create : (DockEdge * Composition) list -> Result<Dock, RenderError>`.
+- [X] T031 [US2] Implement `src/Fugue.Adapters.Console/Layout/Dock.fs`: private record + sealed wrapper + smart constructor with validation per data-model.md §4 (non-empty, exactly-one-Fill).
+- [X] T032 [US2] Implement `Composition.ofDock : Dock -> Composition` in `src/Fugue.Adapters.Console/Layout/LayoutComposition.fs` per data-model.md §4 lowering algorithm — two-pass geometry: edges measured via render-time `DockRenderable.Render` with Spectre's transitive width helpers; Fill takes remainder. Uses lazy-IRenderable pattern (`Composition.Foreign` with `embeddedDepth = Some computedDepth` so LayoutDepth honors actual depth — see Composition.fsi extension landed in this PR). CEO option (b.1) redesign: `Composition.Foreign` extended with `embeddedDepth: int option`; `LayoutDepth.layoutDepth` updated to honor it; `StackInternals` duplication removed; `Renderer.withSpectre` sets `Profile.Height` so DockRenderable.Render receives correct height from `options.ConsoleSize.Height`.
+- [X] T033 [US2] Update `src/Fugue.Adapters.Console/Layout/LayoutComposition.fsi` to add `Composition.ofDock` signature. Verify SC-004 gate.
 
 **Checkpoint**: US2 PR shippable. Dock validates; lowering correct; 232 + US1 + ~8 new tests green; SC-004 still 1 match.
 
