@@ -279,6 +279,36 @@ let ``T039 — LayoutGrid.create with ragged row returns InvalidArgument`` () =
     | _ -> false
 
 // ============================================================================
+// T039a — Error: cells.Length ≠ rows.Length
+// ============================================================================
+
+[<Property(MaxTest = 1)>]
+let ``T039a — LayoutGrid.create rejects cells.Length ≠ rows.Length (too few rows of cells)`` () =
+    let c1 = namedLeaf "C1"
+    let c2 = namedLeaf "C2"
+    // rows=[Auto;Auto;Auto] (3) but cells has only 1 row.
+    match LayoutGrid.create
+            [ColumnSize.Auto; ColumnSize.Auto]
+            [RowSize.Auto; RowSize.Auto; RowSize.Auto]
+            [[c1; c2]] with  // 1 row of cells, 3 declared
+    | Error (RenderError.InvalidArgument ("LayoutGrid", detail)) ->
+        detail.Contains "3" && detail.Contains "1"
+    | _ -> false
+
+[<Property(MaxTest = 1)>]
+let ``T039a — LayoutGrid.create rejects cells.Length ≠ rows.Length (too many rows of cells)`` () =
+    let c1 = namedLeaf "C1"
+    let c2 = namedLeaf "C2"
+    // rows=[Auto] (1) but cells has 2 rows.
+    match LayoutGrid.create
+            [ColumnSize.Auto; ColumnSize.Auto]
+            [RowSize.Auto]
+            [[c1; c2]; [c1; c2]] with  // 2 rows of cells, 1 declared
+    | Error (RenderError.InvalidArgument ("LayoutGrid", detail)) ->
+        detail.Contains "1" && detail.Contains "2"
+    | _ -> false
+
+// ============================================================================
 // T040 — Error: Fixed 0 column
 // ============================================================================
 
