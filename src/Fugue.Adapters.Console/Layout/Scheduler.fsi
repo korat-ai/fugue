@@ -17,7 +17,7 @@ open Fugue.Adapters.Console
 //     skipped; the caller sees no render until the next successful tick.
 //   * Thread safety: `trigger` posts to the MailboxProcessor inbox — lock-free
 //     and non-blocking. The actor serialises all state access.
-//   * No Spectre.* type appears in this .fsi (SC-004 invariant).
+//   * No upstream-library types appear in this .fsi (SC-004 invariant).
 // =============================================================================
 
 /// Frame-coalescing layout update scheduler.
