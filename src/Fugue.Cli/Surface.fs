@@ -91,6 +91,41 @@ let writeRenderableLine (r: IRenderable) : unit =
 let writeRenderable (r: IRenderable) : unit =
     spectre (fun ac -> ac.Write r)
 
+/// Escape Spectre markup characters in a plain string so it can be safely
+/// embedded in a markup string without interpretation. Delegates to
+/// Spectre.Console.Markup.Escape — kept in Surface.fs so callers in Repl.fs
+/// do not need their own `open Spectre.Console` (FR-011 gate).
+let escape (s: string) : string = Markup.Escape s
+
+/// Write a Spectre markup string without a trailing newline. Equivalent to
+/// `Surface.writeRenderable (Markup markup)` but without requiring callers
+/// to open Spectre.Console (FR-011 gate for Repl.fs).
+let markup (markupStr: string) : unit =
+    spectre (fun ac -> ac.Write(Markup markupStr))
+
+/// Render a rounded-border Table from markup column-headers and markup rows.
+/// Column alignment is specified per header:  ">[/]bold Header" means right-align
+/// (prefix ">"), "<" means left-align (default), "^" means centered.
+/// Hidden from Repl.fs so it doesn't need `open Spectre.Console` (FR-011).
+///
+/// columnDefs: list of (markupHeader, alignment) where alignment is
+///   "left" | "center" | "right". Each row is a string array of cells.
+let roundedTable (columnDefs: (string * string) list) (rows: string[] list) : unit =
+    spectre (fun ac ->
+        let tbl = Table()
+        tbl.Border <- TableBorder.Rounded
+        for (header, align) in columnDefs do
+            let col = TableColumn(header)
+            let col' =
+                match align with
+                | "right"  -> col.RightAligned()
+                | "center" -> col.Centered()
+                | _        -> col.LeftAligned()
+            tbl.AddColumn col' |> ignore
+        for row in rows do
+            tbl.AddRow row |> ignore
+        ac.Write tbl)
+
 /// Synchronous barrier: wait until the actor has processed every pending
 /// write before returning. Used by code paths that need to be sure visible
 /// state has caught up before doing something non-write (e.g. reading
