@@ -35,9 +35,9 @@ module LayoutGrid =
         |> List.tryPick (fun c ->
             match c with
             | ColumnSize.Fixed w when w < 1 ->
-                Some (RenderError.InvalidArgument ("LayoutGrid", "Fixed size must be ≥ 1"))
+                Some (RenderError.InvalidArgument ("LayoutGrid", "Fixed column width must be ≥ 1"))
             | ColumnSize.Star r when r < 1 ->
-                Some (RenderError.InvalidArgument ("LayoutGrid", "Star ratio must be ≥ 1"))
+                Some (RenderError.InvalidArgument ("LayoutGrid", "Star column ratio must be ≥ 1"))
             | _ -> None)
         |> function
            | Some e -> Error e
@@ -46,12 +46,12 @@ module LayoutGrid =
     // Validate Fixed/Star sizing DUs for rows.
     let private validateRowSizes (rows: RowSize list) : Result<unit, RenderError> =
         rows
-        |> List.tryPick (fun r ->
-            match r with
+        |> List.tryPick (fun rs ->
+            match rs with
             | RowSize.Fixed h when h < 1 ->
-                Some (RenderError.InvalidArgument ("LayoutGrid", "Fixed size must be ≥ 1"))
-            | RowSize.Star r when r < 1 ->
-                Some (RenderError.InvalidArgument ("LayoutGrid", "Star ratio must be ≥ 1"))
+                Some (RenderError.InvalidArgument ("LayoutGrid", "Fixed row height must be ≥ 1"))
+            | RowSize.Star ratio when ratio < 1 ->
+                Some (RenderError.InvalidArgument ("LayoutGrid", "Star row ratio must be ≥ 1"))
             | _ -> None)
         |> function
            | Some e -> Error e
@@ -67,6 +67,13 @@ module LayoutGrid =
             Error (RenderError.EmptyComposition "LayoutGrid: at least one column required")
         elif rows.IsEmpty then
             Error (RenderError.EmptyComposition "LayoutGrid: at least one row required")
+        elif cells.Length <> rows.Length then
+            // Spec data-model.md §506: cells.Length ≠ rows.Length → InvalidArgument.
+            // Must be checked before per-row ragged validation to avoid IndexOutOfRangeException
+            // in LayoutGridRenderable.Render when the render loop indexes cells.[i].
+            Error (RenderError.InvalidArgument (
+                "LayoutGrid",
+                sprintf "expected %d rows of cells, got %d" rows.Length cells.Length))
         else
             // Validate each row has exactly columns.Length cells.
             let colCount = columns.Length
