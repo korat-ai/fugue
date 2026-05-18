@@ -345,7 +345,13 @@ module Renderer =
                 try
                     let output = withSpectre ctx (fun ac -> ac.Write backend)
                     Ok output
-                with ex ->
+                with
+                // Layout IRenderable implementations raise LayoutRenderErrorException
+                // to propagate typed RenderErrors (e.g. LayoutOverflow) through the
+                // IRenderable.Render → IEnumerable<Segment> path. Unwrap and re-surface.
+                | LayoutRenderErrorException e ->
+                    Error e
+                | ex ->
                     Error (RenderError.RenderFailed (typeName, ex.Message))
 
         | other ->
@@ -355,7 +361,10 @@ module Renderer =
                 try
                     let output = withSpectre ctx (fun ac -> ac.Write r)
                     Ok output
-                with ex ->
+                with
+                | LayoutRenderErrorException e ->
+                    Error e
+                | ex ->
                     Error (RenderError.RenderFailed ("Composition", ex.Message))
 
     /// Convenience: evaluate to a `DrawOp.RawAnsi` ready to hand to the actor.

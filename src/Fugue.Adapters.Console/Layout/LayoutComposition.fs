@@ -555,6 +555,118 @@ module Composition =
                 seq { yield Segment.Control(buf.ToString()) }
 
     // -------------------------------------------------------------------------
+    // ofFlex — lazy-IRenderable pattern (mirrors DockRenderable + LayoutGridRenderable)
+    // -------------------------------------------------------------------------
+
+    /// Private FlexRenderable: implements IRenderable so geometry is computed
+    /// at render time using the actual MaxWidth (Horizontal) or ConsoleSize.Height
+    /// (Vertical). Mirrors DockRenderable + LayoutGridRenderable patterns.
+    ///
+    /// Solver: calls `Flex.Internal.solveDistribution` to compute per-item sizes,
+    /// then stitches children via ANSI CUP cursor-position escapes.
+    ///
+    /// Overflow.Strict: when the solver returns sizes summing > axisLen (no shrink
+    /// available), raises `LayoutRenderErrorException (LayoutOverflow (...))` so
+    /// the renderer can surface it as `Error (LayoutOverflow ...)` rather than
+    /// wrapping it in `RenderFailed`.
+    ///
+    /// FAIL-FAST: other child-render errors propagate via `failwithf`
+    /// (PR-P1 lesson #1 — no silent fallbacks).
+    type private FlexRenderable(flex: Flex, ctx: RenderContext) =
+
+        let renderChild (childWidth: int) (childHeight: int) (comp: Composition) : string =
+            let childCtx =
+                RenderContext.create childWidth childHeight ctx.ColourEnabled ctx.ThemeName
+                |> function
+                   | Ok c  -> c
+                   | Error e ->
+                       failwithf "FlexRenderable: could not build child RenderContext (w=%d h=%d): %A"
+                           childWidth childHeight e
+            match Renderer.toRawAnsi childCtx comp with
+            | Ok s    -> s
+            | Error e -> failwithf "FlexRenderable.Render: child render failed: %A" e
+
+        interface IRenderable with
+
+            member _.Measure(_options: RenderOptions, maxWidth: int) : Measurement =
+                Measurement(0, maxWidth)
+
+            member _.Render(options: RenderOptions, maxWidth: int) : System.Collections.Generic.IEnumerable<Segment> =
+                let axis      = Flex.axis flex
+                let itemList  = Flex.items flex
+                let policy    = Flex.overflow flex
+
+                let totalWidth  = max 1 maxWidth
+                let totalHeight =
+                    let h = options.ConsoleSize.Height
+                    if h > 0 then h else ctx.Height
+
+                let axisLen =
+                    match axis with
+                    | Horizontal -> totalWidth
+                    | Vertical   -> totalHeight
+
+                // Convert FlexItem list to SolverItem list for the pure solver.
+                let solverItems : Flex.Internal.SolverItem list =
+                    itemList |> List.map (fun fi ->
+                        { Flex.Internal.Grow   = Flex.itemGrow fi
+                          Flex.Internal.Shrink = Flex.itemShrink fi
+                          Flex.Internal.Basis  = Flex.itemBasis fi })
+
+                let sizes = Flex.Internal.solveDistribution solverItems axisLen
+
+                // Check overflow: sum may exceed axisLen when no shrink path exists.
+                let totalSize = sizes |> List.sum
+                if totalSize > axisLen then
+                    match policy with
+                    | Strict ->
+                        // Raise typed LayoutRenderErrorException so Renderer.toRawAnsi
+                        // can surface it as Error (LayoutOverflow ...) rather than RenderFailed.
+                        raise (LayoutRenderErrorException (
+                            RenderError.LayoutOverflow (
+                                "Flex",
+                                $"overflow on {axis}: requested {totalSize}, available {axisLen}")))
+                    | Clip | WrapNext ->
+                        // Clip: accept the sizes as-is (Spectre clips visually).
+                        // WrapNext: treated as Clip in Phase 3 MVP.
+                        ()
+
+                let buf = System.Text.StringBuilder()
+
+                match axis with
+                | Horizontal ->
+                    // Place each child at the computed column position (1-based CUP).
+                    let mutable currentCol = 1
+                    for (fi, sz) in List.zip itemList sizes do
+                        let w = max 1 sz
+                        let child = Flex.itemChild fi
+                        let output = renderChild w totalHeight child
+                        buf.Append(cup 1 currentCol) |> ignore
+                        buf.Append(output) |> ignore
+                        currentCol <- currentCol + w
+
+                | Vertical ->
+                    // Place each child at the computed row position (1-based CUP).
+                    let mutable currentRow = 1
+                    for (fi, sz) in List.zip itemList sizes do
+                        let h = max 1 sz
+                        let child = Flex.itemChild fi
+                        let output = renderChild totalWidth h child
+                        buf.Append(cup currentRow 1) |> ignore
+                        buf.Append(output) |> ignore
+                        currentRow <- currentRow + h
+
+                // Position cursor past the last region.
+                match axis with
+                | Horizontal ->
+                    buf.Append(cup 2 1) |> ignore
+                | Vertical ->
+                    let finalRow = max 2 (1 + (sizes |> List.sumBy (max 1)) + 1)
+                    buf.Append(cup finalRow 1) |> ignore
+
+                seq { yield Segment.Control(buf.ToString()) }
+
+    // -------------------------------------------------------------------------
     // ofLayoutGrid — public entry point
     // -------------------------------------------------------------------------
 
@@ -583,4 +695,35 @@ module Composition =
 
         let gridRenderable = LayoutGridRenderable(grid, sentinelCtx)
         let r = Renderable.fromSpectre (gridRenderable :> IRenderable)
+        Composition.ofRenderableWithDepth r computedDepth
+
+    // -------------------------------------------------------------------------
+    // ofFlex — public entry point
+    // -------------------------------------------------------------------------
+
+    /// Lower a validated `Flex` into the Phase 2 `Composition` IR.
+    ///
+    /// Uses the lazy-IRenderable pattern (data-model.md §6 "Lowering"):
+    ///   1. Compute the Flex's depth at call time via `LayoutDepth.maxChildDepth`
+    ///      over the children (item.Child), + 1 for the Flex layer itself.
+    ///   2. Wrap a `FlexRenderable` (private IRenderable impl) as a `Renderable`
+    ///      via `Renderable.fromSpectre`, then via `Composition.ofRenderableWithDepth`
+    ///      so that `LayoutDepth.layoutDepth` honours the actual pre-lowering depth.
+    ///
+    /// FAIL-FAST: FlexRenderable.Render uses `failwithf` on child render errors
+    /// (PR-P1 lesson #1 — no silent fallbacks).
+    /// Overflow.Strict raises LayoutRenderErrorException which Renderer.toRawAnsi
+    /// surfaces as `Error (LayoutOverflow ...)`.
+    let ofFlex (flex: Flex) : Composition =
+        let childComps    = Flex.items flex |> List.map Flex.itemChild
+        let computedDepth = 1 + LayoutDepth.maxChildDepth childComps
+
+        let sentinelCtx =
+            RenderContext.create 80 System.Int32.MaxValue true "default"
+            |> function
+               | Ok c  -> c
+               | Error e -> failwithf "ofFlex: sentinel RenderContext creation failed: %A" e
+
+        let flexRenderable = FlexRenderable(flex, sentinelCtx)
+        let r = Renderable.fromSpectre (flexRenderable :> IRenderable)
         Composition.ofRenderableWithDepth r computedDepth
