@@ -40,17 +40,25 @@ module Composition =
 
     /// Lower a `Dock` layout primitive into a Phase 2 `Composition` tree.
     ///
-    /// Uses a lazy-IRenderable pattern: wraps the entire Dock as a single
-    /// `Composition.Foreign` node. Geometry is computed at render time when
-    /// the IRenderable is measured by the Spectre renderer, so intrinsic
-    /// child sizes are measured against the actual terminal width/height.
+    /// Uses the lazy-IRenderable pattern (data-model.md §4 "Practical lowering"):
+    /// wraps the entire Dock as a single `Composition.Foreign` node whose
+    /// `embeddedDepth` carries the actual pre-lowering depth so that
+    /// `LayoutDepth.layoutDepth` sees the true nesting depth (not depth=1).
+    ///
+    /// Geometry is computed at render time inside a private `DockRenderable`
+    /// (implements the upstream IRenderable interface) using the actual
+    /// `maxWidth` and `ConsoleSize.Height` from the upstream render options.
+    /// Each edge child is rendered via `Renderer.toRawAnsi` at its allocated
+    /// size; the Fill child receives all space remaining after edges are
+    /// measured. Regions are stitched with ANSI CUP cursor-position escapes
+    /// (`\x1b[row;colH`).
     ///
     /// Edge allocation order: Top → Bottom → Left → Right → Fill.
-    /// The Fill child receives all space remaining after edge children are
-    /// allocated. All edge children are stacked vertically or arranged as
-    /// columns via nested `Composition.Stack` and `Composition.Columns` nodes.
+    ///
+    /// FAIL-FAST: if any child render fails during `DockRenderable.Render`,
+    /// the error propagates as `failwithf` (no silent fallbacks per PR-P1 lesson).
     ///
     /// The returned `Composition` is deterministic and immutable: calling
     /// `ofDock` on the same `Dock` value twice yields byte-identical output
-    /// at the same `RenderContext`.
+    /// at the same `RenderContext` dimensions.
     val ofDock : Dock -> Composition

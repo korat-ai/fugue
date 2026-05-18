@@ -121,7 +121,7 @@ module Renderer =
         | Alignment.RightAlign  -> SpectreHAlign.Right
 
     /// Build an ephemeral Spectre AnsiConsole writing to a StringWriter,
-    /// honouring `RenderContext` (width clamp + colour-enabled flag).
+    /// honouring `RenderContext` (width clamp + height clamp + colour-enabled flag).
     let private withSpectre (ctx: RenderContext) (action: IAC -> unit) : string =
         let sw = new StringWriter ()
         let settings = SpectreSettings ()
@@ -132,7 +132,15 @@ module Renderer =
             else
                 SpectreSupport.NoColors
         let console = Spectre.Console.AnsiConsole.Create settings
-        console.Profile.Width <- max 1 ctx.Width
+        console.Profile.Width  <- max 1 ctx.Width
+        // Set height so DockRenderable (and future layout IRenderables) can read
+        // the allocated height from RenderOptions.ConsoleSize.Height at render time.
+        // Guard: Int32.MaxValue is the "unconstrained" sentinel; map it to 24 (the
+        // Spectre default) to avoid passing a nonsensical height to Spectre.
+        let heightClamped =
+            if ctx.Height = System.Int32.MaxValue || ctx.Height <= 0 then 24
+            else ctx.Height
+        console.Profile.Height <- heightClamped
         action console
         sw.ToString ()
 
