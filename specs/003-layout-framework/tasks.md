@@ -166,24 +166,24 @@ panel left-aligned to column 0 (per spec US1 acceptance scenario 1). Verify
 
 > **Write these tests FIRST, ensure they FAIL before implementation.**
 
-- [ ] T034 [P] [US3] Create `tests/Fugue.Adapters.Console.Tests/Layout/LayoutGridTests.fs`. Property test: `LayoutGrid.create [Fixed 20; Star 1] [Auto] [[label; value]]` at width=100 lowers and renders with `"LABEL-MARKER"` in cols 0..19 and `"VALUE-MARKER"` in cols 20..99.
-- [ ] T035 [P] [US3] In LayoutGridTests.fs: Star ratio — `LayoutGrid.create [Star 1; Star 2] [Star 1; Star 1] [[a; b]; [c; d]]` at 90×24 produces 30-col + 60-col columns and 12-row + 12-row rows; all four children appear in their assigned cells.
-- [ ] T036 [P] [US3] In LayoutGridTests.fs: Auto sizing — `LayoutGrid.create [Auto] [Auto] [[shortComp]]` sizes to content; render output exactly contains the child content with no extra padding beyond the child's intrinsic size.
-- [ ] T036a [P] [US3] In LayoutGridTests.fs: mixed sizing — `LayoutGrid.create [Fixed 20; Auto; Star 1; Star 2] [Auto] [[fixedComp; autoComp; star1Comp; star2Comp]]` at width=100; assert Fixed allocated first (cols 0..19), Auto sized to its content intrinsic, remainder split 1:2 among Star children. Plus three sub-cases: (a) Auto content exceeds available; (b) Star ratios sum to fractional pixels (e.g. width=83 with two Star 1); (c) all-Fixed with total < available width — extra space left blank to the right. Closes finding G5.
-- [ ] T037 [P] [US3] In LayoutGridTests.fs: error-path — empty columns → `Error (EmptyComposition "LayoutGrid: at least one column required")`.
-- [ ] T038 [P] [US3] In LayoutGridTests.fs: error-path — empty rows → `Error (EmptyComposition "LayoutGrid: at least one row required")`.
-- [ ] T039 [P] [US3] In LayoutGridTests.fs: error-path — ragged row → `Error (InvalidArgument ("LayoutGrid", "row 0 has 1 cells, expected 2"))` per US3 acceptance scenario "ragged rows rejected".
-- [ ] T040 [P] [US3] In LayoutGridTests.fs: error-path — `Fixed 0` (zero width column) → `Error (InvalidArgument ("LayoutGrid", "Fixed size must be ≥ 1"))`.
-- [ ] T041 [P] [US3] In LayoutGridTests.fs: error-path — `Star 0` ratio → `Error (InvalidArgument ("LayoutGrid", "Star ratio must be ≥ 1"))`.
-- [ ] T042 [P] [US3] In LayoutGridTests.fs: colour-toggle parametric + determinism (mirror US1/US2 patterns).
-- [ ] T042a [P] [US3] In LayoutGridTests.fs: depth-limit — nest LayoutGrids 101 levels deep (one cell per level wraps the next); assert `Error (InvalidArgument ("Layout", "depth exceeds 100"))` per spec edge case "Recursive nesting" (mirrors T017 for Stack). Closes finding G4 for LayoutGrid.
+- [X] T034 [P] [US3] Create `tests/Fugue.Adapters.Console.Tests/Layout/LayoutGridTests.fs`. Property test: `LayoutGrid.create [Fixed 20; Star 1] [Auto] [[label; value]]` at width=100 lowers and renders with `"LABEL-MARKER"` in cols 0..19 and `"VALUE-MARKER"` in cols 20..99.
+- [X] T035 [P] [US3] In LayoutGridTests.fs: Star ratio — `LayoutGrid.create [Star 1; Star 2] [Star 1; Star 1] [[a; b]; [c; d]]` at 90×24 produces 30-col + 60-col columns and 12-row + 12-row rows; all four children appear in their assigned cells.
+- [X] T036 [P] [US3] In LayoutGridTests.fs: Auto sizing — `LayoutGrid.create [Auto] [Auto] [[shortComp]]` sizes to content; render output exactly contains the child content with no extra padding beyond the child's intrinsic size.
+- [X] T036a [P] [US3] In LayoutGridTests.fs: mixed sizing — `LayoutGrid.create [Fixed 20; Auto; Star 1; Star 2] [Auto] [[fixedComp; autoComp; star1Comp; star2Comp]]` at width=100; assert Fixed allocated first (cols 0..19), Auto sized to its content intrinsic, remainder split 1:2 among Star children. Plus three sub-cases: (a) Auto content exceeds available; (b) Star ratios sum to fractional pixels (e.g. width=83 with two Star 1); (c) all-Fixed with total < available width — extra space left blank to the right. Closes finding G5.
+- [X] T037 [P] [US3] In LayoutGridTests.fs: error-path — empty columns → `Error (EmptyComposition "LayoutGrid: at least one column required")`.
+- [X] T038 [P] [US3] In LayoutGridTests.fs: error-path — empty rows → `Error (EmptyComposition "LayoutGrid: at least one row required")`.
+- [X] T039 [P] [US3] In LayoutGridTests.fs: error-path — ragged row → `Error (InvalidArgument ("LayoutGrid", "row 0 has 1 cells, expected 2"))` per US3 acceptance scenario "ragged rows rejected".
+- [X] T040 [P] [US3] In LayoutGridTests.fs: error-path — `Fixed 0` (zero width column) → `Error (InvalidArgument ("LayoutGrid", "Fixed size must be ≥ 1"))`.
+- [X] T041 [P] [US3] In LayoutGridTests.fs: error-path — `Star 0` ratio → `Error (InvalidArgument ("LayoutGrid", "Star ratio must be ≥ 1"))`.
+- [X] T042 [P] [US3] In LayoutGridTests.fs: colour-toggle parametric + determinism (mirror US1/US2 patterns).
+- [X] T042a [P] [US3] In LayoutGridTests.fs: depth-limit — nest LayoutGrids 101 levels deep (one cell per level wraps the next); assert `Error (InvalidArgument ("Layout", "depth exceeds 100"))` per spec edge case "Recursive nesting" (mirrors T017 for Stack). Closes finding G4 for LayoutGrid.
 
 ### Implementation for User Story 3
 
-- [ ] T043 [US3] Write `src/Fugue.Adapters.Console/Layout/LayoutGrid.fsi` per `contracts/LayoutGrid.fsi`: `ColumnSize = Fixed of int | Auto | Star of int`, `RowSize = Fixed of int | Auto | Star of int` (same shape, distinct types for clarity), opaque sealed `LayoutGrid`, `module LayoutGrid` with `create`. **Type literally named `LayoutGrid` per R-3 + data-model.md §5** — NOT `Grid` (Phase 2's widget keeps that name).
-- [ ] T044 [US3] Implement `src/Fugue.Adapters.Console/Layout/LayoutGrid.fs`: private record + sealed wrapper + smart constructor validating non-empty columns/rows, equal-length rows, Fixed ≥ 1, Star ≥ 1. Depth-check via tree traversal.
-- [ ] T045 [US3] Implement `Composition.ofLayoutGrid : LayoutGrid -> Composition` in `src/Fugue.Adapters.Console/Layout/LayoutComposition.fs` per data-model.md §5 two-pass sizing algorithm (Fixed allocated → Auto measures content → Star distributes remainder by ratio). Uses lazy-IRenderable pattern (deferred geometry).
-- [ ] T046 [US3] Update `src/Fugue.Adapters.Console/Layout/LayoutComposition.fsi` to add `Composition.ofLayoutGrid` signature. Verify SC-004 gate.
+- [X] T043 [US3] Write `src/Fugue.Adapters.Console/Layout/LayoutGrid.fsi` per `contracts/LayoutGrid.fsi`: `ColumnSize = Fixed of int | Auto | Star of int`, `RowSize = Fixed of int | Auto | Star of int` (same shape, distinct types for clarity), opaque sealed `LayoutGrid`, `module LayoutGrid` with `create`. **Type literally named `LayoutGrid` per R-3 + data-model.md §5** — NOT `Grid` (Phase 2's widget keeps that name).
+- [X] T044 [US3] Implement `src/Fugue.Adapters.Console/Layout/LayoutGrid.fs`: private record + sealed wrapper + smart constructor validating non-empty columns/rows, equal-length rows, Fixed ≥ 1, Star ≥ 1. Depth-check via tree traversal.
+- [X] T045 [US3] Implement `Composition.ofLayoutGrid : LayoutGrid -> Composition` in `src/Fugue.Adapters.Console/Layout/LayoutComposition.fs` per data-model.md §5 two-pass sizing algorithm (Fixed allocated → Auto measures content → Star distributes remainder by ratio). Uses lazy-IRenderable pattern (deferred geometry).
+- [X] T046 [US3] Update `src/Fugue.Adapters.Console/Layout/LayoutComposition.fsi` to add `Composition.ofLayoutGrid` signature. Verify SC-004 gate.
 
 **Checkpoint**: US3 PR shippable. LayoutGrid validates; sizing algorithm correct; 232 + US1 + US2 + ~9 new tests green.
 
