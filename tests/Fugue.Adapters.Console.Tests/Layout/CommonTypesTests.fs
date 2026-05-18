@@ -2,6 +2,7 @@ module Fugue.Adapters.Console.Tests.Layout.CommonTypesTests
 
 // see Helpers.fs FACT_DISCOVERY for why all tests are [<Property>]
 open FsCheck.Xunit
+open Fugue.Adapters.Console
 open Fugue.Adapters.Console.Layout
 
 // ============================================================================
@@ -44,3 +45,33 @@ let ``T008c — Overflow: all cases are reachable`` () =
         | Clip     -> true
         | Strict   -> true
         | WrapNext -> true)
+
+// ============================================================================
+// T008d — LayoutDepth.layoutDepth: Foreign with embeddedDepth (CEO b.1).
+//
+// Verifies that Composition.Foreign (_, Some n) returns n from layoutDepth
+// (honoring the embedded depth), and Foreign (_, None) returns 1 (existing
+// behaviour preserved). This is the key invariant of the CEO option (b.1)
+// redesign that enables ofDock / ofLayoutGrid / ofFlex to use the
+// lazy-IRenderable pattern while still tracking depth correctly.
+// ============================================================================
+
+[<Property(MaxTest = 1)>]
+let ``T008d — LayoutDepth.layoutDepth honors Foreign embeddedDepth = Some n`` () =
+    // Build a Foreign node with embeddedDepth = Some 42 via the internal factory.
+    // Renderable.fromSpectre with a real IRenderable (Spectre.Console.Text).
+    let inner : Spectre.Console.Rendering.IRenderable =
+        Spectre.Console.Text("test") :> _
+    let r   = Renderable.fromSpectre inner
+    let comp = Composition.ofRenderableWithDepth r 42
+    // layoutDepth must return 42 (the embedded depth), not 1.
+    LayoutDepth.layoutDepth comp = 42
+
+[<Property(MaxTest = 1)>]
+let ``T008e — LayoutDepth.layoutDepth treats Foreign embeddedDepth = None as depth 1`` () =
+    // ofRenderable uses embeddedDepth = None — depth must be 1.
+    let inner : Spectre.Console.Rendering.IRenderable =
+        Spectre.Console.Text("test") :> _
+    let r    = Renderable.fromSpectre inner
+    let comp = Composition.ofRenderable r
+    LayoutDepth.layoutDepth comp = 1
