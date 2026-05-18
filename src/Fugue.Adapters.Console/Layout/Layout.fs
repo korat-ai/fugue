@@ -19,7 +19,8 @@ module internal LayoutDepth =
         | Composition.Aligned (_, inner)             -> 1 + layoutDepth inner
         | Composition.Padded (_, _, _, _, inner)     -> 1 + layoutDepth inner
         | Composition.Panel (_, _, inner)            -> 1 + layoutDepth inner
-        | Composition.Foreign _                      -> 1
+        | Composition.Foreign (_, Some embeddedDepth) -> embeddedDepth
+        | Composition.Foreign (_, None)              -> 1   // non-layout Foreign: treat as depth=1
         | Composition.Stack children                 ->
             1 + (if children.IsEmpty then 0 else children |> List.map layoutDepth |> List.max)
         | Composition.Columns children               ->

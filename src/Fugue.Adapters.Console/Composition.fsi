@@ -50,11 +50,21 @@ type Composition =
     /// Bridge case: wraps an opaque `Renderable` from `Renderable.fromSpectre`.
     /// Cannot be constructed directly by external callers — `Renderable` values
     /// are only obtainable via `Renderable.fromSpectre`, making this case
-    /// factorally constructible only through `Composition.ofRenderable`.
+    /// factorably constructible only through `Composition.ofRenderable` (for
+    /// non-layout use) or the internal `Composition.ofRenderableWithDepth`
+    /// (for layout lowering — ofDock, ofLayoutGrid, ofFlex).
+    ///
+    /// The optional `embeddedDepth` carries the pre-lowering depth of the
+    /// layout that produced this Foreign node (set by layout lowering factories
+    /// such as `Composition.ofDock`). When `Some n`, `LayoutDepth.layoutDepth`
+    /// returns `n` so the depth-100 guard sees the actual tree depth rather
+    /// than depth=1. For non-layout Foreign values `embeddedDepth = None` and
+    /// depth-checking treats the node as depth=1 (current behaviour preserved).
+    ///
     /// External code that exhaustively matches `Composition` must add a
     /// `| Foreign _ -> ...` arm (or `| _ -> ...` wildcard). Introduced by
     /// the R1 bridge decision (research.md §R1 / FR-008).
-    | Foreign of Renderable
+    | Foreign of Renderable * embeddedDepth: int option
 
 /// Smart constructors for Composition nodes that can fail structurally.
 /// Non-validating constructors (`stack`, `panel`, `aligned`) build the DU
@@ -99,4 +109,13 @@ module Composition =
     /// the assembly-internal `Composition.Foreign` case, which is invisible
     /// to external pattern matches (Phase 1 backward compatibility — SC-005).
     /// This is the entry point for the custom-renderable bridge (US1/FR-008).
+    /// Sets `embeddedDepth = None` — the Foreign node is treated as depth=1
+    /// by `LayoutDepth.layoutDepth`.
     val ofRenderable : Renderable -> Composition
+
+    /// Internal factory: embed a `Renderable` as a `Composition.Foreign` node
+    /// with an explicit embedded depth. Used by layout lowering factories
+    /// (`Composition.ofDock`, `Composition.ofLayoutGrid`, `Composition.ofFlex`)
+    /// so that `LayoutDepth.layoutDepth` sees the actual pre-lowering depth of
+    /// the layout tree rather than depth=1. Not part of the public API.
+    val internal ofRenderableWithDepth : Renderable -> int -> Composition
