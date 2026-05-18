@@ -6,9 +6,7 @@
   <ItemGroup>
     <Compile Include="Errors.fsi" />
     <Compile Include="Errors.fs" />
-    <!-- InternalErrors.fs — assembly-internal exception types. No .fsi companion
-         so they are accessible to all downstream compilation units in this assembly
-         (e.g. Renderer.fs, LayoutComposition.fs). Items NOT exported via Errors.fsi. -->
+    <Compile Include="InternalErrors.fsi" />
     <Compile Include="InternalErrors.fs" />
     <Compile Include="Style.fsi" />
     <Compile Include="Style.fs" />
