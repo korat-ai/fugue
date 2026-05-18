@@ -3,6 +3,7 @@ module Fugue.Adapters.Console.Tests.CoverageMatrixTests
 // see Helpers.fs FACT_DISCOVERY for why all tests are [<Property>]
 open FsCheck.Xunit
 open Fugue.Adapters.Console
+open Fugue.Adapters.Console.Layout
 open System
 open System.IO
 open System.Text.RegularExpressions
@@ -597,3 +598,167 @@ let ``T073-TestConsoleInput — consumed internally by Console.test; two test co
     let c1 = Console.test 80 false
     let c2 = Console.test 80 false
     not (obj.ReferenceEquals(box c1, box c2))
+
+// ============================================================================
+// T074 — SC-001 + FR-013: Phase 3 type-coverage assertion
+// Every public Phase 3 type must appear in coverage-matrix.md (Phase 3 section).
+// Types enumerated: Stack, Dock, DockEdge, LayoutGrid, ColumnSize, RowSize,
+//   Flex, FlexItem, Orientation, CrossAxisAlignment, Overflow, LayoutScheduler.
+// ============================================================================
+
+/// Parse only the Phase 3 section of coverage-matrix.md (after "## Phase 3:").
+/// Returns type names appearing in backticks in table rows within that section.
+let private parsePhase3MatrixTypes () : Set<string> =
+    let content = File.ReadAllText(matrixPath ())
+    // Find the Phase 3 section.
+    let phase3Marker = "## Phase 3:"
+    let phase3Start = content.IndexOf(phase3Marker, StringComparison.Ordinal)
+    if phase3Start < 0 then Set.empty
+    else
+        let section = content.Substring(phase3Start)
+        section.Split('\n')
+        |> Array.choose (fun line ->
+            let trimmed = line.Trim()
+            if trimmed.StartsWith "| `" then
+                let afterPipe = trimmed.Substring 3
+                let backtickEnd = afterPipe.IndexOf '`'
+                if backtickEnd > 0 then
+                    let rawName = afterPipe.Substring(0, backtickEnd)
+                    if not (rawName.Contains " ") && not (rawName.Contains "/") && not (rawName.Contains ".fsi") then
+                        Some rawName
+                    else None
+                else None
+            else None)
+        |> Set.ofArray
+
+/// All Phase 3 public type names — exactly the types enumerated in T074 task spec.
+let private phase3PublicTypeNames : Set<string> =
+    Set.ofList [
+        "Stack"; "Dock"; "DockEdge"; "LayoutGrid"; "ColumnSize"; "RowSize"
+        "Flex"; "FlexItem"; "Orientation"; "CrossAxisAlignment"; "Overflow"; "LayoutScheduler"
+    ]
+
+[<Property(MaxTest = 1)>]
+let ``T074 — Every Phase 3 public type appears in the coverage-matrix.md Phase 3 section`` () =
+    let matrixPhase3 = parsePhase3MatrixTypes ()
+    // Each expected Phase 3 type name must appear in the Phase 3 matrix section.
+    let missing = Set.filter (fun name -> not (Set.contains name matrixPhase3)) phase3PublicTypeNames
+    if Set.isEmpty missing then
+        true
+    else
+        let lines = missing |> Set.toSeq |> Seq.map (fun n -> $"  {n}") |> String.concat "\n"
+        failwith $"T074 FAILURE: {missing.Count} Phase 3 type(s) not in coverage-matrix.md Phase 3 section:\n{lines}"
+
+[<Property(MaxTest = 1)>]
+let ``T074b — Phase 3 matrix section lists exactly 12 types`` () =
+    // Verify we haven't under-counted: the Phase 3 section must have all 12 documented types.
+    let matrixPhase3 = parsePhase3MatrixTypes ()
+    let covered = Set.intersect matrixPhase3 phase3PublicTypeNames
+    covered.Count = 12
+
+// ============================================================================
+// T075 — Per-Phase-3-primitive render assertion (marker-string discipline)
+// For each Phase 3 layout primitive, build a representative value via smart
+// constructor, lower it to Composition, render it, and assert the marker text
+// appears in the output. No `output.Length > 0` smuggling — exact marker check.
+// ============================================================================
+
+let private ctx3 () =
+    RenderContext.create 80 24 true "default"
+    |> function Ok c -> c | Error e -> failwith $"T075 ctx: {e}"
+
+let private leaf3 (marker: string) : Composition =
+    Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofLiteral marker))
+
+[<Property(MaxTest = 1)>]
+let ``T075-Stack — Stack.create + Composition.ofStack renders STACK-COVERAGE-MARKER`` () =
+    let child1 = leaf3 "STACK-COVERAGE-MARKER"
+    let child2 = leaf3 "STACK-COVERAGE-CHILD2"
+    match Stack.create Vertical 0 Start [child1; child2] with
+    | Error e -> failwith $"Stack.create failed: {e}"
+    | Ok stack ->
+        let comp = Composition.ofStack stack
+        match Renderer.toRawAnsi (ctx3 ()) comp with
+        | Error e -> failwith $"render failed: {e}"
+        | Ok output -> (stripAnsi output).Contains "STACK-COVERAGE-MARKER"
+
+[<Property(MaxTest = 1)>]
+let ``T075-Stack-error — Stack.create with empty children returns EmptyComposition error`` () =
+    match Stack.create Vertical 0 Start [] with
+    | Error (RenderError.EmptyComposition msg) -> msg.Contains "Stack"
+    | Error e  -> failwith $"Expected EmptyComposition but got: {e}"
+    | Ok _     -> failwith "Expected Error but got Ok"
+
+[<Property(MaxTest = 1)>]
+let ``T075-Dock — Dock.create + Composition.ofDock renders DOCK-COVERAGE-MARKER`` () =
+    let fill  = leaf3 "DOCK-COVERAGE-MARKER"
+    let pinned = leaf3 "DOCK-COVERAGE-STATUS"
+    match Dock.create [Bottom, pinned; Fill, fill] with
+    | Error e -> failwith $"Dock.create failed: {e}"
+    | Ok dock ->
+        let comp = Composition.ofDock dock
+        match Renderer.toRawAnsi (ctx3 ()) comp with
+        | Error e -> failwith $"render failed: {e}"
+        | Ok output -> (stripAnsi output).Contains "DOCK-COVERAGE-MARKER"
+
+[<Property(MaxTest = 1)>]
+let ``T075-Dock-error — Dock.create with no Fill returns InvalidArgument error`` () =
+    let pinned = leaf3 "DOCK-ERR-CHILD"
+    match Dock.create [Top, pinned] with
+    | Error (RenderError.InvalidArgument ("Dock", msg)) -> msg.Contains "Fill"
+    | Error e  -> failwith $"Expected InvalidArgument(Dock,...) but got: {e}"
+    | Ok _     -> failwith "Expected Error but got Ok"
+
+[<Property(MaxTest = 1)>]
+let ``T075-LayoutGrid — LayoutGrid.create + Composition.ofLayoutGrid renders GRID-COVERAGE-MARKER`` () =
+    let cell = leaf3 "GRID-COVERAGE-MARKER"
+    match LayoutGrid.create [ColumnSize.Star 1; ColumnSize.Star 1] [RowSize.Auto] [[cell; leaf3 "GRID-COV-R"]] with
+    | Error e -> failwith $"LayoutGrid.create failed: {e}"
+    | Ok grid ->
+        let comp = Composition.ofLayoutGrid grid
+        match Renderer.toRawAnsi (ctx3 ()) comp with
+        | Error e -> failwith $"render failed: {e}"
+        | Ok output -> (stripAnsi output).Contains "GRID-COVERAGE-MARKER"
+
+[<Property(MaxTest = 1)>]
+let ``T075-LayoutGrid-error — LayoutGrid.create with empty rows returns EmptyComposition error`` () =
+    let cell = leaf3 "LGRID-ERR"
+    match LayoutGrid.create [ColumnSize.Star 1] [] [[cell]] with
+    | Error (RenderError.EmptyComposition msg) -> msg.Contains "LayoutGrid"
+    | Error e  -> failwith $"Expected EmptyComposition but got: {e}"
+    | Ok _     -> failwith "Expected Error but got Ok"
+
+[<Property(MaxTest = 1)>]
+let ``T075-Flex — Flex.create + Composition.ofFlex renders FLEX-COVERAGE-MARKER`` () =
+    let child1 = leaf3 "FLEX-COVERAGE-MARKER"
+    let child2 = leaf3 "FLEX-COVERAGE-CHILD2"
+    match Flex.grow 1.0 child1, Flex.grow 1.0 child2 with
+    | Error e, _ | _, Error e -> failwith $"FlexItem.grow failed: {e}"
+    | Ok item1, Ok item2 ->
+        match Flex.create Horizontal [item1; item2] with
+        | Error e -> failwith $"Flex.create failed: {e}"
+        | Ok flex ->
+            let comp = Composition.ofFlex flex
+            match Renderer.toRawAnsi (ctx3 ()) comp with
+            | Error e -> failwith $"render failed: {e}"
+            | Ok output -> (stripAnsi output).Contains "FLEX-COVERAGE-MARKER"
+
+[<Property(MaxTest = 1)>]
+let ``T075-Flex-error — Flex.create with empty items returns EmptyComposition error`` () =
+    match Flex.create Horizontal [] with
+    | Error (RenderError.EmptyComposition msg) -> msg.Contains "Flex"
+    | Error e  -> failwith $"Expected EmptyComposition but got: {e}"
+    | Ok _     -> failwith "Expected Error but got Ok"
+
+[<Property(MaxTest = 1)>]
+let ``T075-LayoutScheduler — Scheduler.create + trigger + stop completes without error`` () =
+    use cts = new System.Threading.CancellationTokenSource()
+    let layout = leaf3 "SCHEDULER-COVERAGE-MARKER"
+    let frameCount = ref 0
+    let producer () = Ok layout
+    let sched = Scheduler.create producer 50 (fun _ -> System.Threading.Interlocked.Increment(frameCount) |> ignore)
+    Scheduler.trigger sched
+    // Wait briefly then stop — just verifying no exception.
+    System.Threading.Thread.Sleep 20
+    Scheduler.stop sched
+    true  // If we reach here without exception, the scheduler API is exercised.

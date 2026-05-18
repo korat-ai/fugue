@@ -386,3 +386,33 @@ Note: The `Spectre.Console.Cli` types do **not** appear in the per-row count abo
 - `pending` count MUST be 0 at the close of Phase 2 P5 PR. **Status as of Phase 1 design
   (2026-05-16): 0 pending rows.** SC-001 satisfied at the design phase; PR-merge re-check is
   still required after each user-story PR lands.
+
+---
+
+## Phase 3: Fugue Layout Framework (Independent F# types — `Fugue.Adapters.Console.Layout`)
+
+**Generated**: 2026-05-18 (Phase 3 Polish)
+**Scope**: Phase 3 adds its own independent F# types in the `Fugue.Adapters.Console.Layout`
+namespace. These are NOT Spectre types — they are native F# DUs and sealed types that lower into
+the Phase 2 `Composition` IR. They have no Spectre.Console dependency in their public `.fsi`
+signatures (SC-004).
+
+| Type | Kind | Status | Notes |
+|------|------|--------|-------|
+| `Orientation` | DU | covered | Phase 3 Layout.fs — `Vertical` \| `Horizontal` |
+| `CrossAxisAlignment` | DU | covered | Phase 3 Layout.fs — `Start` \| `Center` \| `End_` \| `Stretch` |
+| `Overflow` | DU | covered | Phase 3 Layout.fs — `Clip` \| `Strict` \| `WrapNext` |
+| `DockEdge` | DU | covered | Phase 3 Dock.fsi — `Top` \| `Bottom` \| `Left` \| `Right` \| `Fill` |
+| `ColumnSize` | DU | covered | Phase 3 LayoutGrid.fsi — `Fixed` \| `Auto` \| `Star` |
+| `RowSize` | DU | covered | Phase 3 LayoutGrid.fsi — `Fixed` \| `Auto` \| `Star` |
+| `Stack` | sealed class | covered | Phase 3 Stack.fsi — vertical/horizontal flow. Smart ctor: `Stack.create` |
+| `Dock` | sealed class | covered | Phase 3 Dock.fsi — edge-pinned split. Smart ctor: `Dock.create` |
+| `LayoutGrid` | sealed class | covered | Phase 3 LayoutGrid.fsi — 2D tabular layout. Smart ctor: `LayoutGrid.create` |
+| `FlexItem` | sealed class | covered | Phase 3 Flex.fsi — per-child descriptor. Smart ctors: `Flex.fixed_`, `Flex.grow`, `Flex.shrink`, `Flex.item` |
+| `Flex` | sealed class | covered | Phase 3 Flex.fsi — flexbox-like distribution. Smart ctors: `Flex.create`, `Flex.createWith` |
+| `LayoutScheduler` | sealed class | covered | Phase 3 Scheduler.fsi — frame-coalescing scheduler. Smart ctor: `Scheduler.create` |
+
+**Total Phase 3 types**: 12 (6 DUs/enums, 6 sealed classes)
+**Coverage status**: all 12 covered (100%)
+**SC-004 status**: zero Spectre.* references in any Phase 3 `.fsi` file
+**FR-004 status**: zero raw `string` parameters in any Phase 3 `.fsi` file
