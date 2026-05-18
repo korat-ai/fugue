@@ -25,6 +25,8 @@
     <Compile Include="Layout\DockTests.fs" />
     <Compile Include="Layout\LayoutGridTests.fs" />
     <Compile Include="Layout\FlexTests.fs" />
+    <Compile Include="Layout\SchedulerTests.fs" />
+    <Compile Include="Layout\ReplPortIntegrationTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
