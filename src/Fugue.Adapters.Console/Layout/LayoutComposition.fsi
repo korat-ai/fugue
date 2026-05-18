@@ -62,3 +62,25 @@ module Composition =
     /// `ofDock` on the same `Dock` value twice yields byte-identical output
     /// at the same `RenderContext` dimensions.
     val ofDock : Dock -> Composition
+
+    /// Lower a `LayoutGrid` layout primitive into a Phase 2 `Composition` tree.
+    ///
+    /// Uses the lazy-IRenderable pattern (data-model.md §5 "Practical lowering"):
+    /// wraps the entire LayoutGrid as a single `Composition.Foreign` node whose
+    /// `embeddedDepth` carries the actual pre-lowering depth so that
+    /// `LayoutDepth.layoutDepth` sees the true nesting depth (not depth=1).
+    ///
+    /// Two-pass geometry at render time inside a private `LayoutGridRenderable`:
+    ///   Pass 1 — column widths: Fixed allocated → Auto measured via Spectre's
+    ///     transitive measurement → Star distributed proportionally by ratio.
+    ///   Pass 1b — row heights: same three phases.
+    ///   Pass 2 — cells stitched via ANSI CUP cursor-position escapes
+    ///     (`\x1b[row;colH`) at each cell's allocated (col_x, row_y) position.
+    ///
+    /// FAIL-FAST: if any child render fails during `LayoutGridRenderable.Render`,
+    /// the error propagates as `failwithf` (no silent fallbacks per PR-P1 lesson).
+    ///
+    /// The returned `Composition` is deterministic and immutable: calling
+    /// `ofLayoutGrid` on the same `LayoutGrid` value twice yields byte-identical
+    /// output at the same `RenderContext` dimensions.
+    val ofLayoutGrid : LayoutGrid -> Composition

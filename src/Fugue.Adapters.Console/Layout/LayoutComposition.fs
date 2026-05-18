@@ -347,3 +347,240 @@ module Composition =
         let dockRenderable = DockRenderable(dock, sentinelCtx)
         let r = Renderable.fromSpectre (dockRenderable :> IRenderable)
         Composition.ofRenderableWithDepth r computedDepth
+
+    // -------------------------------------------------------------------------
+    // ofLayoutGrid — lazy-IRenderable pattern (mirrors DockRenderable)
+    // -------------------------------------------------------------------------
+
+    /// Private LayoutGridRenderable: implements IRenderable so geometry is
+    /// computed at render time using the actual MaxWidth and ConsoleSize.Height.
+    ///
+    /// Two-pass sizing algorithm (data-model.md §5):
+    ///   Pass 1 — column widths:
+    ///     1. Fixed columns allocated first (exact widths).
+    ///     2. Auto columns: measure each cell in the column via Spectre's
+    ///        IRenderable.Measure path; take the maximum.
+    ///     3. Star columns: distribute remaining width proportionally by ratio.
+    ///        Rounding residue goes to the first Star column.
+    ///   Pass 1b — row heights: same three phases (Fixed → Auto → Star).
+    ///   Pass 2 — cell assembly: each cell rendered at its (colWidth × rowHeight)
+    ///     rectangle, stitched via ANSI CUP cursor-position escapes.
+    ///
+    /// FAIL-FAST: if any child render returns Error, propagate via failwithf
+    /// (PR-P1 lesson #1 — no silent fallbacks).
+    type private LayoutGridRenderable(grid: LayoutGrid, ctx: RenderContext) =
+
+        let renderChild (childWidth: int) (childHeight: int) (comp: Composition) : string =
+            let childCtx =
+                RenderContext.create childWidth childHeight ctx.ColourEnabled ctx.ThemeName
+                |> function
+                   | Ok c  -> c
+                   | Error e ->
+                       failwithf "LayoutGridRenderable: could not build child RenderContext (w=%d h=%d): %A"
+                           childWidth childHeight e
+            match Renderer.toRawAnsi childCtx comp with
+            | Ok s    -> s
+            | Error e -> failwithf "LayoutGridRenderable.Render: child render failed: %A" e
+
+        // Measure the display width of a rendered ANSI string (widest line).
+        let measuredDisplayWidth (s: string) : int = maxLineWidth s
+
+        // Measure the line count of a rendered ANSI string.
+        let measuredLineCount (s: string) : int = lineCount s
+
+        // Distribute `total` among `ratios` proportionally; rounding residue
+        // applied to the first element.
+        let distributeProportional (total: int) (ratios: int list) : int list =
+            let sumR = ratios |> List.sum |> float
+            let raw  = ratios |> List.map (fun r -> int (float total * float r / sumR))
+            let residue = total - (raw |> List.sum)
+            // Add residue to the first element.
+            match raw with
+            | []       -> []
+            | h :: t   -> (h + residue) :: t
+
+        // ANSI CUP (Cursor Position) — 1-based row and column.
+        let cupLocal (row: int) (col: int) : string = $"\x1b[{row};{col}H"
+
+        interface IRenderable with
+
+            member _.Measure(_options: RenderOptions, maxWidth: int) : Measurement =
+                Measurement(0, maxWidth)
+
+            member _.Render(options: RenderOptions, maxWidth: int) : System.Collections.Generic.IEnumerable<Segment> =
+                let totalWidth  = max 1 maxWidth
+                let totalHeight =
+                    let h = options.ConsoleSize.Height
+                    if h > 0 then h else ctx.Height
+
+                let cols  = LayoutGrid.columns grid
+                let rows  = LayoutGrid.rows    grid
+                let cells = LayoutGrid.cells   grid
+
+                let nCols = cols.Length
+                let nRows = rows.Length
+
+                // ─── Pass 1: column widths ──────────────────────────────────
+
+                // Sentinel: probe each cell at full width to measure Auto columns.
+                // For Auto column j: max over all rows of the rendered width at row i.
+                let measureAutoColWidth (j: int) : int =
+                    let mutable maxW = 1
+                    for i in 0 .. nRows - 1 do
+                        let probe = renderChild totalWidth totalHeight cells.[i].[j]
+                        let w = max 1 (measuredDisplayWidth probe)
+                        if w > maxW then maxW <- w
+                    maxW
+
+                // Phase 1a: Fixed
+                let fixedColWidths =
+                    cols |> List.map (fun c ->
+                        match c with
+                        | ColumnSize.Fixed w -> Some w
+                        | _ -> None)
+
+                // Phase 1b: Auto (measured)
+                let autoColWidths =
+                    cols |> List.mapi (fun j c ->
+                        match c with
+                        | ColumnSize.Auto -> Some (measureAutoColWidth j)
+                        | _ -> None)
+
+                let totalFixed =
+                    fixedColWidths |> List.sumBy (Option.defaultValue 0)
+                let totalAuto  =
+                    autoColWidths  |> List.sumBy (Option.defaultValue 0)
+                let remainingForStar = max 0 (totalWidth - totalFixed - totalAuto)
+
+                // Phase 1c: Star distribution
+                let starRatios =
+                    cols |> List.choose (fun c ->
+                        match c with
+                        | ColumnSize.Star r -> Some r
+                        | _ -> None)
+                let starColWidths =
+                    if starRatios.IsEmpty then []
+                    else distributeProportional remainingForStar starRatios
+
+                // Build final column width array by merging in order.
+                let mutable starIdx = 0
+                let colWidths : int array = Array.create nCols 0
+                for j in 0 .. nCols - 1 do
+                    match cols.[j] with
+                    | ColumnSize.Fixed w ->
+                        colWidths.[j] <- max 1 w
+                    | ColumnSize.Auto ->
+                        colWidths.[j] <- max 1 (autoColWidths.[j] |> Option.defaultValue 1)
+                    | ColumnSize.Star _ ->
+                        let w = if starIdx < starColWidths.Length then starColWidths.[starIdx] else 1
+                        colWidths.[j] <- max 1 w
+                        starIdx <- starIdx + 1
+
+                // ─── Pass 1b: row heights ────────────────────────────────────
+
+                let measureAutoRowHeight (i: int) : int =
+                    let mutable maxH = 1
+                    for j in 0 .. nCols - 1 do
+                        let probe = renderChild colWidths.[j] totalHeight cells.[i].[j]
+                        let h = max 1 (measuredLineCount probe)
+                        if h > maxH then maxH <- h
+                    maxH
+
+                let fixedRowHeights =
+                    rows |> List.map (fun r ->
+                        match r with
+                        | RowSize.Fixed h -> Some h
+                        | _ -> None)
+
+                let autoRowHeights =
+                    rows |> List.mapi (fun i r ->
+                        match r with
+                        | RowSize.Auto -> Some (measureAutoRowHeight i)
+                        | _ -> None)
+
+                let totalFixedRows  = fixedRowHeights |> List.sumBy (Option.defaultValue 0)
+                let totalAutoRows   = autoRowHeights  |> List.sumBy (Option.defaultValue 0)
+                let remainingForStarRows = max 0 (totalHeight - totalFixedRows - totalAutoRows)
+
+                let starRowRatios =
+                    rows |> List.choose (fun r ->
+                        match r with
+                        | RowSize.Star ratio -> Some ratio
+                        | _ -> None)
+                let starRowHeights =
+                    if starRowRatios.IsEmpty then []
+                    else distributeProportional remainingForStarRows starRowRatios
+
+                let mutable starRowIdx = 0
+                let rowHeights : int array = Array.create nRows 0
+                for i in 0 .. nRows - 1 do
+                    match rows.[i] with
+                    | RowSize.Fixed h ->
+                        rowHeights.[i] <- max 1 h
+                    | RowSize.Auto ->
+                        rowHeights.[i] <- max 1 (autoRowHeights.[i] |> Option.defaultValue 1)
+                    | RowSize.Star _ ->
+                        let h = if starRowIdx < starRowHeights.Length then starRowHeights.[starRowIdx] else 1
+                        rowHeights.[i] <- max 1 h
+                        starRowIdx <- starRowIdx + 1
+
+                // ─── Pass 2: assemble cells ──────────────────────────────────
+
+                // Compute cumulative column offsets (1-based CUP positions).
+                let colOffsets : int array = Array.create nCols 1
+                for j in 1 .. nCols - 1 do
+                    colOffsets.[j] <- colOffsets.[j - 1] + colWidths.[j - 1]
+
+                // Compute cumulative row offsets (1-based CUP positions).
+                let rowOffsets : int array = Array.create nRows 1
+                for i in 1 .. nRows - 1 do
+                    rowOffsets.[i] <- rowOffsets.[i - 1] + rowHeights.[i - 1]
+
+                let buf = System.Text.StringBuilder()
+
+                for i in 0 .. nRows - 1 do
+                    for j in 0 .. nCols - 1 do
+                        let startRow = rowOffsets.[i]
+                        let startCol = colOffsets.[j]
+                        let w      = colWidths.[j]
+                        let h      = rowHeights.[i]
+                        let output = renderChild w h cells.[i].[j]
+                        buf.Append(cupLocal startRow startCol) |> ignore
+                        buf.Append(output) |> ignore
+
+                // Position cursor past the last row.
+                let totalRenderedHeight = rowOffsets.[nRows - 1] + rowHeights.[nRows - 1]
+                buf.Append(cupLocal totalRenderedHeight 1) |> ignore
+
+                seq { yield Segment.Control(buf.ToString()) }
+
+    // -------------------------------------------------------------------------
+    // ofLayoutGrid — public entry point
+    // -------------------------------------------------------------------------
+
+    /// Lower a validated `LayoutGrid` into the Phase 2 `Composition` IR.
+    ///
+    /// Uses the lazy-IRenderable pattern (data-model.md §5):
+    ///   1. Compute the LayoutGrid's depth at call time via
+    ///      `LayoutDepth.maxChildDepth` over all flattened cells, +1 for the
+    ///      LayoutGrid itself.
+    ///   2. Wrap a `LayoutGridRenderable` (private IRenderable impl) as a
+    ///      `Renderable` via `Renderable.fromSpectre`, then via
+    ///      `Composition.ofRenderableWithDepth` so that `LayoutDepth.layoutDepth`
+    ///      honours the actual pre-lowering depth.
+    ///
+    /// FAIL-FAST: LayoutGridRenderable.Render uses `failwithf` on any Error
+    /// from Renderer.toRawAnsi (PR-P1 lesson #1 — no silent fallbacks).
+    let ofLayoutGrid (grid: LayoutGrid) : Composition =
+        let flatCells     = LayoutGrid.cells grid |> List.concat
+        let computedDepth = 1 + LayoutDepth.maxChildDepth flatCells
+
+        let sentinelCtx =
+            RenderContext.create 80 System.Int32.MaxValue true "default"
+            |> function
+               | Ok c  -> c
+               | Error e -> failwithf "ofLayoutGrid: sentinel RenderContext creation failed: %A" e
+
+        let gridRenderable = LayoutGridRenderable(grid, sentinelCtx)
+        let r = Renderable.fromSpectre (gridRenderable :> IRenderable)
+        Composition.ofRenderableWithDepth r computedDepth
