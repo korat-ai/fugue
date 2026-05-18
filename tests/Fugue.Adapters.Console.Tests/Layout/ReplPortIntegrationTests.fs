@@ -126,8 +126,11 @@ let ``T065 — Scheduler-driven Dock smoke: 10 updates, all tokens in final outp
     // observed might race the producer between ticks (CI runners are slower
     // than local hardware — the producer may snapshot `tokens` before all 10
     // have been added). Waiting for TOKEN-10 specifically eliminates that
-    // race deterministically. Budget: 20 ticks worth.
-    let rendered = waitFor (frameMs * 20) (fun () ->
+    // race deterministically. Budget: 60 ticks (3 seconds at frameMs=50) —
+    // generous for Ubuntu CI runners which can be ~5× slower than macOS/
+    // Windows runners on this workflow (empirically observed: PR-964 first
+    // attempt with × 20 budget passed macOS + Windows but flaked Ubuntu).
+    let rendered = waitFor (frameMs * 60) (fun () ->
         lock framesLock (fun () ->
             if capturedFrames.Count = 0 then false
             else
