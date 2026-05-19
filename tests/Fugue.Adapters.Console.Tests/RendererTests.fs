@@ -3,7 +3,6 @@ module Fugue.Adapters.Console.Tests.RendererTests
 // see Helpers.fs FACT_DISCOVERY for why all tests are [<Property>]
 open FsCheck.Xunit
 open Fugue.Adapters.Console
-open Fugue.Surface
 
 // All tests written as [<Property(MaxTest=1)>] returning bool — see
 // FoundationTests.fs header for rationale (Fact-discovery workaround).
@@ -145,23 +144,24 @@ let ``T022b — Width -5 returns InvalidArgument from create`` () =
     | _ -> false
 
 // ============================================================================
-// T022a — Renderer.toDrawOp delivers the right DrawOp shape
-// (replaces the actor-delivery test from spec, since Renderer.render
-// was dropped from the API — see research.md §R4)
+// T022a — Renderer.toRawAnsi delivers the right string shape
+// (Renderer.toDrawOp was relocated to Fugue.Cli.RenderBridge in Phase 4 PR P1.
+//  These tests now exercise toRawAnsi directly — the bridge tests in
+//  Fugue.Tests/RenderBridgeTests.fs cover the DrawOp wrapping.)
 // ============================================================================
 
 [<Property(MaxTest = 1)>]
-let ``T022a — Renderer.toDrawOp produces DrawOp.RawAnsi from LineBreak`` () =
+let ``T022a — Renderer.toRawAnsi produces CRLF string from LineBreak`` () =
     let ctx = ctxDefault ()
     let comp = Composition.Leaf Primitive.LineBreak
-    match Renderer.toDrawOp ctx comp with
-    | Ok (DrawOp.RawAnsi s) -> s = "\r\n"
-    | _ -> false
+    match Renderer.toRawAnsi ctx comp with
+    | Ok s -> s = "\r\n"
+    | Error _ -> false
 
 [<Property(MaxTest = 1)>]
-let ``T022a' — Renderer.toDrawOp produces DrawOp.RawAnsi with text bytes for Styled`` () =
+let ``T022a' — Renderer.toRawAnsi produces string containing text bytes for Styled`` () =
     let ctx = ctxDefault ()
     let comp = Composition.Leaf (Primitive.Styled (Style.empty, SafeText.ofUser "hello"))
-    match Renderer.toDrawOp ctx comp with
-    | Ok (DrawOp.RawAnsi s) -> s.Contains "hello"
-    | _ -> false
+    match Renderer.toRawAnsi ctx comp with
+    | Ok s -> s.Contains "hello"
+    | Error _ -> false

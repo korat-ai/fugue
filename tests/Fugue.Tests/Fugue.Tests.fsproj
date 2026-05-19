@@ -71,10 +71,15 @@
     <Compile Include="PathSafetyPropertyTests.fs" />
     <Compile Include="ConfigRoundtripPropertyTests.fs" />
     <Compile Include="ModelSchedulePropertyTests.fs" />
+    <Compile Include="RenderSnapshotTests.fs" />
+    <Compile Include="RenderBridgeTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
     <None Update="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Snapshots/**/*.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
