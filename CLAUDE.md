@@ -204,8 +204,31 @@ The orchestrator should add `/engineering-ai-engineer` at PLAN+BUILD+VERIFY, `/t
 *This file is the orchestrator's first read. Keep it accurate. When status changes, update.*
 
 <!-- SPECKIT START -->
-**Active Spec Kit plan**: [`specs/003-layout-framework/plan.md`](specs/003-layout-framework/plan.md)
-— **Phase 3 COMPLETE (2026-05-19).** All 6 PRs merged to main:
+**Active Spec Kit plan**: [`specs/005-cli-layout-migration/plan.md`](specs/005-cli-layout-migration/plan.md)
+— **Phase 4 (CLI Layout migration). Branch `005-cli-layout-migration`. Phase: design (post-/speckit-plan, pre-/speckit-tasks).**
+Migrate 28 direct Spectre.Console call sites across 8 files in `src/Fugue.Cli/`
+to the in-repo F# adapter + Layout API (dogfooding the framework in production
+REPL). Closes deferred Phase 5 condition 1 (gh-965). 4 binding decisions from
+research: R-1 use existing `LayoutScheduler` with ref-equality short-circuit
+for streaming, R-2 keep `RawAnsi`-only DrawOp flow (no actor-shape extension),
+R-3 per-render-path snapshot tests + manual smoke (PTY deferred to #937),
+R-4 ship as 5 cohesive PRs (P1 Surface+Bridge / P2 Boot+Doctor / P3 Streaming
+/ P4 Secondary / P5 Legacy-cleanup). Phase closes with `rg 'Spectre\.Console|AnsiConsole' src/Fugue.Cli/*.fs` = 0 (except `RenderBridge.fs`).
+Companion artifacts:
+[spec.md](specs/005-cli-layout-migration/spec.md),
+[research.md](specs/005-cli-layout-migration/research.md),
+[data-model.md](specs/005-cli-layout-migration/data-model.md),
+[contracts/](specs/005-cli-layout-migration/contracts/),
+[quickstart.md](specs/005-cli-layout-migration/quickstart.md).
+**Phase 0+1 complete** — `/speckit-tasks` pending. Pre-push review mandatory
+per Constitution Principle IX + Phase 3 lesson (6 BLOCKERs across 5 PRs).
+Project constitution: [`.specify/memory/constitution.md`](.specify/memory/constitution.md)
+v1.1.0.
+
+---
+
+**Phase 3 COMPLETE (2026-05-19).** Plan
+[`specs/003-layout-framework/plan.md`](specs/003-layout-framework/plan.md). All 6 PRs merged to main:
 #953 (P1 Stack), #954 (P2 Dock + `Composition.Foreign` embeddedDepth), #955
 (P3 LayoutGrid), #956 (P4 Flex + InternalErrors.fsi sealing), #957 (P5 REPL
 port + LayoutHost.fs), #964 (Polish: T074-T084 + T078a CoverageMatrix Phase 3
