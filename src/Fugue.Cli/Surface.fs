@@ -2,8 +2,7 @@ module Fugue.Cli.Surface
 
 open System
 open System.IO
-open Spectre.Console
-open Spectre.Console.Rendering
+open Fugue.Adapters.Console
 open Fugue.Surface
 
 // Phase 1.3c v2: every writer in Fugue.Cli funnels through this module so the
@@ -63,68 +62,67 @@ let rewindLines (rows: int) : unit =
 let clearBelow () : unit =
     postOrFallback [ DrawOp.ClearToEndOfScreen ] (fun () -> Console.Out.Write "\x1b[J")
 
-/// Render via Spectre.AnsiConsole into an in-memory buffer, then post the
-/// resulting ANSI string through the actor. Each call gets its own
-/// AnsiConsole instance (cheap to create) so we don't fight Spectre's static
-/// singleton over Console.Out. The instance's Profile.Width is set from the
-/// real terminal width so wrapping/tables size correctly.
-let spectre (action: IAnsiConsole -> unit) : unit =
-    let sw = new StringWriter()
-    let settings = AnsiConsoleSettings()
-    settings.Out <- AnsiConsoleOutput(sw)
-    let console = AnsiConsole.Create settings
-    console.Profile.Width <- max 20 (try Console.WindowWidth with _ -> 120)
-    action console
-    write (sw.ToString())
+/// Render a Composition via the adapter into an in-memory ANSI byte sequence,
+/// then post the resulting string through the actor. Terminal width is probed
+/// from the live console on each call (SIGWINCH-aware). Errors are logged to
+/// stderr and silently dropped rather than crashing the render pipeline.
+let private renderComposition (comp: Composition) : unit =
+    let ctx = RenderContext.probe ()
+    match Renderer.toRawAnsi ctx comp with
+    | Ok ansi -> write ansi
+    | Error e ->
+        Console.Error.WriteLine $"[surface render error: {e}]"
+        Console.Error.Flush ()
 
-/// Convenience: render Spectre markup as one line ending in \n.
+/// Convenience: render a markup hint string (Fugue adapter markup syntax) as
+/// one line ending in a newline. The markup hint is NOT user-supplied content —
+/// call-sites assert it is already balanced markup (FR-011 gate).
 let markupLine (markup: string) : unit =
-    spectre (fun ac -> ac.MarkupLine markup)
+    let comp = Composition.Leaf (Primitive.Markup markup)
+    renderComposition comp
+    lineBreak ()
 
-/// Convenience: write a Spectre IRenderable (panels, padders, gradients)
-/// followed by a newline — matches the AnsiConsole.Write + WriteLine pair
-/// pattern used in Repl.fs.
-let writeRenderableLine (r: IRenderable) : unit =
-    spectre (fun ac -> ac.Write r; ac.WriteLine ())
+/// Convenience: render an opaque adapter Renderable (wrapping a Spectre widget —
+/// panels, padders, gradients, tables, etc.) followed by a newline. Callers
+/// obtain a Renderable by wrapping the widget via Renderable.fromSpectre.
+/// This keeps Spectre types out of Surface.fs and Repl.fs (FR-011 gate).
+let writeRenderableLine (r: Renderable) : unit =
+    let comp = Composition.ofRenderable r
+    renderComposition comp
+    lineBreak ()
 
-/// Just write a Spectre IRenderable, no trailing newline.
-let writeRenderable (r: IRenderable) : unit =
-    spectre (fun ac -> ac.Write r)
+/// Render an opaque adapter Renderable without a trailing newline. See
+/// writeRenderableLine for the Renderable.fromSpectre wrapping convention.
+let writeRenderable (r: Renderable) : unit =
+    let comp = Composition.ofRenderable r
+    renderComposition comp
 
-/// Escape Spectre markup characters in a plain string so it can be safely
-/// embedded in a markup string without interpretation. Delegates to
-/// Spectre.Console.Markup.Escape — kept in Surface.fs so callers in Repl.fs
-/// do not need their own `open Spectre.Console` (FR-011 gate).
-let escape (s: string) : string = Markup.Escape s
+/// Escape markup characters in a plain string so it can be safely embedded
+/// in a markup hint without interpretation. Wraps the string via SafeText.ofUser
+/// (which applies Markup.Escape once). Callers in Repl.fs do not need to open
+/// any Spectre namespace (FR-011 gate).
+let escape (s: string) : string =
+    SafeText.ofUser s |> SafeText.unwrap
 
-/// Write a Spectre markup string without a trailing newline. Equivalent to
-/// `Surface.writeRenderable (Markup markup)` but without requiring callers
-/// to open Spectre.Console (FR-011 gate for Repl.fs).
+/// Write a markup hint string without a trailing newline. The hint is NOT
+/// user-supplied content — call-sites assert it is already balanced markup.
+/// Callers do not need to open any Spectre namespace (FR-011 gate).
 let markup (markupStr: string) : unit =
-    spectre (fun ac -> ac.Write(Markup markupStr))
+    let comp = Composition.Leaf (Primitive.Markup markupStr)
+    renderComposition comp
 
 /// Render a rounded-border Table from markup column-headers and markup rows.
-/// Column alignment is specified per header:  ">[/]bold Header" means right-align
-/// (prefix ">"), "<" means left-align (default), "^" means centered.
-/// Hidden from Repl.fs so it doesn't need `open Spectre.Console` (FR-011).
+/// Column alignment is specified per header: alignment is "left" | "center" |
+/// "right". Delegates to RoundedMarkupTable.toComposition (Fugue.Adapters.Console)
+/// so no Spectre types appear in Surface.fs (FR-011 gate).
 ///
-/// columnDefs: list of (markupHeader, alignment) where alignment is
-///   "left" | "center" | "right". Each row is a string array of cells.
+/// columnDefs: list of (markupHeader, alignment). Each row is a string[] of cells.
 let roundedTable (columnDefs: (string * string) list) (rows: string[] list) : unit =
-    spectre (fun ac ->
-        let tbl = Table()
-        tbl.Border <- TableBorder.Rounded
-        for (header, align) in columnDefs do
-            let col = TableColumn(header)
-            let col' =
-                match align with
-                | "right"  -> col.RightAligned()
-                | "center" -> col.Centered()
-                | _        -> col.LeftAligned()
-            tbl.AddColumn col' |> ignore
-        for row in rows do
-            tbl.AddRow row |> ignore
-        ac.Write tbl)
+    match RoundedMarkupTable.toComposition columnDefs rows with
+    | Ok comp  -> renderComposition comp
+    | Error e  ->
+        Console.Error.WriteLine $"[roundedTable error: {e}]"
+        Console.Error.Flush ()
 
 /// Synchronous barrier: wait until the actor has processed every pending
 /// write before returning. Used by code paths that need to be sure visible

@@ -1,0 +1,6 @@
+# Snapshot test fixtures contain raw ANSI bytes captured by Renderer.toRawAnsi.
+# They MUST be byte-stable across all platforms — line-ending conversion would
+# break byte-for-byte snapshot equality assertions. See
+# specs/005-cli-layout-migration/contracts/snapshot-fixture-shape.md
+# § "Content format" → "Line endings: LF (\n). Windows CRLF (\r\n) is FORBIDDEN".
+tests/Fugue.Tests/Snapshots/*.txt -text

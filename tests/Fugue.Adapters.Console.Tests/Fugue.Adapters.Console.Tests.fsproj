@@ -14,6 +14,7 @@
     <Compile Include="CorpusSnapshotTests.fs" />
     <Compile Include="RenderableTests.fs" />
     <Compile Include="DataDisplaysTests.fs" />
+    <Compile Include="RoundedMarkupTableTests.fs" />
     <Compile Include="ConsoleTests.fs" />
     <Compile Include="LiveTests.fs" />
     <Compile Include="PromptsTests.fs" />

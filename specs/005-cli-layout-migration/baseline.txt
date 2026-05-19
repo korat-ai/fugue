@@ -1,0 +1,24 @@
+=== Pre-migration baseline metrics — Phase 4 (2026-05-19) ===
+
+## Spectre.Console count in src/Fugue.Cli/*.fs (FR-002 baseline)
+
+src/Fugue.Cli/Doctor.fs:1
+src/Fugue.Cli/DiffRender.fs:2
+src/Fugue.Cli/Picker.fs:1
+src/Fugue.Cli/Render.fs:5
+src/Fugue.Cli/StreamRender.fs:1
+src/Fugue.Cli/MarkdownRender.fs:3
+src/Fugue.Cli/StackTraceRender.fs:2
+src/Fugue.Cli/Surface.fs:13
+
+Total count: 28
+
+## Test count (FR-010 baseline)
+
+    0 Error(s)
+
+Time Elapsed 00:00:15.18
+
+Passed!  - Failed:     0, Passed:   316, Skipped:     0, Total:   316, Duration: 2 s - Fugue.Adapters.Console.Tests.dll (net10.0)
+Passed!  - Failed:     0, Passed:   573, Skipped:     0, Total:   573, Duration: 2 s - Fugue.Tests.dll (net10.0)
+

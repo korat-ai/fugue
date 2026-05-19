@@ -256,3 +256,28 @@ module TextPath =
 
     /// Lower a `TextPath` into the Composition tree via the Renderable bridge.
     val toComposition : TextPath -> Composition
+
+// ---------------------------------------------------------------------------
+// RoundedMarkupTable — rounded-border table from markup headers and string rows
+// ---------------------------------------------------------------------------
+
+/// Adapter wrapper for building a Spectre rounded-border `Table` from markup
+/// column headers and plain-string rows. Exposes zero Spectre types so callers
+/// do not need `open Spectre.Console` (FR-011 gate).
+///
+/// `columnDefs`: list of `(markupHeader, alignment)` pairs; alignment is
+///   `"left"` | `"center"` | `"right"` (case-insensitive). Each row is a
+///   `string[]` of cells.
+///
+/// Returns `Ok Composition` via the Renderable bridge (Foreign case), or
+/// `Error (InvalidArgument ("RoundedMarkupTable", _))` if any alignment string
+/// is not one of the three accepted values.
+module RoundedMarkupTable =
+
+    /// Convert column definitions and rows into a `Composition` that renders
+    /// as a Spectre `Table` with a `Rounded` border.
+    /// Returns `Error (InvalidArgument _)` on unknown alignment strings.
+    val toComposition :
+        columnDefs: (string * string) list ->
+            rows: string[] list ->
+            Result<Composition, RenderError>

@@ -18,9 +18,3 @@ module Renderer =
     val toRawAnsi:
         ctx: RenderContext -> composition: Composition -> Result<string, RenderError>
 
-    /// Convenience: evaluate to a `DrawOp.RawAnsi` ready to hand to the actor.
-    /// Caller posts the result via their existing `Surface` wrapper or
-    /// directly via `MailboxProcessor.Post`.
-    val toDrawOp:
-        ctx: RenderContext ->
-            composition: Composition -> Result<Fugue.Surface.DrawOp, RenderError>

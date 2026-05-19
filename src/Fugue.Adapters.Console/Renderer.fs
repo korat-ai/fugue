@@ -367,9 +367,3 @@ module Renderer =
                 | ex ->
                     Error (RenderError.RenderFailed ("Composition", ex.Message))
 
-    /// Convenience: evaluate to a `DrawOp.RawAnsi` ready to hand to the actor.
-    /// Caller posts the result via their existing `Surface` wrapper or
-    /// directly via `MailboxProcessor.Post`.
-    let toDrawOp (ctx: RenderContext) (composition: Composition) : Result<Fugue.Surface.DrawOp, RenderError> =
-        toRawAnsi ctx composition
-        |> Result.map Fugue.Surface.DrawOp.RawAnsi

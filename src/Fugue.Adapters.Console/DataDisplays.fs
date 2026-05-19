@@ -402,3 +402,46 @@ module TextPath =
         let stp = Spectre.Console.TextPath tp.TpPath
         stp.Justification <- System.Nullable tp.TpJustify
         DataDisplaysHelpers.lower stp
+
+// ──────────────────────────────────────────────────────────────────────────────
+// RoundedMarkupTable — styled table with Rounded border, markup headers
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Adapter wrapper for building a Spectre rounded-border Table from markup
+/// column headers and plain-string rows. Exposed as a standalone module so
+/// `Surface.fs` (and future callers) do not need to reference Spectre types
+/// directly (FR-011 gate).
+///
+/// columnDefs: list of (markupHeader, alignment) where alignment is
+///   "left" | "center" | "right". Each row is a string array of cells.
+module RoundedMarkupTable =
+
+    let toComposition
+        (columnDefs: (string * string) list)
+        (rows: string[] list)
+        : Result<Composition, RenderError> =
+        // Validate every alignment string before touching Spectre.
+        let inline parseAlign (raw: string) =
+            match raw.ToLowerInvariant() with
+            | "left"   -> Ok (System.Nullable Spectre.Console.Justify.Left)
+            | "right"  -> Ok (System.Nullable Spectre.Console.Justify.Right)
+            | "center" -> Ok (System.Nullable Spectre.Console.Justify.Center)
+            | other    ->
+                Error (RenderError.InvalidArgument (
+                    "RoundedMarkupTable",
+                    $"unknown alignment '{other}'; expected \"left\", \"right\", or \"center\""))
+        let alignResults =
+            columnDefs |> List.map (fun (_, a) -> parseAlign a)
+        match alignResults |> List.tryFind Result.isError with
+        | Some (Error e) -> Error e
+        | _ ->
+            let aligns = alignResults |> List.map (fun r -> match r with Ok v -> v | Error _ -> System.Nullable Spectre.Console.Justify.Left)
+            let tbl = Spectre.Console.Table ()
+            tbl.Border <- Spectre.Console.TableBorder.Rounded
+            for ((header, _), justify) in List.zip columnDefs aligns do
+                let col = Spectre.Console.TableColumn header
+                col.Alignment <- justify
+                tbl.AddColumn col |> ignore
+            for row in rows do
+                Spectre.Console.TableExtensions.AddRow(tbl, row) |> ignore
+            Ok (DataDisplaysHelpers.lower tbl)
