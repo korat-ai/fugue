@@ -205,25 +205,18 @@ The orchestrator should add `/engineering-ai-engineer` at PLAN+BUILD+VERIFY, `/t
 
 <!-- SPECKIT START -->
 **Active Spec Kit plan**: [`specs/003-layout-framework/plan.md`](specs/003-layout-framework/plan.md)
-— **Phase: design (post-/speckit-plan, pre-/speckit-tasks). Branch `003-layout-framework`.**
-Add a high-level Layout framework to `Fugue.Adapters.Console`: four opaque
-sealed primitives (`Stack`, `Dock`, `LayoutGrid`, `Flex`) that lower into the
-Phase 2 `Composition` IR via smart constructors returning `Result`. Four
-binding decisions from research: R-1 static-rebuild + `LayoutScheduler`
-frame-coalescing (no reactive-diff handle), R-2 Layout above Surface
-(new `LayoutHost.fs` shim in `Fugue.Cli`; `Fugue.Surface` unchanged), R-3
-sub-namespace `Fugue.Adapters.Console.Layout.*` inside existing fsproj,
-R-4 no new Unicode dep (defer to Spectre transitive measurement). Phase 3
-closes with a REPL port: `rg "AnsiConsole" src/Fugue.Cli/Repl.fs` = 0.
-Companion artifacts: [spec.md](specs/003-layout-framework/spec.md),
-[research.md](specs/003-layout-framework/research.md),
-[data-model.md](specs/003-layout-framework/data-model.md),
-[contracts/](specs/003-layout-framework/contracts/),
-[quickstart.md](specs/003-layout-framework/quickstart.md).
-**Phase 0+1 complete** — research.md + data-model.md + contracts/ + quickstart.md
-generated. `/speckit-tasks` pending (≥ 5 PRs estimated: P1 Stack → P2 Dock →
-P3 LayoutGrid → P4 Flex → P5 REPL port + Polish). Pre-push review mandatory
-per Constitution Principle IX + Phase 2 lesson (6 BLOCKERs across 5 PRs).
+— **Phase 3 COMPLETE (2026-05-19).** All 6 PRs merged to main:
+#953 (P1 Stack), #954 (P2 Dock + `Composition.Foreign` embeddedDepth), #955
+(P3 LayoutGrid), #956 (P4 Flex + InternalErrors.fsi sealing), #957 (P5 REPL
+port + LayoutHost.fs), #964 (Polish: T074-T084 + T078a CoverageMatrix Phase 3
+extension + BenchmarkTests SC-006 + Hooks.fs runSyncHook race fix).
+Acceptance gates met: 264+ adapter tests + 573 core = 837+ pass on all 3 OS;
+SC-002 `rg "AnsiConsole" src/Fugue.Cli/Repl.fs` = 0; SC-004 1 intentional
+Renderable.fromSpectre exposure; AOT publish clean; benchmark median ≤ 10 ms
+on CI. 6 BLOCKERs caught pre-push across Phase 3 (justified Principle IX
+trust-but-verify pattern). Follow-up issues #958-#963 opened for deferred
+work (ZWJ width, Surface.fs port, horizontal cross-axis align, interactive
+round-trip tests, legacyRender cleanup, SIGWINCH timing monitoring).
 Project constitution: [`.specify/memory/constitution.md`](.specify/memory/constitution.md)
 v1.1.0.
 <!-- SPECKIT END -->
