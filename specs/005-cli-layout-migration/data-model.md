@@ -185,11 +185,13 @@ Existing artefact, scheduled for removal in PR P5 per FR-007.
 
 **Post-PR-P5 state**: zero matches for `FUGUE_LEGACY_RENDER` in the source tree. Setting the env var has no effect.
 
-**Removal precondition** (gate before P5 PR is merged):
+**Removal precondition** (gate before P5 PR is merged) — concrete per spec FR-007:
 
-- One full Fugue release cycle has passed since PR P4 merge (the migration is complete on `main`).
-- No rendering-regression issue has been filed against the post-P4 binary during that cycle.
-- Maintainer explicitly approves the removal (CEO escalation per Constitution VII).
+- **≥ 14 calendar days** have elapsed since PR P4 merged to `main`.
+- **Zero** rendering-regression issues have been filed against the post-P4 binary during that 14-day window (`gh issue list --search "rendering regression in:title,body" --state all --search "created:>=<P4_merge_date>"` returns zero hits).
+- Maintainer explicitly approves the removal in writing (CEO escalation per Constitution VII; record the approval in `soak-verification.md` under the spec directory).
+
+Rationale for 14 days: Fugue ships releases ad-hoc rather than on a fixed cadence, so "one release cycle" was unmeasurable. 14 days is long enough that at least one realistic user session-pattern (interactive use across two weekends) will have occurred against the post-P4 binary, short enough that the legacy fallback's maintenance cost is not indefinite.
 
 ## §7 — Target rendering bug (the SC-007 commitment)
 

@@ -77,7 +77,7 @@ description: "Task list for Phase 4 — CLI Layout Migration"
 
 ### Inventory + migration
 
-- [ ] T012 [US1] [US2] Inventory `src/Fugue.Cli/Surface.fs` Spectre call sites using `fslangmcp` semantic queries (`fcs_file_outline` then `workspace_symbol` for `AnsiConsole`, `Markup`, `Panel`, `Table` references). Document each call site with line number, rendering purpose, and target adapter primitive in a private comment block at top of branch checkout (will be removed before PR push).
+- [ ] T012 [US1] [US2] Inventory `src/Fugue.Cli/Surface.fs` Spectre call sites using `fslangmcp` semantic queries (`fcs_file_outline` then `workspace_symbol` for `AnsiConsole`, `Markup`, `Panel`, `Table` references). Record the inventory permanently in `specs/005-cli-layout-migration/inventory-surface.md` — one row per call site with: line number, rendering purpose, target adapter primitive, status (pending / migrated). This file survives PR P1 merge as the audit trail; later PRs append their own per-file inventories (`inventory-render.md` etc.).
 - [ ] T013 [US1] [US2] Migrate Surface.fs status-bar render path: replace direct Spectre calls with `Composition` built from `Stack` + `Dock` primitives; route through `RenderBridge.toDrawOp` → `Surface.write`.
 - [ ] T014 [US1] [US2] Migrate Surface.fs markdown-panel render path: use `Composition.panel Border.Rounded label inner` + appropriate `Style` constructors.
 - [ ] T015 [US1] [US2] Migrate Surface.fs diff-panel render path: use `Composition` with `Columns` or `Stack` of styled hunks.
@@ -228,7 +228,7 @@ description: "Task list for Phase 4 — CLI Layout Migration"
 
 ### Soak verification + branch setup
 
-- [ ] T070 [US5] Verify soak conditions: (a) `git log --oneline main` shows ≥ 1 full Fugue release cycle since P4 merge; (b) `gh issue list -R korat-ai/fugue --search "rendering regression in:title,body" --state all --search "created:>=<P4_merge_date>"` returns zero rendering-regression issues; (c) explicit user (CEO) confirmation requested and granted. Document the verification in a `soak-verification.md` note inside the spec directory.
+- [ ] T070 [US5] Verify soak conditions per spec FR-007: (a) **≥ 14 calendar days** have elapsed since PR P4's merge commit date — verify with `git log --format='%aI' <P4_merge_sha> -1` and a date-arithmetic check; (b) `gh issue list -R korat-ai/fugue --search "rendering regression in:title,body created:>=<P4_merge_date>" --state all` returns zero hits; (c) explicit user (CEO) confirmation requested and granted in writing. Document the verification (the three concrete checks + their outcomes + the user's confirmation text) in `specs/005-cli-layout-migration/soak-verification.md`.
 - [ ] T071 [US5] Create branch `005-p5-legacy-cleanup` off latest `main`.
 
 ### Removal
@@ -253,11 +253,20 @@ description: "Task list for Phase 4 — CLI Layout Migration"
 
 **Purpose**: Final SC verification, gh-965 update, dogfooding documentation, and any cleanup that surfaces only after the full migration is in place.
 
-- [ ] T080 [US2] Add SC-001 verification test in `tests/Fugue.Adapters.Console.Tests/CoverageMatrixTests.fs` (or new `tests/Fugue.Tests/ZeroSpectreCallTest.fs`): `[<Fact>]` that runs `rg -c 'Spectre\.Console|AnsiConsole' src/Fugue.Cli/*.fs` (via `Process` or `File.ReadAllText` + regex), asserts total count = 0 outside `RenderBridge.fs`. This is the standing invariant gate — future regressions get caught at test time, not at review time.
+- [ ] T080 [US2] Add SC-001 / SC-008 verification test in `tests/Fugue.Tests/ZeroSpectreCallTest.fs` (new file — REPL-side standing invariant; deliberately NOT in `tests/Fugue.Adapters.Console.Tests/` because that project is framework-side and shouldn't reach into `src/Fugue.Cli/*.fs` paths). The test uses `File.ReadAllText` + regex to walk every `.fs` file under `src/Fugue.Cli/` and assert total `Spectre.Console` / `AnsiConsole` reference count = 0, excluding `LayoutHost.fs` and `RenderBridge.fs` (the two designated bridge files per spec FR-002). This is the standing invariant gate — future regressions get caught at test time, not at review time. Add `<Compile Include="ZeroSpectreCallTest.fs" />` to `tests/Fugue.Tests/Fugue.Tests.fsproj`.
 - [ ] T081 [US3] Add a one-paragraph "Production examples" section to `src/Fugue.Adapters.Console/README.md` (if README exists from a future Phase 5; if not, add a comment block at the top of `src/Fugue.Cli/Surface.fs` pointing future contributors at it as the canonical multi-region layout example). Per `data-model.md §8` and US3 acceptance.
 - [ ] T082 [US3] Verify SC-006: framework package contains no internal references. `rg "Fugue\.(Surface|Cli|Core|Tools|Agent)" src/Fugue.Adapters.Console/` returns zero matches (`Layout/` and the rest of the adapter, after T002–T004, should be clean). Update `specs/002-spectre-full-coverage/coverage-matrix.md` to note Phase 4 dogfooding complete.
 - [ ] T083 Comment on `gh-965` (deferred Phase 5 tracking issue): "Condition 1 — dogfooding — is now satisfied as of Phase 4 PR P5 merge. Conditions 2 (≥ 2 external demand signals) and 3 (bandwidth honesty) remain open. Spec/research/plan from Phase 5 deferred state remain valid as the baseline."
-- [ ] T084 Final SC verification across the suite: SC-001 ✓ (zero count), SC-002 ✓ (visual parity confirmed across manual smoke + snapshots), SC-003 ✓ (≥ 837 tests pass on all 3 OS), SC-004 ✓ (AOT publish clean on all 3 runtimes), SC-005 ✓ (legacyRender gone), SC-006 ✓ (zero internal refs in package), SC-007 ✓ (≥ 1 bug closed), SC-008 (defer — emergent, validated by future contributor onboarding), SC-009 ✓ (5 PRs merged). Document the verification in `specs/005-cli-layout-migration/sc-verification.md`.
+- [ ] T084 Final SC verification across the suite: SC-001 ✓ (zero count — T080 standing test), SC-002 ✓ (visual parity confirmed across manual smoke + snapshots), SC-003 ✓ (≥ 837 tests pass on all 3 OS), SC-004 ✓ (AOT publish clean on all 3 runtimes), SC-005 ✓ (legacyRender gone), SC-006 ✓ (zero internal refs in package), SC-007 ✓ (≥ 1 bug closed), SC-008 ✓ (standing invariant test enforces zero direct underlying-library refs — T080), SC-009 ✓ (5 PRs merged). Document the verification in `specs/005-cli-layout-migration/sc-verification.md`.
+
+### Coverage-gap remediation tasks (added 2026-05-19 after /speckit-analyze)
+
+- [ ] T086 [US1] **FR-004 perf gate (was C1 gap)**: in Phase 8 Polish, run the prior phase's existing performance benchmark (`tests/Fugue.Adapters.Console.Tests/Layout/BenchmarkTests.fs` `T079 SC-006: typical Fugue UI layout tree renders in under 5 ms` — Phase 3 baseline) against post-P4 main: `dotnet test --filter "Category=perf"`. Capture the median + p95 latencies, assert median ≤ 10 ms (the spec FR-004 (a) ceiling). Document the measurement in `specs/005-cli-layout-migration/perf-verification.md` alongside the Phase 3 baseline for comparison. If median > 10 ms, this is a FR-004 violation — file a follow-up issue and do NOT declare Phase 4 complete until resolved.
+- [ ] T087 [US2] **FR-009 DrawOp ABI assertion (was C2 gap)**: add `[<Fact>]` test `DrawOp ABI is unchanged from Phase 4 baseline` in `tests/Fugue.Tests/DrawOpAbiTests.fs` (new file). Use `Microsoft.FSharp.Reflection.FSharpType.GetUnionCases<DrawOp>` to enumerate every union case, assert the case names exactly equal the pre-migration baseline list (hard-coded list in the test reflecting the `DrawOp` DU shape at SHA `52c7853`). If a future PR adds or removes a `DrawOp` case, this test fails — forcing an explicit conversation about whether the ABI change is intentional. Add `<Compile Include="DrawOpAbiTests.fs" />` to `tests/Fugue.Tests/Fugue.Tests.fsproj`.
+- [ ] T088 [US1] **FR-004 streaming-latency probe (was A1 gap)**: add a property test `streaming-token-to-render p95 latency` in `tests/Fugue.Tests/StreamingLatencyTests.fs` (new file, or co-located with `RenderSnapshotTests.fs`). Test scenario: drive `StreamingProducer` with 200 synthetic tokens at 10 ms intervals, capture timestamps for (a) token enqueued, (b) `onFrame` invoked with the composition containing that token, compute per-token latencies, assert p95 ≤ 50 ms (spec FR-004 (b)). This is the automated probe for "no perceptible stutter" — turns observer-judgement into a quantitative bound.
+
+### Final task
+
 - [ ] T085 Mark Phase 4 COMPLETE in CLAUDE.md SPECKIT marker. Move Phase 4 section under `---` divider (demoted like Phase 3 was after its completion). Active Spec Kit plan field becomes empty pending the next feature.
 
 ---
@@ -310,7 +319,9 @@ Within each PR phase, the following tasks can run in parallel (marked `[P]` abov
 
 **Incremental delivery**: PRs P2 → P3 → P4 ship in order, each independently reviewable and revertable. Each PR's "Independent Test" is the same canonical scripted session — failing the test on any PR halts further work until the regression is resolved.
 
-**Soak gate before P5**: the FUGUE_LEGACY_RENDER fallback removal is deliberately delayed; this is not slack, it is intentional risk management. The fallback exists precisely as the rollback path for any unforeseen regression P1–P4 might introduce.
+**Soak gate before P5**: the FUGUE_LEGACY_RENDER fallback removal is deliberately delayed (≥ 14 calendar days per spec FR-007); this is not slack, it is intentional risk management. The fallback exists precisely as the rollback path for any unforeseen regression P1–P4 might introduce.
+
+**CLAUDE.md SPECKIT marker updates**: tasks T029, T040, T053, T069, T078 each update the CLAUDE.md SPECKIT marker post-PR-merge — 5 edits total over the migration. Each edit busts the prompt cache for that session per Constitution Principle XI ("cacheable prefix"). This is **knowingly accepted cost**: Phase 3 followed the identical 5-update pattern with no observed problem; per-PR status visibility in CLAUDE.md is more valuable than the cache-hit savings of batching. If a future phase finds this cost more painful, batching to 1 update per 2 PRs is a valid alternative — document the change in CLAUDE.md when made.
 
 ## Subagent dispatch suggestions (per Constitution Principle III)
 
