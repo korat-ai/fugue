@@ -14,3 +14,12 @@ open Fugue.Adapters.Console
 let private readSnapshot (name: string) : string =
     let path = Path.Combine("Snapshots", $"{name}.txt")
     File.ReadAllText path
+
+[<Fact>]
+let ``readSnapshot loads _smoke.txt fixture correctly`` () =
+    // _smoke.txt is a permanent self-test of the snapshot loader.
+    // Content: "smoke\n" (UTF-8, LF, no BOM). Kept as a canary so that
+    // the readSnapshot helper is never unused (compiler warning hazard on
+    // TreatWarningsAsErrors) and future fixture PRs can verify the loader works.
+    let actual = readSnapshot "_smoke"
+    Assert.Equal("smoke\n", actual)

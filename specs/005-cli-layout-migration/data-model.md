@@ -89,6 +89,8 @@ Frozen `.txt` files under `tests/Fugue.Tests/Snapshots/` containing raw ANSI byt
 <source_file_basename>_<scenario>.txt
 ```
 
+**Extension rule (hard requirement)**: All snapshot fixtures MUST use the `.txt` extension. Other extensions are not supported. The glob in `tests/Fugue.Tests/Fugue.Tests.fsproj` matches `Snapshots/**/*.txt`; using a different extension means the fixture will not be copied to the output directory and the snapshot test will fail at runtime with `FileNotFoundException`.
+
 Examples:
 
 - `surface_status_bar.txt`
