@@ -3,6 +3,7 @@ module Fugue.Cli.StreamRender
 open System
 open System.Threading.Tasks
 open Spectre.Console.Rendering
+open Fugue.Adapters.Console
 open Fugue.Surface
 
 // Layer 3 (domain UI): terminal-rendering concerns for assistant streaming
@@ -88,6 +89,6 @@ let finalizeTurn
                     DrawOp.MoveCursorUpToCol0 (rawLines + 1)
                     DrawOp.ClearToEndOfScreen
             ]
-            Surface.writeRenderable r
+            Surface.writeRenderable(Renderable.fromSpectre r)
             Surface.lineBreak ()
     }

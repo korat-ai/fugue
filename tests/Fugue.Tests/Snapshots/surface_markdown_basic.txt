@@ -1,0 +1,3 @@
+[1mHello World[0m
+This is a basic paragraph of text.
+Second paragraph with [3memphasis[0m.

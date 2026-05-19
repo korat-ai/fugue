@@ -14,6 +14,7 @@ open Fugue.Core.Config
 open Fugue.Core.Localization
 open Fugue.Agent
 open Fugue.Cli
+open Fugue.Adapters.Console
 open Fugue.Tools.PathSafety
 
 // =============================================================================
@@ -492,7 +493,7 @@ let private streamAndRender
                             if isErr then Render.Failed(name, args, output, elapsed)
                             else Render.Completed(name, args, output, elapsed)
                         if not zen then
-                            Surface.writeRenderable(Render.toolBullet strings state)
+                            Surface.writeRenderable(Renderable.fromSpectre(Render.toolBullet strings state))
                             Surface.lineBreak ()
                         StatusBar.refresh()
                     | Conversation.Finished -> ()
@@ -539,11 +540,11 @@ let private streamAndRender
         with
         | :? OperationCanceledException ->
             if assistantStreaming then Surface.lineBreak ()
-            Surface.writeRenderable(Render.cancelled strings)
+            Surface.writeRenderable(Renderable.fromSpectre(Render.cancelled strings))
             Surface.lineBreak ()
         | ex ->
             if assistantStreaming then Surface.lineBreak ()
-            Surface.writeRenderable(Render.errorLine strings ex.Message)
+            Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine strings ex.Message))
             Surface.lineBreak ()
             lastFailedTurn <- Some { BugReport.UserPrompt = input; BugReport.ToolCalls = errorToolCalls |> Seq.toList; BugReport.AiResponse = responseText.ToString(); BugReport.ErrorText = Some ex.Message }
     finally
@@ -756,7 +757,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 Surface.markup($"[dim]⟳ watch → {Surface.escape wcmd}[/]")
                 Surface.lineBreak ()
                 turnNumber <- turnNumber + 1
-                Surface.writeRenderable(Render.userMessage cfg.Ui $"[watch] {wcmd}" turnNumber)
+                Surface.writeRenderable(Renderable.fromSpectre(Render.userMessage cfg.Ui $"[watch] {wcmd}" turnNumber))
                 Surface.lineBreak ()
                 prelude cfg
                 do! streamAndRender agent session wcmd cfg cancelSrc zenMode ignore
@@ -862,19 +863,19 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                     proc.StartInfo <- psi
                     match proc.Start() with
                     | false ->
-                        Surface.writeRenderable(Render.errorLine liveStrings liveStrings.GitLogNoRepo)
+                        Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings liveStrings.GitLogNoRepo))
                         Surface.lineBreak ()
                     | true ->
                         let out = proc.StandardOutput.ReadToEnd()
                         proc.WaitForExit()
                         if proc.ExitCode <> 0 || String.IsNullOrWhiteSpace out then
-                            Surface.writeRenderable(Render.errorLine liveStrings liveStrings.GitLogNoRepo)
+                            Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings liveStrings.GitLogNoRepo))
                             Surface.lineBreak ()
                         else
                             let prompt = liveStrings.GitLogPrompt.Replace("%s", out)
                             do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 with ex ->
-                    Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                    Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings ex.Message))
                     Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/clear" ->
@@ -900,19 +901,19 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         proc.StartInfo <- psi
                         match proc.Start() with
                         | false ->
-                            Surface.writeRenderable(Render.errorLine liveStrings liveStrings.SquashNoRepo)
+                            Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings liveStrings.SquashNoRepo))
                             Surface.lineBreak ()
                         | true ->
                             let out = proc.StandardOutput.ReadToEnd()
                             proc.WaitForExit()
                             if proc.ExitCode <> 0 || String.IsNullOrWhiteSpace out then
-                                Surface.writeRenderable(Render.errorLine liveStrings liveStrings.SquashNoRepo)
+                                Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings liveStrings.SquashNoRepo))
                                 Surface.lineBreak ()
                             else
                                 let prompt = $"""Here are the last {n} commits to be squashed:\n\n{out}\n\nPlease generate a single conventional commit message that summarizes all these changes.\nFollow the format: type(scope): description\n\nAlso show the git command to execute the squash:\n  git reset --soft HEAD~{n} && git commit -m "<your message>"\n\nDo NOT run the command — just show it for the user to review and run manually."""
                                 do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                     with ex ->
-                        Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                        Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings ex.Message))
                         Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/short" ->
@@ -1094,7 +1095,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                 with ex ->
                     session <- null
                     sessionRef.Value <- session
-                    Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                    Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings ex.Message))
                     Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s.StartsWith "/http " || s = "/http" ->
@@ -1160,16 +1161,16 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                             else
                                 Surface.writeLine($"HTTP {status} {resp.StatusCode}")
                             let preview = if respBody.Length > 4096 then respBody.[..4095] + $"\n… [{respBody.Length} chars total]" else respBody
-                            Surface.writeRenderable(Render.assistantFinal preview)
+                            Surface.writeRenderable(Renderable.fromSpectre(Render.assistantFinal preview))
                             Surface.lineBreak ()
                             if inject then
                                 let ctx = $"[HTTP response from {method'} {url} — status {status}]\n{respBody}"
                                 turnNumber <- turnNumber + 1
-                                Surface.writeRenderable(Render.userMessage cfg.Ui $"[injected HTTP response from {method'} {url}]" turnNumber)
+                                Surface.writeRenderable(Renderable.fromSpectre(Render.userMessage cfg.Ui $"[injected HTTP response from {method'} {url}]" turnNumber))
                                 Surface.lineBreak ()
                                 do! streamAndRender agent session ctx cfg cancelSrc zenMode ignore
                         with ex ->
-                            Surface.writeRenderable(Render.errorLine liveStrings $"HTTP error: {ex.Message}")
+                            Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings $"HTTP error: {ex.Message}"))
                             Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/tools" ->
@@ -1273,7 +1274,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         with _ ->
                             benchAborted <- true
                 if benchAborted then
-                    Surface.writeRenderable(Render.errorLine liveStrings liveStrings.BenchAborted)
+                    Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings liveStrings.BenchAborted))
                     Surface.lineBreak ()
                 elif ttfts.Count > 0 then
                     let pct (data: System.Collections.Generic.List<int64>) (p: int) =
@@ -1313,7 +1314,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                             else $"{max 1 (int diff.TotalMinutes)}m ago"
                         if Render.isColorEnabled () then
                             Surface.markupLine($"[dim]#{idx + 1} ({ago})[/]")
-                            Surface.writeRenderable(MarkdownRender.toRenderable summary)
+                            Surface.writeRenderable(Renderable.fromSpectre(MarkdownRender.toRenderable summary))
                             Surface.lineBreak ()
                         else
                             Surface.writeLine($"#{idx + 1} ({ago})")
@@ -1465,14 +1466,14 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                         proc.StartInfo <- psi
                         match proc.Start() with
                         | false ->
-                            Surface.writeRenderable(Render.errorLine liveStrings (String.Format(liveStrings.IssueNotFound, rawArg)))
+                            Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings (String.Format(liveStrings.IssueNotFound, rawArg))))
                             Surface.lineBreak ()
                         | true ->
                             let output = proc.StandardOutput.ReadToEnd()
                             proc.WaitForExit()
                             if proc.ExitCode <> 0 then
                                 let err = proc.StandardError.ReadToEnd().Trim()
-                                Surface.writeRenderable(Render.errorLine liveStrings (String.Format(liveStrings.IssueNotFound, err)))
+                                Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings (String.Format(liveStrings.IssueNotFound, err))))
                                 Surface.lineBreak ()
                             else
                                 // Extract a string field from compact gh JSON output (AOT-safe, no JsonSerializer)
@@ -1535,7 +1536,7 @@ let run (initialAgent: AIAgent) (sessionRef: (AgentSession | null) ref) (initial
                                 // Inject issue context into conversation
                                 do! streamAndRender agent session issueContext cfg cancelSrc zenMode ignore
                     with ex ->
-                        Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                        Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings ex.Message))
                         Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/model suggest" ->
@@ -1803,7 +1804,7 @@ Please generate a clear, actionable onboarding checklist."""
                                 .Replace("{0}", string prNum)
                                 .Replace("{1}", titleBody)
                                 .Replace("{2}", truncatedDiff)
-                        Surface.writeRenderable(Render.userMessage cfg.Ui $"Reviewing PR #{prNum}…" 0)
+                        Surface.writeRenderable(Renderable.fromSpectre(Render.userMessage cfg.Ui $"Reviewing PR #{prNum}…" 0))
                         Surface.lineBreak ()
                         do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
@@ -1814,7 +1815,7 @@ Please generate a clear, actionable onboarding checklist."""
                     Surface.lineBreak ()
                 else
                     let augmented = $"[System: answer from your training knowledge only — do not invoke any tools, do not read files, do not run commands]\n\nUser: {question}"
-                    Surface.writeRenderable(Render.userMessage cfg.Ui question 0)
+                    Surface.writeRenderable(Renderable.fromSpectre(Render.userMessage cfg.Ui question 0))
                     Surface.lineBreak ()
                     do! streamAndRender agent session augmented cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
@@ -1854,16 +1855,16 @@ Please generate a clear, actionable onboarding checklist."""
                     let isTwoFile = match parts with [| _; _ |] -> true | _ -> false
                     if proc.ExitCode <> 0 && not (isTwoFile && proc.ExitCode = 1) then
                         let msg = if errOut <> "" then errOut else $"git diff exited {proc.ExitCode}"
-                        Surface.writeRenderable(Render.errorLine liveStrings msg)
+                        Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings msg))
                         Surface.lineBreak ()
                     elif System.String.IsNullOrWhiteSpace output then
                         Surface.markup("[dim]" + Surface.escape liveStrings.NoDiff + "[/]")
                         Surface.lineBreak ()
                     else
-                        Surface.writeRenderable(DiffRender.toRenderable output)
+                        Surface.writeRenderable(Renderable.fromSpectre(DiffRender.toRenderable output))
                         Surface.lineBreak ()
                 with ex ->
-                    Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                    Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings ex.Message))
                     Surface.lineBreak ()
                 StatusBar.refresh ()
             | Some s when s = "/init" ->
@@ -1884,7 +1885,7 @@ Please generate a clear, actionable onboarding checklist."""
                         "- Any gotchas or non-obvious constraints\n\n" +
                         "Keep it concise — aim for 50-150 lines. Use Markdown headers.\n" +
                         "Write the file to ./FUGUE.md using the Write tool."
-                    Surface.writeRenderable(Render.userMessage cfg.Ui "/init" 0)
+                    Surface.writeRenderable(Renderable.fromSpectre(Render.userMessage cfg.Ui "/init" 0))
                     Surface.lineBreak ()
                     do! streamAndRender agent session initPrompt cfg cancelSrc zenMode ignore
                     StatusBar.refresh ()
@@ -1901,7 +1902,7 @@ Please generate a clear, actionable onboarding checklist."""
                 with ex ->
                     session <- null
                     sessionRef.Value <- session
-                    Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                    Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings ex.Message))
                     Surface.lineBreak ()
                 turnNumber <- 0
                 sessionNotes <- []
@@ -1950,7 +1951,7 @@ Please generate a clear, actionable onboarding checklist."""
                             proc.Start() |> ignore
                             proc.WaitForExit()
                         with ex ->
-                            Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                            Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings ex.Message))
                             Surface.lineBreak ()
                     finally
                         cancelSrc.ExitChild ()
@@ -1984,7 +1985,7 @@ Please generate a clear, actionable onboarding checklist."""
                     "- Key decisions made\n" +
                     "- Any open questions or next steps\n\n" +
                     "Be concise but complete."
-                Surface.writeRenderable(Render.userMessage cfg.Ui "/summary" 0)
+                Surface.writeRenderable(Renderable.fromSpectre(Render.userMessage cfg.Ui "/summary" 0))
                 Surface.lineBreak ()
                 do! streamAndRender agent session summaryPrompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
@@ -1996,7 +1997,7 @@ Please generate a clear, actionable onboarding checklist."""
                         let clean = arg.TrimStart('/')
                         if clean.StartsWith "docs/" then clean else "docs/" + clean
                 let docPrompt = System.String.Format(liveStrings.DocumentPrompt, docPath)
-                Surface.writeRenderable(Render.userMessage cfg.Ui $"/document {docPath}" 0)
+                Surface.writeRenderable(Renderable.fromSpectre(Render.userMessage cfg.Ui $"/document {docPath}" 0))
                 Surface.lineBreak ()
                 do! streamAndRender agent session docPrompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
@@ -2436,7 +2437,7 @@ Please generate a clear, actionable onboarding checklist."""
                         tryRun "grep" [| "-rn"; "-E"; "TODO|FIXME|HACK"; "." |]
                 match results with
                 | None ->
-                    Surface.writeRenderable(Render.errorLine liveStrings "rg and grep unavailable")
+                    Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings "rg and grep unavailable"))
                     Surface.lineBreak ()
                 | Some "" ->
                     Surface.markupLine("[dim]" + Surface.escape liveStrings.TodoNone + "[/]")
@@ -2530,7 +2531,7 @@ Please generate a clear, actionable onboarding checklist."""
                             $"Please summarize the file '{rawArg}'.\n\nProvide a structured summary:\n1. Purpose — what does this file do?\n2. Public API — exported functions or types\n3. Key dependencies — what modules/libraries does it use?\n4. Notable design decisions — any interesting patterns or constraints\n\nBe concise (2–4 sentences per section). Use the Read tool to examine the file."
                         else
                             $"The path '{rawArg}' does not exist. Please let me know."
-                    Surface.writeRenderable(Render.userMessage cfg.Ui ("/summarize " + rawArg) 0)
+                    Surface.writeRenderable(Renderable.fromSpectre(Render.userMessage cfg.Ui ("/summarize " + rawArg) 0))
                     Surface.lineBreak ()
                     do! streamAndRender agent session summarizePrompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
@@ -2564,7 +2565,7 @@ Please generate a clear, actionable onboarding checklist."""
                     let diagnostics = String.concat "\n" fs0025
                     let prompt =
                         $"The build found incomplete pattern match warnings (FS0025):\n\n```\n{diagnostics}\n```\n\nPlease:\n1. Read each affected file.\n2. Add the missing match cases using `failwith \"TODO: <CaseName>\"` as placeholders.\n3. Apply the fixes using the Edit tool.\n\nFix all warnings before responding."
-                    Surface.writeRenderable(Render.userMessage cfg.Ui "/check exhaustive" 0)
+                    Surface.writeRenderable(Renderable.fromSpectre(Render.userMessage cfg.Ui "/check exhaustive" 0))
                     Surface.lineBreak ()
                     do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                 StatusBar.refresh ()
@@ -2708,7 +2709,7 @@ Please generate a clear, actionable onboarding checklist."""
                         session <- newSession
                         sessionRef.Value <- session
                     with ex ->
-                        Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                        Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings ex.Message))
                         Surface.lineBreak ()
                     let injection = $"[Compressed session context]\n{summary}"
                     do! streamAndRender agent session injection cfg cancelSrc zenMode ignore
@@ -2743,7 +2744,7 @@ Please generate a clear, actionable onboarding checklist."""
                     let offloadNote = $"Previous context offloaded to session {currentSessionId}. Use GetConversation to inspect history if needed."
                     do! streamAndRender agent session offloadNote cfg cancelSrc zenMode ignore
                 with ex ->
-                    Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                    Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings ex.Message))
                     Surface.lineBreak ()
                 // 5. Reset per-turn counters (keep currentSessionId so offload note references it)
                 turnNumber <- 0
@@ -2795,7 +2796,7 @@ Please generate a clear, actionable onboarding checklist."""
                         else
                             Surface.writeLine($"Resumed session {resumeId} — {messages.Count} messages loaded.")
                     with ex ->
-                        Surface.writeRenderable(Render.errorLine liveStrings ex.Message)
+                        Surface.writeRenderable(Renderable.fromSpectre(Render.errorLine liveStrings ex.Message))
                     Surface.lineBreak ()
                     StatusBar.refresh ()
             | Some s when s = "/sessions all" ->
@@ -3052,7 +3053,7 @@ Please generate a clear, actionable onboarding checklist."""
                         Surface.lineBreak ()
                     else
                         let prompt = PromptRegistry.render tmpl argsMap
-                        Surface.writeRenderable(Render.userMessage cfg.Ui s 0)
+                        Surface.writeRenderable(Renderable.fromSpectre(Render.userMessage cfg.Ui s 0))
                         Surface.lineBreak ()
                         do! streamAndRender agent session prompt cfg cancelSrc zenMode ignore
                     StatusBar.refresh ()
@@ -3065,7 +3066,7 @@ Please generate a clear, actionable onboarding checklist."""
                 let expandedInput = expandClipboard expandedInput liveStrings
                 let expandedInput = expandClipRing expandedInput
                 StatusBar.recordWords (expandedInput.Split([|' '; '\n'; '\r'; '\t'|], StringSplitOptions.RemoveEmptyEntries).Length)
-                Surface.writeRenderable(Render.userMessage cfg.Ui userInput (turnNumber + 1))
+                Surface.writeRenderable(Renderable.fromSpectre(Render.userMessage cfg.Ui userInput (turnNumber + 1)))
                 Surface.lineBreak ()
                 let expandedInput =
                     match Fugue.Core.ConversationIntent.classify lastResponseWasPlan expandedInput with

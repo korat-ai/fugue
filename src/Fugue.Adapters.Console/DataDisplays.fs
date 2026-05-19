@@ -402,3 +402,31 @@ module TextPath =
         let stp = Spectre.Console.TextPath tp.TpPath
         stp.Justification <- System.Nullable tp.TpJustify
         DataDisplaysHelpers.lower stp
+
+// ──────────────────────────────────────────────────────────────────────────────
+// RoundedMarkupTable — styled table with Rounded border, markup headers
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Adapter wrapper for building a Spectre rounded-border Table from markup
+/// column headers and plain-string rows. Exposed as a standalone module so
+/// `Surface.fs` (and future callers) do not need to reference Spectre types
+/// directly (FR-011 gate).
+///
+/// columnDefs: list of (markupHeader, alignment) where alignment is
+///   "left" | "center" | "right". Each row is a string array of cells.
+module RoundedMarkupTable =
+
+    let toComposition (columnDefs: (string * string) list) (rows: string[] list) : Composition =
+        let tbl = Spectre.Console.Table ()
+        tbl.Border <- Spectre.Console.TableBorder.Rounded
+        for (header, align) in columnDefs do
+            let col = Spectre.Console.TableColumn header
+            col.Alignment <-
+                match align with
+                | "right"  -> System.Nullable Spectre.Console.Justify.Right
+                | "center" -> System.Nullable Spectre.Console.Justify.Center
+                | _        -> System.Nullable Spectre.Console.Justify.Left
+            tbl.AddColumn col |> ignore
+        for row in rows do
+            Spectre.Console.TableExtensions.AddRow(tbl, row) |> ignore
+        DataDisplaysHelpers.lower tbl
