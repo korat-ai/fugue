@@ -94,7 +94,7 @@ Standard CI matrix: Ubuntu, macOS, Windows. All checks COMPLETED + SUCCESS. `mer
 
 Applies only to PR P5 ("legacy-cleanup"). The PR MAY NOT merge until:
 
-- PR P4 has been on `main` through ≥ 1 full Fugue release cycle.
+- PR P4 has been on `main` for ≥ 14 calendar days (per FR-007).
 - Zero rendering-regression issues filed against the post-P4 binary during that cycle.
 - Maintainer explicitly approves removal (CEO escalation per Constitution VII).
 
@@ -126,7 +126,7 @@ Every PR uses this body shape:
 - [ ] G6 AOT publish smoke clean on osx-arm64 / linux-x64 / win-x64
 - [ ] G7 Pre-push review by `engineering-code-reviewer` — no BLOCKER findings
 - [ ] G8 CI green on all 3 OS
-- [ ] (P5 only) G9 Soak period ≥ 1 release cycle + maintainer approval
+- [ ] (P5 only) G9 Soak period ≥ 14 calendar days on `main` with zero rendering-regression issues + maintainer approval (per FR-007)
 ```
 
 ## Rollback path

@@ -286,7 +286,7 @@ Phase 5 PR P3 (T041–T053)                                                | (PR
   ↓                                                                      |  within each PR many tasks
 Phase 6 PR P4 (T054–T069) — closes ≥ 1 rendering bug                     |  can run in parallel)
   ↓                                                                      |
-[SOAK ≥ 1 release cycle]                                                 |
+[SOAK ≥ 14 calendar days per FR-007]                                     |
   ↓                                                                      |
 Phase 7 PR P5 (T070–T079) — legacy cleanup                               |
   ↓                                                                      |

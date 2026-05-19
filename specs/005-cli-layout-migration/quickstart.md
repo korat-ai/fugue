@@ -180,7 +180,7 @@ PR P5 has no migration work — it removes the `FUGUE_LEGACY_RENDER` fallback.
 
 ### Step P5-1 — Verify soak conditions
 
-- `git log --oneline main` shows ≥ 1 full Fugue release cycle has passed since PR P4 merge.
+- `git log --format='%aI' <P4_merge_sha> -1` shows the P4 merge commit was ≥ 14 calendar days ago (per FR-007).
 - `gh issue list -R korat-ai/fugue --search "rendering regression" --state open` returns zero issues filed since P4.
 - Explicit user confirmation before push (CEO escalation per Constitution VII).
 
