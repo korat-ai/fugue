@@ -214,7 +214,7 @@ description: "Task list for Phase 4 — CLI Layout Migration"
 - [ ] T068 Push, open PR `feat(005-P4): secondary surfaces migration + close #910 (5 sites; 0/28 remaining — migration COMPLETE)`, wait CI, merge.
 - [ ] T069 Sync main, update CLAUDE.md SPECKIT marker post-P4 — "Phase 4 migration COMPLETE — 0/28 direct Spectre calls. Awaiting soak period for PR P5 (legacy fallback removal)."
 
-**Checkpoint**: PR P4 merged. Migration COMPLETE (0/28 direct Spectre calls in `src/Fugue.Cli/*.fs` except `RenderBridge.fs`). Awaiting one full release cycle of soak time before P5.
+**Checkpoint**: PR P4 merged. Migration COMPLETE (0/28 direct Spectre calls in `src/Fugue.Cli/*.fs` except `RenderBridge.fs` and `LayoutHost.fs`). Awaiting ≥ 14 calendar days of soak time on `main` with zero rendering-regression issues before P5 (per spec FR-007).
 
 ---
 
@@ -224,7 +224,7 @@ description: "Task list for Phase 4 — CLI Layout Migration"
 
 **Independent Test**: `rg 'FUGUE_LEGACY_RENDER|legacyRender' src/` returns zero matches. Setting the env var to any value has no effect on REPL behaviour.
 
-**Gate**: This phase MUST NOT begin until ≥ 1 full Fugue release cycle has passed since PR P4 merge AND zero rendering-regression issues have been filed against the post-P4 binary AND maintainer has explicitly approved removal (CEO escalation per Constitution VII).
+**Gate**: This phase MUST NOT begin until ≥ 14 calendar days have elapsed since PR P4 merge AND zero rendering-regression issues have been filed against the post-P4 binary during that window AND maintainer has explicitly approved removal in writing (per spec FR-007 + CEO escalation per Constitution VII).
 
 ### Soak verification + branch setup
 
@@ -261,7 +261,7 @@ description: "Task list for Phase 4 — CLI Layout Migration"
 
 ### Coverage-gap remediation tasks (added 2026-05-19 after /speckit-analyze)
 
-- [ ] T086 [US1] **FR-004 perf gate (was C1 gap)**: in Phase 8 Polish, run the prior phase's existing performance benchmark (`tests/Fugue.Adapters.Console.Tests/Layout/BenchmarkTests.fs` `T079 SC-006: typical Fugue UI layout tree renders in under 5 ms` — Phase 3 baseline) against post-P4 main: `dotnet test --filter "Category=perf"`. Capture the median + p95 latencies, assert median ≤ 10 ms (the spec FR-004 (a) ceiling). Document the measurement in `specs/005-cli-layout-migration/perf-verification.md` alongside the Phase 3 baseline for comparison. If median > 10 ms, this is a FR-004 violation — file a follow-up issue and do NOT declare Phase 4 complete until resolved.
+- [ ] T086 [US1] **FR-004 perf gate (was C1 gap)**: in Phase 8 Polish, run the prior phase's existing performance benchmark against post-P4 main: `dotnet test --filter "Category=perf"`. The relevant test lives in `tests/Fugue.Adapters.Console.Tests/Layout/BenchmarkTests.fs` and is named in source as `T079 — SC-006: typical Fugue UI layout tree renders in under 5 ms` (the `T079` prefix is the Phase 3 task-id baked into the test name string — NOT a reference to Phase 4's T079). Capture the median + p95 latencies, assert median ≤ 10 ms (the spec FR-004 (a) ceiling). Document the measurement in `specs/005-cli-layout-migration/perf-verification.md` alongside the Phase 3 baseline for comparison. If median > 10 ms, this is a FR-004 violation — file a follow-up issue and do NOT declare Phase 4 complete until resolved.
 - [ ] T087 [US2] **FR-009 DrawOp ABI assertion (was C2 gap)**: add `[<Fact>]` test `DrawOp ABI is unchanged from Phase 4 baseline` in `tests/Fugue.Tests/DrawOpAbiTests.fs` (new file). Use `Microsoft.FSharp.Reflection.FSharpType.GetUnionCases<DrawOp>` to enumerate every union case, assert the case names exactly equal the pre-migration baseline list (hard-coded list in the test reflecting the `DrawOp` DU shape at SHA `52c7853`). If a future PR adds or removes a `DrawOp` case, this test fails — forcing an explicit conversation about whether the ABI change is intentional. Add `<Compile Include="DrawOpAbiTests.fs" />` to `tests/Fugue.Tests/Fugue.Tests.fsproj`.
 - [ ] T088 [US1] **FR-004 streaming-latency probe (was A1 gap)**: add a property test `streaming-token-to-render p95 latency` in `tests/Fugue.Tests/StreamingLatencyTests.fs` (new file, or co-located with `RenderSnapshotTests.fs`). Test scenario: drive `StreamingProducer` with 200 synthetic tokens at 10 ms intervals, capture timestamps for (a) token enqueued, (b) `onFrame` invoked with the composition containing that token, compute per-token latencies, assert p95 ≤ 50 ms (spec FR-004 (b)). This is the automated probe for "no perceptible stutter" — turns observer-judgement into a quantitative bound.
 

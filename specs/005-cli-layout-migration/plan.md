@@ -12,7 +12,7 @@ The migration ships as 4–5 cohesive pull requests grouped by call-site cohesio
 
 Visual parity is the hardest constraint. Approach: per-render-path snapshot tests at unit level (capture `toRawAnsi` output against frozen fixtures), supplemented by manual smoke against the canonical scripted session before each PR merge. Full automated end-to-end (PTY-harness) regression detection is deferred to a follow-up (#937 already in backlog).
 
-A legacy-render env-var fallback installed in Phase 3 P5 (`FUGUE_LEGACY_RENDER`) is removed in the final PR after one full release cycle of soak time (FR-007 / SC-005).
+A legacy-render env-var fallback installed in Phase 3 P5 (`FUGUE_LEGACY_RENDER`) is removed in the final PR after ≥ 14 calendar days of soak time with zero rendering-regression issues filed (FR-007 / SC-005).
 
 At least one of three open rendering bugs (#910 scroll-region reset, #913 model description overlap, #934 multi-line corruption) is either auto-closed by the migration or becomes fixable in ≤ 30 LOC (FR-008 / SC-007).
 

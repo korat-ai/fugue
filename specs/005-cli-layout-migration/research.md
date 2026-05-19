@@ -83,7 +83,7 @@ Resolves the four open architectural questions (R-1..R-4) flagged in spec Assump
 - **Each migrated file gets its own snapshot test for representative inputs.** Per Constitution Principle I ("happy + error path"), one fixture per render path is sufficient as a regression guard. The 8 migrated files produce ≈ 9 snapshot fixtures (see plan.md Project Structure for the exact list); each fixture is < 5 KB; total snapshot suite under 50 KB — well within reasonable test-suite weight.
 - **Manual smoke covers integration-level concerns** that unit snapshots miss: cursor positioning across multiple sequential DrawOps, scroll-region behaviour, terminal resize mid-session, ReadLine prompt interaction. These are exactly the bug classes (#910, #913, #934) that the migration aims to make tractable — so the migration's reviewer is the right person to smoke them.
 - **PTY-based automation is significant infrastructure** (#937 estimated as a separate phase). Building it as part of Phase 4 would balloon the scope and delay the dogfooding value. The deferred approach: ship Phase 4 with snapshot + manual; if a regression slips through and is caught later, that becomes the demand-signal that justifies #937 investment.
-- **The legacy-render fallback (FR-007) is the safety net** for the brief window when only snapshot+manual is in place. Any regression discovered post-merge can be rolled back via `FUGUE_LEGACY_RENDER=1` while the fix is prepared. The fallback removes in PR P5 only after one full release cycle — the snapshot+manual approach has had time to prove itself.
+- **The legacy-render fallback (FR-007) is the safety net** for the brief window when only snapshot+manual is in place. Any regression discovered post-merge can be rolled back via `FUGUE_LEGACY_RENDER=1` while the fix is prepared. The fallback removes in PR P5 only after ≥ 14 calendar days of soak time on `main` with zero rendering-regression issues — the snapshot+manual approach has had time to prove itself.
 
 **Mechanics**:
 
@@ -121,7 +121,7 @@ Resolves the four open architectural questions (R-1..R-4) flagged in spec Assump
 | **P2 — Boot & diagnostics** | `Render.fs` + `Doctor.fs` | 5 + 1 = 6 | Both render at startup / on `/doctor` invocation. Small cohesive cluster — diagnostic surfaces. |
 | **P3 — Streaming markdown** | `MarkdownRender.fs` + `StreamRender.fs` | 3 + 1 = 4 | Both render assistant streaming responses. Together exercise the R-1 scheduler-streaming pattern end-to-end. |
 | **P4 — Secondary render surfaces** | `DiffRender.fs` + `StackTraceRender.fs` + `Picker.fs` | 2 + 2 + 1 = 5 | Three small "leaf" render paths. Edit-tool diff, exception display, `/turns` picker. Grouped because each individually is too small for a PR. |
-| **P5 — Cleanup** | `Repl.fs` (drop `FUGUE_LEGACY_RENDER` branch) | (0 call sites — removal only) | Cleanup PR. Runs after one full release cycle of soak time on `main` (FR-007 / SC-005). Closes #962. |
+| **P5 — Cleanup** | `Repl.fs` (drop `FUGUE_LEGACY_RENDER` branch) | (0 call sites — removal only) | Cleanup PR. Runs after ≥ 14 calendar days of soak time on `main` with zero rendering-regression issues (FR-007 / SC-005). Closes #962. |
 
 **Rationale**:
 

@@ -35,8 +35,31 @@
   questions (R-1 streaming model, R-2 DrawOp ABI, R-3 visual regression
   detection, R-4 migration sequencing) were resolved as documented Assumptions
   with informed defaults rather than left as NEEDS CLARIFICATION.
-- **2026-05-19 amendment after `/speckit-analyze`**: 10 analyzer findings
-  (1 HIGH, 5 MEDIUM, 4 LOW) all addressed via targeted edits:
+- **2026-05-19 amendment after `/speckit-analyze` pass 1**: 10 analyzer findings
+  (1 HIGH, 5 MEDIUM, 4 LOW) all addressed via targeted edits.
+- **2026-05-19 amendment after `/speckit-analyze` pass 2**: pass-2 surfaced 5
+  regression findings (1 HIGH, 2 MEDIUM, 2 LOW) introduced by pass-1
+  remediation — all the same root cause: FR text edits weren't propagated to
+  narrative sections (User Stories, Acceptance Scenarios, Edge Cases,
+  Assumptions). All fixed:
+    - **F1** (HIGH, soak-period drift across 5 spec/tasks locations) → all 5
+      replaced with "≥ 14 calendar days … per FR-007"; plus 4 additional
+      propagation hits in plan.md, research.md, contracts/pr-sequencing.md
+      caught and fixed in pass-3.
+    - **F2** (MEDIUM, "perceptible stutter" in acceptance/edge) → US1 acceptance
+      scenario 2 + Edge Case first bullet now reference FR-004 (a)(b) bounds.
+    - **F3** (MEDIUM, T086 ambiguous T079 reference) → T086 clarified that the
+      "T079" prefix is a Phase 3 task-id baked into the test name string, NOT
+      Phase 4's T079.
+    - **F4** (LOW, SC-008 scope vs T080) → SC-008 widened to "all REPL
+      render-path files (eight + any added in future)" matching T080's reach.
+    - **F5** (LOW, Assumption section stale) → rewritten with concrete 14-day
+      rule + rationale for why the original "release cycle" framing was rejected.
+- **Pattern**: pass-2 + pass-3 caught 9 total propagation failures across 7
+  files. The discipline "edit FR + grep + propagate + re-grep" is now the
+  spec maintenance norm. Future amendments should follow it.
+
+Earlier pass-1 findings (kept for traceability):
     - **C1** (HIGH, perf gate gap) → new T086 explicitly runs Phase 3 benchmark
       against post-P4 main; FR-004 (a) bound (10 ms median) made concrete.
     - **C2** (MEDIUM, FR-009 ABI assertion missing) → new T087 adds

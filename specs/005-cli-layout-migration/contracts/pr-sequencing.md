@@ -12,7 +12,7 @@ Defines the 5-PR sequence, what each PR contains, and what gates each PR MUST sa
 | **P2** | `005-p2-boot-diagnostics` | `Render.fs`, `Doctor.fs`, `Snapshots/render_boot.txt`, `Snapshots/doctor_output.txt` | 5 + 1 = 6 | Boot + diagnostic surfaces. Small cohesive cluster. |
 | **P3** | `005-p3-streaming-markdown` | `MarkdownRender.fs`, `StreamRender.fs`, `Snapshots/markdown_streaming_complete.txt` | 3 + 1 = 4 | Streaming surfaces. Exercises R-1 scheduler-streaming pattern end-to-end. |
 | **P4** | `005-p4-secondary-render` | `DiffRender.fs`, `StackTraceRender.fs`, `Picker.fs`, `Snapshots/diff_render_edit.txt`, `Snapshots/stacktrace_render_exception.txt`, `Snapshots/picker_turns_basic.txt` | 2 + 2 + 1 = 5 | Three small leaf surfaces. |
-| **P5** | `005-p5-legacy-cleanup` | `Repl.fs` (drop `FUGUE_LEGACY_RENDER` branch) + corresponding legacy paths in `Surface.fs` | 0 sites (removal only) | Cleanup. Runs only after one full release cycle of soak time (per FR-007). Closes #962. |
+| **P5** | `005-p5-legacy-cleanup` | `Repl.fs` (drop `FUGUE_LEGACY_RENDER` branch) + corresponding legacy paths in `Surface.fs` | 0 sites (removal only) | Cleanup. Runs only after ≥ 14 calendar days of soak time with zero rendering-regression issues (per FR-007). Closes #962. |
 
 ## Per-PR acceptance gates
 
