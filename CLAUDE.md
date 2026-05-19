@@ -217,6 +217,14 @@ on CI. 6 BLOCKERs caught pre-push across Phase 3 (justified Principle IX
 trust-but-verify pattern). Follow-up issues #958-#963 opened for deferred
 work (ZWJ width, Surface.fs port, horizontal cross-axis align, interactive
 round-trip tests, legacyRender cleanup, SIGWINCH timing monitoring).
+
+**Phase 5 (NuGet publish) — DEFERRED 2026-05-19.** See
+[`specs/004-publish-adapters-console-nuget/spec.md`](specs/004-publish-adapters-console-nuget/spec.md)
+"Deferral Note" for the three revisit conditions (Phase 4 dogfooding complete /
+≥ 2 external demand signals / bus factor > 1 OR explicit triage commitment).
+Spec, plan-draft, and research.md are preserved as the analysis baseline for a
+future return. Tracking issue: GitHub label `phase-5-deferred`.
+
 Project constitution: [`.specify/memory/constitution.md`](.specify/memory/constitution.md)
 v1.1.0.
 <!-- SPECKIT END -->

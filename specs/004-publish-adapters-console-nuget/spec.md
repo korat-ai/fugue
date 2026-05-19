@@ -4,9 +4,29 @@
 
 **Created**: 2026-05-19
 
-**Status**: Draft
+**Status**: **Deferred (2026-05-19)** — see "Deferral Note" below.
 
 **Input**: User description: "Phase 5 — publish `Fugue.Adapters.Console` (Phase 1+2 F# wrapper over Spectre.Console + Phase 3 Layout framework: Stack/Dock/LayoutGrid/Flex + Scheduler) as a standalone NuGet package directly from the existing `korat-ai/fugue` monorepo, without extraction into a separate repository."
+
+## Deferral Note (2026-05-19)
+
+During `/speckit-plan` Phase 0, three concerns surfaced that the v1.1.0 constitution does not currently cover:
+
+1. **New operating mode without governance**: publishing a NuGet creates an open-source-library maintainer role (external consumers, SemVer obligations to strangers, vulnerability response, transitive-dep migration support). The constitution speaks to Fugue-as-product, not Fugue-as-library-maintainer.
+2. **Naming is irreversible after first publish**: `Fugue.Adapters.Console` as a package id was treated in the spec as "v1.0 concern" via a hypothetical `TypeForwarded` shim, but the first publish creates external references (Google, StackOverflow, downstream projects) that no shim repairs cleanly. The naming decision needs to be made BEFORE publication, not deferred past it.
+3. **Bus factor = 1 + active development = bad time for external commitments**: a single active maintainer + ongoing Phase-3 churn means new issues from strangers compete with internal velocity; the worst outcome is an "abandoned-looking" package on a feed with stale `last commit` after 6+ months.
+
+The feature is therefore **deferred** rather than re-scoped. Revisit conditions (ALL three must be met before reopening):
+
+- **Condition 1 — dogfooding**: Phase 4 complete — `Fugue.Surface` / `Render.fs` / `MarkdownRender.fs` / `DiffRender.fs` / `StackTraceRender.fs` / `Doctor.fs` / `Picker.fs` / `StreamRender.fs` are all migrated to consume the package's Layout API in production. Zero direct `Spectre.Console.AnsiConsole` calls in `src/Fugue.Cli/` outside of the package itself.
+- **Condition 2 — external demand signal**: at least 2 independent inbound signals (GitHub issue, mailing-list post, direct outreach) asking for the package as a separable artefact. Speculative publish without demand is rejected.
+- **Condition 3 — bandwidth honesty**: either bus factor > 1 (a second active maintainer has been onboarded), OR the maintainer has explicitly carved 2–4 h/month for package issue triage and committed to it in writing (e.g. CLAUDE.md addendum).
+
+When all three are met, this spec is the starting point — most of the analysis below stands. The Assumptions and Out of Scope sections, and Open Architectural Questions (resolved in research.md), remain the working baseline. Re-litigate only the points that have new evidence.
+
+Tracking issue: see GitHub issue tagged `phase-5-deferred` for the live revisit checklist.
+
+---
 
 ## User Scenarios & Testing *(mandatory)*
 
