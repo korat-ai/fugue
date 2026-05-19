@@ -122,9 +122,20 @@ let ``T065 — Scheduler-driven Dock smoke: 10 updates, all tokens in final outp
         lock tokensLock (fun () -> tokens.Add $"TOKEN-{i}")
         Scheduler.trigger sched
 
-    // Wait for at least one frame to land (up to 5 ticks).
-    let rendered = waitFor (frameMs * 10) (fun () ->
-        lock framesLock (fun () -> capturedFrames.Count > 0))
+    // Wait for a frame containing the LAST token to land. The first frame
+    // observed might race the producer between ticks (CI runners are slower
+    // than local hardware — the producer may snapshot `tokens` before all 10
+    // have been added). Waiting for TOKEN-10 specifically eliminates that
+    // race deterministically. Budget: 60 ticks (3 seconds at frameMs=50) —
+    // generous for Ubuntu CI runners which can be ~5× slower than macOS/
+    // Windows runners on this workflow (empirically observed: PR-964 first
+    // attempt with × 20 budget passed macOS + Windows but flaked Ubuntu).
+    let rendered = waitFor (frameMs * 60) (fun () ->
+        lock framesLock (fun () ->
+            if capturedFrames.Count = 0 then false
+            else
+                let lastFrame = capturedFrames.[capturedFrames.Count - 1]
+                (stripAnsi lastFrame).Contains "TOKEN-10"))
     Scheduler.stop sched
 
     if not rendered then false

@@ -322,12 +322,23 @@ let private runSyncHook (def: HookDef) (payloadJson: string) (globalTimeout: int
     else
         let stderr = stderrTask.Result
         stdoutTask.Wait()
+        // Second WaitForExit (no timeout) ensures async event handlers fire —
+        // see runSyncHookWithStdout below for the full rationale.
+        proc.WaitForExit()
         if not (String.IsNullOrWhiteSpace stderr) then
             eprintfn $"[hooks] {def.Command} stderr: {stderr.TrimEnd()}"
         proc.ExitCode
 
 /// Run a single sync hook and capture stdout. Drains stdout AND stderr concurrently
 /// to prevent deadlock on full pipe buffers (>4 KB). Returns (exitCode, stdout).
+///
+/// IMPORTANT: after `WaitForExit(timeout)` returns true the process has exited but
+/// asynchronous output streams are NOT guaranteed to be drained. .NET docs:
+/// "Call WaitForExit() (no args) to ensure that asynchronous event handling has
+/// been completed". On fast Linux runners the child may exit before the
+/// stdout/stderr reader tasks have even scheduled — without the second WaitForExit
+/// the pipe drain races process teardown and ReadToEnd returns "". This was the
+/// `HookRunnerTests.UserPromptSubmit block=true` flake on Ubuntu CI (PR-955, PR-964).
 let internal runSyncHookWithStdout (def: HookDef) (payloadJson: string) (globalTimeout: int) : int * string =
     let timeout = def.TimeoutMs |> Option.defaultValue globalTimeout
     let proc = spawnHook def.Command payloadJson
@@ -342,8 +353,13 @@ let internal runSyncHookWithStdout (def: HookDef) (payloadJson: string) (globalT
         stdoutTask.Wait()
         -1, ""   // sentinel for timeout
     else
+        // Block until reader tasks finish draining; .Result already does this,
+        // but explicit .Wait() in the timeout branch above documents the symmetry.
         let stderr = stderrTask.Result
         let stdout = stdoutTask.Result
+        // Second WaitForExit (no timeout) ensures async event handlers fire.
+        // This is the canonical .NET pattern for "exited AND streams drained".
+        proc.WaitForExit()
         if not (String.IsNullOrWhiteSpace stderr) then
             eprintfn $"[hooks] {def.Command} stderr: {stderr.TrimEnd()}"
         proc.ExitCode, stdout
