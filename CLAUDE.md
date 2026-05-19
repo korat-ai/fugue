@@ -220,8 +220,24 @@ Companion artifacts:
 [data-model.md](specs/005-cli-layout-migration/data-model.md),
 [contracts/](specs/005-cli-layout-migration/contracts/),
 [quickstart.md](specs/005-cli-layout-migration/quickstart.md).
-**Phase 0+1 complete** — `/speckit-tasks` pending. Pre-push review mandatory
-per Constitution Principle IX + Phase 3 lesson (6 BLOCKERs across 5 PRs).
+**Phase 0+1+2 complete + PR P1 MERGED (2026-05-20).**
+PR #967 shipped Foundation (RenderBridge + framework decoupling) + Surface.fs
+migration (13/28 sites) + 3 snapshot fixtures + RoundedMarkupTable adapter
+extension. Net: 28 → 15 Spectre sites remaining; +12 new tests (now 902 total
+across all OS, baseline was 889); .gitattributes added for snapshot LF
+consistency; render helper normalises CRLF→LF for Windows Spectre quirk.
+Architectural decision: CEO accepted A1 (Surface.fs `IRenderable→Renderable`
+signature change forces 40 transitional `Renderable.fromSpectre` wraps in
+Repl.fs/StreamRender.fs; retirement path enforced by new standing test
+`RenderableFromSpectreCountTest` with ceiling 40→30→10→1 across P2/P3/P4).
+research.md R-4 amendment captures the lesson: PR sequencing should follow
+dependency direction (producers first), not cluster size. P2/P3/P4 tasks now
+explicitly embed producer-first philosophy + ceiling-tightening per-PR.
+T018 LayoutHost wiring formally deferred to T043 (P3) — see
+[inventory-surface.md](specs/005-cli-layout-migration/inventory-surface.md).
+**Next: PR P2** (`005-p2-boot-diagnostics`) — Render.fs+Doctor.fs producers
+migrate to return `Composition`, ceiling tightens to ~30.
+Pre-push review mandatory per Constitution Principle IX + Phase 3 lesson.
 Project constitution: [`.specify/memory/constitution.md`](.specify/memory/constitution.md)
 v1.1.0.
 
