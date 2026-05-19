@@ -113,7 +113,9 @@ description: "Task list for Phase 4 — CLI Layout Migration"
 
 **Goal**: Migrate `Render.fs` (5 sites — boot banner, version, `/doctor` output) + `Doctor.fs` (1 site — `/doctor` interactive details). Smallest cluster after P1.
 
-**Independent Test**: Run `fugue --version`, `fugue` (boot banner displays), `fugue` then `/doctor` (diagnostic output). Visual parity vs pre-P2. Spectre count = 9.
+**⚠️ NEW PHILOSOPHY (R-4 amendment 2026-05-20)**: Producer migrations MUST change function return types from `IRenderable` (or whatever Spectre type they currently expose) to `Composition`. After each producer function is migrated, FIND every call site in `src/Fugue.Cli/Repl.fs` (and elsewhere) and REMOVE the `Renderable.fromSpectre(<producer>...)` wrap that PR P1 introduced — the caller now receives `Composition` directly. THEN tighten `maxFromSpectreUses` in `tests/Fugue.Tests/RenderableFromSpectreCountTest.fs` to the new lower count IN THE SAME COMMIT as the producer migration. This is the retirement-path forcing function from research.md R-4 amendment.
+
+**Independent Test**: Run `fugue --version`, `fugue` (boot banner displays), `fugue` then `/doctor` (diagnostic output). Visual parity vs pre-P2. Spectre count = 9. `RenderableFromSpectreCountTest` passes with reduced ceiling (estimated ≤ 30 after P2 — measure exact count and use that, don't pad).
 
 ### Branch setup
 
@@ -146,7 +148,9 @@ description: "Task list for Phase 4 — CLI Layout Migration"
 
 **Goal**: Migrate `MarkdownRender.fs` (3 sites — markdown response render) + `StreamRender.fs` (1 site — per-token append). Exercises the R-1 scheduler-streaming pattern end-to-end. Most likely to surface streaming-smoothness regressions if R-1 assumption is wrong.
 
-**Independent Test**: Start REPL, send a message that produces a multi-paragraph markdown response, observe streaming-token append smoothness matches pre-migration. Spectre count = 5.
+**⚠️ NEW PHILOSOPHY (R-4 amendment 2026-05-20)**: Same retirement-path rule as P2 — migrate producer return types `IRenderable → Composition`, remove `Renderable.fromSpectre(...)` wraps in Repl.fs, tighten `maxFromSpectreUses` ceiling in the same commit.
+
+**Independent Test**: Start REPL, send a message that produces a multi-paragraph markdown response, observe streaming-token append smoothness matches pre-migration. Spectre count = 5. `RenderableFromSpectreCountTest` passes with reduced ceiling (estimated ≤ 10 after P3).
 
 ### Branch setup
 
@@ -181,7 +185,9 @@ description: "Task list for Phase 4 — CLI Layout Migration"
 
 **Goal**: Migrate three small leaf render surfaces (`DiffRender.fs`, `StackTraceRender.fs`, `Picker.fs`) AND auto-close or substantially simplify ≥ 1 of the three target rendering bugs (#910, #913, #934 per FR-008 / SC-007).
 
-**Independent Test**: Run REPL, trigger an Edit tool (diff renders), trigger an exception (stack trace renders), run `/turns` (picker renders with arrow nav). Spectre count = 0. The selected rendering bug either no longer reproduces OR is fixed in this PR with ≤ 30 LOC of change.
+**⚠️ NEW PHILOSOPHY (R-4 amendment 2026-05-20)**: Same retirement-path rule as P2/P3 — migrate producer return types `IRenderable → Composition`, remove `Renderable.fromSpectre(...)` wraps in Repl.fs, tighten `maxFromSpectreUses` ceiling. By end of P4, ceiling MUST be **1** (the original Phase 3 baseline — `Renderable.fromSpectre` is then back to its intended "one intentional escape hatch" state).
+
+**Independent Test**: Run REPL, trigger an Edit tool (diff renders), trigger an exception (stack trace renders), run `/turns` (picker renders with arrow nav). Spectre count = 0. The selected rendering bug either no longer reproduces OR is fixed in this PR with ≤ 30 LOC of change. `RenderableFromSpectreCountTest` passes with ceiling = 1.
 
 ### Branch setup
 

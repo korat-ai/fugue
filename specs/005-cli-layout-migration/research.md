@@ -162,6 +162,28 @@ Resolves the four open architectural questions (R-1..R-4) flagged in spec Assump
 
 All four decisions are made through informed analysis with explicit reasoning — none required dual-agent debate. If `/speckit-implement` surfaces contraindicating evidence (e.g. ref-equality short-circuit doesn't work for some streaming case, or snapshot tests turn out non-deterministic across CI OSes), this document is the place to record re-litigation.
 
+---
+
+## R-4 amendment (2026-05-20): PR sequencing was suboptimal — committed retirement-path forward
+
+After PR P1 (Surface migration) completed, the CEO and reviewer collectively recognised that the chosen PR order (sink first, producers later) was inferior to the alternative (producers first, sink last). Rationale, retroactively:
+
+**The dependency chain** is `Render*.fs (producers) → Repl.fs (consumer/forwarder) → Surface.fs (sink)`. Migrating producers first means their return types change from `IRenderable` to `Composition` cleanly; `Repl.fs` passes typed values through unchanged; `Surface.fs` last accepts `Composition` natively. Zero transitional wraps.
+
+**What we actually did** (PR P1): migrated Surface.fs first (because it had the biggest cluster — 13 sites). Surface's public API signature had to change `IRenderable → Renderable`. `Repl.fs` (out of PR P1 scope per spec) was forced to wrap 37 call sites in `Renderable.fromSpectre(...)`. `StreamRender.fs` got 1 wrap. Total: **40 `Renderable.fromSpectre` uses** (Phase 3 baseline was 1; documented as "1 intentional escape hatch").
+
+**Why we didn't revert** (CEO decision 2026-05-20): sunk cost of 4 commits already pushed (Foundation + Surface migration + BLOCKER fixes), and the wraps are mechanically removable as producers migrate. Reverting would cost 2-3 hours of replanning + restart; commit forward to the retirement path instead.
+
+**Committed retirement path** — embedded in tasks.md for P2/P3/P4:
+
+- **P2 (Render + Doctor)**: migrate producer signatures from `... -> IRenderable` to `... -> Composition`. Remove all `Renderable.fromSpectre(Render.<fn> ...)` wraps in Repl.fs. Tighten `maxFromSpectreUses` ceiling in `tests/Fugue.Tests/RenderableFromSpectreCountTest.fs`.
+- **P3 (Markdown + Stream)**: same — migrate signatures, remove wraps, tighten ceiling.
+- **P4 (Diff + StackTrace + Picker)**: same — by end of P4, ceiling = 1 (the original Phase 3 baseline).
+
+**Forcing function**: `RenderableFromSpectreCountTest.fs` asserts the count is at or below the ceiling. If a P2 dev migrates a producer but forgets to lower the ceiling — fine; the test still passes (count is below ceiling). If a future PR adds wraps beyond the ceiling — the build fails. Either direction enforces the retirement path.
+
+**Lesson for future Spec Kit features**: PR sequencing must follow dependency direction, not cluster size. "Biggest first" is a tempting heuristic for refactor work because it front-loads risk; "source first" is correct for migration work because it eliminates transitional scaffolding.
+
 ## Best-practice references consulted
 
 - **Strangler-fig pattern** (Fowler, 2004): the bridge-module relocation is textbook strangler-fig — the package owns the abstract output, consumers own the mapping to their internal types. Validated against the deferred Phase 5 spec's R-1 decision (independent agreement).
