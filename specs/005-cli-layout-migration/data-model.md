@@ -126,7 +126,9 @@ Examples:
 - `Composition` input is built from literal values (no `DateTime.Now`, no random IDs).
 - `Renderer.toRawAnsi` is itself deterministic — confirmed by Phase 3 SC-006 benchmark and Phase 1+2 test suite (260+ render-evidence tests assert exact byte sequences).
 
-**Cross-platform consideration**: if `Renderer.toRawAnsi` output differs across macOS / Linux / Windows (e.g. due to underlying Spectre platform-detection), fixtures live under per-OS subdirectories (`Snapshots/macos/`, `Snapshots/linux/`, etc.). Implementation surfaces will determine whether this is needed; Phase 3 tests are currently OS-uniform, so the default is one fixture per render path, shared across OSes.
+**Cross-platform line endings (resolved 2026-05-20)**: Spectre's renderer emits `Environment.NewLine` for inline line breaks, so `Renderer.toRawAnsi` output contains LF on Unix and CRLF on Windows. Fixtures stay canonical LF; the `render` helper in `tests/Fugue.Tests/RenderSnapshotTests.fs` normalises CRLF → LF in actual output before byte-equality comparison. This makes one fixture work across all OSes — line ending is a presentation detail, not a renderer semantic worth per-OS forking.
+
+If a future divergence appears that is NOT line-endings (e.g. Windows console emits different colour codes), fall back to per-OS subdirectories (`Snapshots/macos/`, `Snapshots/linux/`, etc.). For now, the single-fixture default holds.
 
 ## §4 — Canonical scripted session DSL (the integration-level probe)
 

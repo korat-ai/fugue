@@ -23,13 +23,20 @@ let private readSnapshot (name: string) : string =
     File.ReadAllText path
 
 /// Render a Composition to raw ANSI at 80×24 with colour enabled.
+///
+/// Snapshot fixtures are stored as canonical LF (per
+/// specs/005-cli-layout-migration/contracts/snapshot-fixture-shape.md).
+/// Spectre's renderer emits platform-specific line endings (CRLF on Windows
+/// via Environment.NewLine). Normalize CRLF → LF in actual output so byte-
+/// equality assertions are cross-platform stable — line-ending is a
+/// presentation detail, not a renderer semantic worth asserting separately.
 let private render (comp: Composition) : string =
     let ctx =
         match RenderContext.create 80 24 true "default" with
         | Ok c -> c
         | Error e -> failwithf "test context failed: %A" e
     match Renderer.toRawAnsi ctx comp with
-    | Ok ansi -> ansi
+    | Ok ansi -> ansi.Replace("\r\n", "\n")
     | Error e -> failwithf "render failed: %A" e
 
 [<Fact>]
