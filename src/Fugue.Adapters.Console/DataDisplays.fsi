@@ -266,14 +266,18 @@ module TextPath =
 /// do not need `open Spectre.Console` (FR-011 gate).
 ///
 /// `columnDefs`: list of `(markupHeader, alignment)` pairs; alignment is
-///   `"left"` | `"center"` | `"right"`. Each row is a `string[]` of cells.
+///   `"left"` | `"center"` | `"right"` (case-insensitive). Each row is a
+///   `string[]` of cells.
 ///
-/// Returns `Composition` via the Renderable bridge (Foreign case).
+/// Returns `Ok Composition` via the Renderable bridge (Foreign case), or
+/// `Error (InvalidArgument ("RoundedMarkupTable", _))` if any alignment string
+/// is not one of the three accepted values.
 module RoundedMarkupTable =
 
     /// Convert column definitions and rows into a `Composition` that renders
     /// as a Spectre `Table` with a `Rounded` border.
+    /// Returns `Error (InvalidArgument _)` on unknown alignment strings.
     val toComposition :
         columnDefs: (string * string) list ->
             rows: string[] list ->
-            Composition
+            Result<Composition, RenderError>

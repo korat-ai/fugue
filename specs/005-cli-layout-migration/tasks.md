@@ -83,7 +83,7 @@ description: "Task list for Phase 4 — CLI Layout Migration"
 - [ ] T015 [US1] [US2] Migrate Surface.fs diff-panel render path: use `Composition` with `Columns` or `Stack` of styled hunks.
 - [ ] T016 [US1] [US2] Migrate Surface.fs toast/notification render path: use `Composition.Leaf (Primitive.Styled (toastStyle, SafeText.ofLiteral msg))`.
 - [ ] T017 [US1] [US2] Migrate Surface.fs prompt-area render path: ensure `LayoutHost.mount` is the wiring point; remove any leftover direct `AnsiConsole.Write` calls.
-- [ ] T018 [US1] Wire `LayoutHost.mount` as the production canonical mount point in `src/Fugue.Cli/Repl.fs` (replace the placeholder no-op `LayoutHost` call if present; remove pre-Phase-3 direct Surface writes that were left in place during Phase 3 P5).
+- [X] T018 [US1] **SUBSUMED by T043 (PR P3 — streaming producer mount).** Original intent was to wire `LayoutHost.mount` as production canonical mount point in `Repl.fs`. Cannot be done in P1 because `LayoutHost.mount` requires a `producer: unit -> Result<Composition, RenderError>` that doesn't exist until streaming markdown is migrated (P3). Deferred decision recorded 2026-05-19 per /speckit-implement reviewer feedback. See `specs/005-cli-layout-migration/inventory-surface.md` § T018 for the three options considered and the chosen path.
 - [ ] T019 [US1] [US2] Update Surface.fs `open` declarations: remove `open Spectre.Console`, add `open Fugue.Adapters.Console` and (if Stack/Dock used) `open Fugue.Adapters.Console.Layout`.
 
 ### Snapshot fixtures + tests (Principle I)

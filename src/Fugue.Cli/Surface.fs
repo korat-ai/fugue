@@ -70,7 +70,9 @@ let private renderComposition (comp: Composition) : unit =
     let ctx = RenderContext.probe ()
     match Renderer.toRawAnsi ctx comp with
     | Ok ansi -> write ansi
-    | Error e -> Console.Error.Write $"[surface render error: {e}]"
+    | Error e ->
+        Console.Error.WriteLine $"[surface render error: {e}]"
+        Console.Error.Flush ()
 
 /// Convenience: render a markup hint string (Fugue adapter markup syntax) as
 /// one line ending in a newline. The markup hint is NOT user-supplied content —
@@ -116,8 +118,11 @@ let markup (markupStr: string) : unit =
 ///
 /// columnDefs: list of (markupHeader, alignment). Each row is a string[] of cells.
 let roundedTable (columnDefs: (string * string) list) (rows: string[] list) : unit =
-    let comp = RoundedMarkupTable.toComposition columnDefs rows
-    renderComposition comp
+    match RoundedMarkupTable.toComposition columnDefs rows with
+    | Ok comp  -> renderComposition comp
+    | Error e  ->
+        Console.Error.WriteLine $"[roundedTable error: {e}]"
+        Console.Error.Flush ()
 
 /// Synchronous barrier: wait until the actor has processed every pending
 /// write before returning. Used by code paths that need to be sure visible

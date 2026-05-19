@@ -73,6 +73,7 @@
     <Compile Include="ModelSchedulePropertyTests.fs" />
     <Compile Include="RenderSnapshotTests.fs" />
     <Compile Include="RenderBridgeTests.fs" />
+    <Compile Include="RenderableFromSpectreCountTest.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>

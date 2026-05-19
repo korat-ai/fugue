@@ -4,6 +4,12 @@ module Fugue.Tests.RenderSnapshotTests
 // and assert byte-for-byte equality against Renderer.toRawAnsi output for a deterministic
 // Composition input. See specs/005-cli-layout-migration/contracts/snapshot-fixture-shape.md
 // for the format contract.
+//
+// NOTE — deterministic render context vs. production probe:
+// Tests render via fixed 80×24 RenderContext.create; production Surface.fs uses
+// RenderContext.probe(). These tests assert renderer correctness for a deterministic
+// input; visual parity vs the running binary is verified manually via canonical
+// scripted session (data-model.md §4).
 
 open System.IO
 open Xunit

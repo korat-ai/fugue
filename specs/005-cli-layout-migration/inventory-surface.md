@@ -54,3 +54,11 @@ no-op producer would add dead machinery with no real effect. The `.fsi` signatur
 notes "Callers: 1. Repl.fs — mounts one scheduler per REPL session."
 
 **Decision required from user (CEO escalation)**: See return summary.
+
+## T018 decision (2026-05-19)
+
+**Chosen**: Option (b) — defer to P3 (T043).
+
+Rationale: T018 and T043 in tasks.md describe the same `Repl.fs` line. `LayoutHost.mount` requires a producer callback that only meaningfully exists once streaming markdown is migrated. A no-op stub (Option a) adds dead machinery for ≥ 6 weeks. Out-of-scope (Option c) is what (b) effectively means but said more clearly.
+
+Confirmed by CEO via /speckit-implement reviewer escalation.
